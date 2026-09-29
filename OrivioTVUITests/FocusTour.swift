@@ -24,6 +24,36 @@ final class FocusTour: XCTestCase {
         r.press(.menu); sleep(2); log("after_menu")
     }
 
+    /// Probe-driven: press LEFT on Home from a row's first card — the path a
+    /// swipe takes — and log where focus goes. Watch `:8123/live` alongside.
+    func testProbeHomeRail() {
+        launchSearchTour(["-homeDemo"])
+        let r = XCUIRemote.shared
+        sleep(14); log("pr_00_home")
+        r.press(.down); sleep(2); log("pr_01_first_row")
+        r.press(.left); sleep(2); log("pr_02_first_card")
+        r.press(.left); sleep(3); log("pr_03_into_rail")
+        r.press(.right); sleep(3); log("pr_04_out_of_rail")
+        r.press(.up); sleep(2); log("pr_05_up")
+    }
+
+    /// Probe-driven: drive DOWN into the rows, then LEFT repeatedly at the
+    /// leading edge — the path that black-screens — with a beat between each so
+    /// the screen can be grabbed from outside.
+    func testProbeHomeRailLong() {
+        launchSearchTour(["-homeDemo"])
+        let r = XCUIRemote.shared
+        sleep(14); log("pl_00_home")
+        r.press(.down); sleep(4); log("pl_01_down_cw")
+        r.press(.down); sleep(4); log("pl_02_down_featured")
+        r.press(.down); sleep(4); log("pl_03_down_row")
+        r.press(.right); sleep(3); log("pl_04_right_card2")
+        r.press(.left); sleep(3); log("pl_05_left_card1")
+        r.press(.left); sleep(5); log("pl_06_left_rail")
+        r.press(.left); sleep(4); log("pl_07_left_again")
+        r.press(.right); sleep(4); log("pl_08_right")
+    }
+
     /// Tour the Stremio (Aurora) theme: board with the reflective posters + meta
     /// header, the expanded sidebar, and each tab screen. Screenshots per step.
     func testStremioTour() {
@@ -373,6 +403,29 @@ final class FocusTour: XCTestCase {
         r.press(.right); sleep(2); log("hn_11_right")
     }
 
+    /// "Scroll to the bottom of the rows and back up, and Continue Watching
+    /// can't be reached": Down to the last row, then Up all the way to the
+    /// hero, with enough rows to scroll Continue Watching far off screen — an
+    /// add-on list (hex JSON, argument domain, never saved) read
+    /// from the path in ORIVIO_TEST_ADDONS_HEX.
+    func testHomeBottomAndBackUpManyRows() throws {
+        guard let path = ProcessInfo.processInfo.environment["ORIVIO_TEST_ADDONS_HEX"] else {
+            throw XCTSkip("set TEST_RUNNER_ORIVIO_TEST_ADDONS_HEX to a hex add-on list file")
+        }
+        let hex = try String(contentsOfFile: path, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let layout = ProcessInfo.processInfo.environment["ORIVIO_TEST_LAYOUT"].map { Self.layoutArgs($0) } ?? []
+        launchSearchTour(layout + ["-orivio.addons.v1.p1", "<\(hex)>",
+                                   "-orivio.addons.lastRefresh.v1", "9999999999",
+                                   "-homeDemo", "-focusLog"])
+        let r = XCUIRemote.shared
+        sleep(20); log("bm_00_home")
+        for i in 1...16 { r.press(.down); sleep(2); log(String(format: "bm_d%02d", i)) }
+        for i in 1...18 { r.press(.up); sleep(2); log(String(format: "bm_u%02d", i)) }
+        r.press(.down); sleep(2); log("bm_z_down")
+        r.press(.right); sleep(2); log("bm_z_right")
+    }
+
     /// Fast presses on the account's layout (Hybrid, Featured off) across the
     /// moments the slow tours showed are fragile: the pin/unpin swap, the
     /// invisible filler hops on UP, and quick steps along a row. Ends with
@@ -559,6 +612,24 @@ final class FocusTour: XCTestCase {
         r.press(.menu); sleep(2); log("\(tag)_08_back_to_rail")
         r.press(.menu); sleep(3); log("\(tag)_09_back_out_of_rail")
         r.press(.up); sleep(3); log("\(tag)_10_up_to_hero")
+    }
+
+    /// "Hide the sidebar" ON: summon the rail, then rest and step along it —
+    /// a revealed rail that HOLDS focus must stay open however long the
+    /// viewer rests in it or moves between its items.
+    func testHomeAutoHideRailStaysWhileFocused() {
+        launchSearchTour(Self.layoutArgs(#""autoHideSidebar":true,"heroLayout":"hybrid""#)
+                         + ["-homeDemo", "-focusLog"])
+        let r = XCUIRemote.shared
+        sleep(14); log("rs_00_home_hidden")
+        r.press(.left); sleep(3); log("rs_01_rail_open")
+        r.press(.down); sleep(3); log("rs_02_rail_down")
+        r.press(.down); sleep(3); log("rs_03_rail_down2")
+        r.press(.up); sleep(3); log("rs_04_rail_up")
+        r.press(.right); sleep(3); log("rs_05_out_of_rail")
+        r.press(.menu); sleep(3); log("rs_06_back_to_rail")
+        sleep(4); log("rs_07_rested_in_rail")
+        r.press(.menu); sleep(3); log("rs_08_back_out")
     }
 
     /// Hybrid: open a title from the second row, come back, keep navigating.

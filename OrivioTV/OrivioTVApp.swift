@@ -56,58 +56,83 @@ struct OrivioTVApp: App {
     }
 
     @StateObject private var theme = ThemeManager()
-    @StateObject private var addonManager = AddonManager()
-    @StateObject private var progressStore = ProgressStore()
-    @StateObject private var account = OrivioAccountManager()
-    @StateObject private var library = LibraryStore()
-    @StateObject private var watched = WatchedStore()
-    @StateObject private var profiles = ProfileStore()
-    @StateObject private var collections = CollectionsStore()
-    @StateObject private var homeCatalogSettings = HomeCatalogSettingsStore()
-    @StateObject private var tmdbSettings = TMDBSettingsStore()
-    @StateObject private var mdblistSettings = MDBListSettingsStore()
-    @StateObject private var debrid = DebridStore()
-    @StateObject private var trakt = TraktStore()
-    @StateObject private var simkl = SimklStore()
-    @StateObject private var stremioAccount = StremioAccountStore()
-    @StateObject private var playerSettings = PlayerSettingsStore()
-    @StateObject private var streamBadges = StreamBadgeStore()
-    @StateObject private var plugins = PluginStore()
-    @StateObject private var torrent = TorrentSettingsStore()
-    @StateObject private var ratings = RatingsStore()
-    @StateObject private var mediaServers = MediaServerStore()
+    /// Every other app-wide store, held by ONE object that never publishes.
+    ///
+    /// They used to be twenty separate `@StateObject`s here, and a
+    /// `@StateObject` OBSERVES: any publish from any of them — a sync pull, a
+    /// progress save, a Trakt refresh — re-evaluated this whole scene. That
+    /// re-evaluation reloads the rows of an open hold menu (new cells, focus
+    /// re-applied), which is the flicker in its white focus highlight;
+    /// measured in the sim with a publish-only harness, and an App-level
+    /// re-evaluation with NO data change reproduced it on its own. The scene
+    /// reads none of these stores — only `theme` — so nothing here needs to
+    /// watch them; the views that do still observe them through
+    /// `.environmentObject`.
+    ///
+    /// Still a `@StateObject`, so the stores are created lazily at the first
+    /// body pass exactly as before — AFTER `init()` has run the rename
+    /// migration and the storage reclaims they depend on — and in the same
+    /// order.
+    @StateObject private var stores = AppStores()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .fontDesign(theme.rootFontDesign)   // app-wide font family (Fusion routes serif to headings only)
                 .environmentObject(theme)
-                .environmentObject(addonManager)
-                .environmentObject(progressStore)
-                .environmentObject(account)
-                .environmentObject(library)
-                .environmentObject(watched)
-                .environmentObject(profiles)
-                .environmentObject(collections)
-                .environmentObject(homeCatalogSettings)
-                .environmentObject(tmdbSettings)
-                .environmentObject(mdblistSettings)
-                .environmentObject(debrid)
-                .environmentObject(trakt)
-                .environmentObject(simkl)
-                .environmentObject(stremioAccount)
-                .environmentObject(playerSettings)
-                .environmentObject(streamBadges)
-                .environmentObject(plugins)
-                .environmentObject(torrent)
-                .environmentObject(ratings)
-                .environmentObject(mediaServers)
+                .environmentObject(stores.addonManager)
+                .environmentObject(stores.progressStore)
+                .environmentObject(stores.account)
+                .environmentObject(stores.library)
+                .environmentObject(stores.watched)
+                .environmentObject(stores.profiles)
+                .environmentObject(stores.collections)
+                .environmentObject(stores.homeCatalogSettings)
+                .environmentObject(stores.tmdbSettings)
+                .environmentObject(stores.mdblistSettings)
+                .environmentObject(stores.debrid)
+                .environmentObject(stores.trakt)
+                .environmentObject(stores.simkl)
+                .environmentObject(stores.stremioAccount)
+                .environmentObject(stores.playerSettings)
+                .environmentObject(stores.streamBadges)
+                .environmentObject(stores.plugins)
+                .environmentObject(stores.torrent)
+                .environmentObject(stores.ratings)
+                .environmentObject(stores.mediaServers)
                 // Classic is hard-dark (the original look). The Apple TV theme
                 // honors its Appearance setting — light, dark, or nil to
                 // follow the TV's own system appearance.
                 .preferredColorScheme(theme.preferredColorScheme)
         }
     }
+}
+
+/// The app-wide stores `OrivioTVApp` owns. An `ObservableObject` only so it
+/// can be a `@StateObject` (lazy, created once); it has nothing `@Published`,
+/// so it never tells the scene to re-evaluate. See `OrivioTVApp.stores`.
+@MainActor
+final class AppStores: ObservableObject {
+    let addonManager = AddonManager()
+    let progressStore = ProgressStore()
+    let account = OrivioAccountManager()
+    let library = LibraryStore()
+    let watched = WatchedStore()
+    let profiles = ProfileStore()
+    let collections = CollectionsStore()
+    let homeCatalogSettings = HomeCatalogSettingsStore()
+    let tmdbSettings = TMDBSettingsStore()
+    let mdblistSettings = MDBListSettingsStore()
+    let debrid = DebridStore()
+    let trakt = TraktStore()
+    let simkl = SimklStore()
+    let stremioAccount = StremioAccountStore()
+    let playerSettings = PlayerSettingsStore()
+    let streamBadges = StreamBadgeStore()
+    let plugins = PluginStore()
+    let torrent = TorrentSettingsStore()
+    let ratings = RatingsStore()
+    let mediaServers = MediaServerStore()
 }
 
 /// Human names for the probe's `[app]` block and its nav events. Kept beside
@@ -129,6 +154,7 @@ extension Route {
         case .streamsManual: return "Sources (manual)"
         case .streamsFromStart: return "Sources (from start)"
         case .streamsResume: return "Sources (resume)"
+        case .streamsShuffle: return "Sources (shuffle)"
         }
     }
 
@@ -146,6 +172,8 @@ extension Route {
              .streamsFromStart(let meta, let video),
              .streamsResume(let meta, let video, _):
             return meta.name + (video.map { " S\($0.season ?? 0)E\($0.episode ?? 0)" } ?? "")
+        case .streamsShuffle(let meta, let video):
+            return meta.name + " S\(video.season ?? 0)E\(video.episode ?? 0)"
         default: return ""
         }
     }
@@ -166,6 +194,10 @@ enum Route: Hashable {
     /// matching what was last watched. `fromStart` plays it from 0:00 (Start
     /// Over) instead of the saved position.
     case streamsResume(MetaItem, MetaVideo?, fromStart: Bool)
+    /// Shuffle (the Detail page's dice): this random episode plays on an
+    /// automatic pick with no source list, and the player keeps going on
+    /// random episodes after it (`PlaybackRequest.shuffle`).
+    case streamsShuffle(MetaItem, MetaVideo)
     case collection(OrivioCollection)
     case person(id: Int, name: String)
     case tmdbCompany(id: Int, name: String)
@@ -836,8 +868,11 @@ struct RootView: View {
     private func traceSidebar(_ old: Int?, _ new: Int?) {
         #if DEBUG
         guard FocusTrace.enabled else { return }
-        NSLog("[FocusTrace] sidebarFocus %@ -> %@ (enabled=%d)",
-              old.map(String.init) ?? "nil", new.map(String.init) ?? "nil", sidebarEnabled ? 1 : 0)
+        let line = String(format: "rail sidebarFocus %@ -> %@ (enabled=%d)",
+                          old.map(String.init) ?? "nil", new.map(String.init) ?? "nil",
+                          sidebarEnabled ? 1 : 0)
+        NSLog("[FocusTrace] %@", line)
+        PlayerProbe.event("focus", line)
         #endif
     }
 
@@ -845,6 +880,7 @@ struct RootView: View {
         #if DEBUG
         guard FocusTrace.enabled else { return }
         NSLog("[FocusTrace] sidebarEnabled=%d", enabled ? 1 : 0)
+        PlayerProbe.event("focus", "rail sidebarEnabled=\(enabled ? 1 : 0)")
         #endif
     }
 
@@ -1085,6 +1121,21 @@ struct RootView: View {
         return !sidebarAutoHides || sidebarRevealed
     }
 
+    /// Whether a focus item lives inside a presented view controller (a
+    /// full-screen cover, an alert) rather than the root hierarchy the rail
+    /// belongs to. Walks the item's focus-environment chain; a child of a
+    /// presented controller reports the same presenter, so any hit counts.
+    private static func isInPresentedModal(_ item: UIFocusItem?) -> Bool {
+        var env: UIFocusEnvironment? = item
+        while let current = env {
+            if let vc = current as? UIViewController, vc.presentingViewController != nil {
+                return true
+            }
+            env = current.parentFocusEnvironment
+        }
+        return false
+    }
+
     /// Bring a hidden rail back and put focus on it. The reveal has to happen
     /// BEFORE the focus write — the rail isn't in the view tree until
     /// `showSidebar` turns true, and `@FocusState` on a view that doesn't
@@ -1111,6 +1162,31 @@ struct RootView: View {
         sidebarEngagedAt = Date()
         setSidebarEnabled(true)
         DispatchQueue.main.async { sidebarFocus = selectedTab }
+        hideRevealedRailIfUnfocused()
+    }
+
+    /// Pending check that a revealed auto-hiding rail actually holds focus.
+    @State private var railUnfocusedHideTask: Task<Void, Never>?
+
+    /// Hide a revealed auto-hiding rail again if focus isn't in it a beat from
+    /// now.
+    ///
+    /// Only Back and Right out of the rail used to hide it. A reveal whose
+    /// focus request never landed — a failed Left while the rows were
+    /// mid-scroll, a write dropped during the slide-in — or focus leaving it
+    /// any other way left the rail on screen over the content with nothing
+    /// that would ever put it away: "the hidden sidebar shows up now and then
+    /// and stays until you go into it and back out". The delay covers the
+    /// reveal's async focus write and any one-frame nil while focus steps
+    /// between rail items.
+    private func hideRevealedRailIfUnfocused(after delay: Double = 0.8) {
+        railUnfocusedHideTask?.cancel()
+        railUnfocusedHideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, sidebarAutoHides, sidebarRevealed, sidebarFocus == nil else { return }
+            AppProbe.focus("revealed rail holds no focus — hiding it again")
+            sidebarRevealed = false
+        }
     }
 
     /// The app's single root: an always-visible Liquid Glass rail floating at
@@ -1192,33 +1268,24 @@ struct RootView: View {
                     // points AT it: Left for the edge rail, Up for the bar.
                     // Everything downstream is identical.
                     guard ctx.focusHeading.contains(navIsTop ? .up : .left) else { return }
-                    // Search root with the rail ON SCREEN but inside one of its
-                    // short `.disabled` windows (the moments after a tab switch
-                    // or a rail exit, kept so the engine seeds focus into the
-                    // content). A disabled rail can't take focus, so this Left
-                    // failed and was swallowed: the search bar read as a trap
-                    // while Back, which force-enables the rail, still worked.
-                    // A deliberate Left now takes Back's path. Search only.
-                    if selectedTab == 1, showSidebar, !sidebarEnabled, sidebarFocus == nil,
-                       playback == nil, !showProfileGate, !showWelcome {
-                        focusSidebar(selectedTab)
-                    } else if navIsTop, showSidebar, sidebarFocus == nil, atTabRoot,
-                              playback == nil, !showProfileGate, !showWelcome {
-                        // TOP BAR, already on screen, and Up found nothing: put
-                        // focus in it.
-                        //
-                        // The left rail never needs this — it sits BESIDE the
-                        // content (which is inset by its width), so the engine
-                        // finds it by geometry. The bar sits OVER content that
-                        // spans the full height, and from a page whose own
-                        // topmost row is close under it the engine answers "no
-                        // candidate" instead of stepping up into it. The press
-                        // then did nothing at all: Library's filter chips were
-                        // a dead end upward, and with "Hide the sidebar" on
-                        // there was no way to call the bar back either, because
-                        // the branch below only reveals a bar that is OFF
-                        // screen. Same remedy the Search case above uses, which
-                        // is the same problem on the other axis.
+                    // The rail is ON SCREEN and focus isn't in it, so the
+                    // engine couldn't step into it — a `.disabled` window, or a
+                    // geometry it didn't resolve. A disabled rail can't take
+                    // focus, so the Left was swallowed and the screen read as a
+                    // trap while Back (which force-enables the rail) still
+                    // worked. Take Back's path on EVERY tab, so a Left that the
+                    // engine didn't consume still opens the rail. When the rail
+                    // is off screen, `revealSidebar` handles it as before.
+                    //
+                    // NOT from inside a presented modal. The notification is
+                    // app-wide, and Settings (which always shows its rail)
+                    // opens most of its pages and every dropdown as a
+                    // full-screen cover: a Left at the edge of one of those
+                    // is the cover's own dead end, not a reach for the rail
+                    // behind it.
+                    if showSidebar, sidebarFocus == nil,
+                       playback == nil, !showProfileGate, !showWelcome,
+                       !Self.isInPresentedModal(ctx.previouslyFocusedItem) {
                         focusSidebar(selectedTab)
                     } else {
                         revealSidebar()
@@ -1277,14 +1344,23 @@ struct RootView: View {
                         // The engine acts on this press too: on tabs whose
                         // content clears only the COLLAPSED rail, cards past
                         // the panel's edge are real right candidates, so focus
-                        // may already have moved by the next tick. Then the
-                        // engine's pick stands — only the housekeeping runs —
-                        // instead of a second, visible teleport on top of it.
+                        // may already have moved by the next tick.
+                        //
+                        // That pick is the card nearest the EXPANDED panel's
+                        // edge — the fourth along on Home, with the first
+                        // three under the panel — which is exactly what the
+                        // router exists to prevent on Back. So the row the
+                        // viewer left still takes focus at its first card;
+                        // rows without a hand-off (and other tabs) keep the
+                        // engine's pick as before. The row is read NOW, before
+                        // the engine's landing can re-note a different one.
+                        let rowAtExit = ContentFocusRouter.shared.lastRowID
                         DispatchQueue.main.async {
                             if sidebarFocus != nil {
                                 collapseSidebarFromExit()
                             } else {
                                 if sidebarAutoHides { sidebarRevealed = false }
+                                _ = ContentFocusRouter.shared.focusRowStart(rowAtExit)
                                 setSidebarEnabled(false, reenableAfter: 0.4)
                             }
                         }
@@ -1315,6 +1391,9 @@ struct RootView: View {
         // that is exactly the case a swipe hits.
         .onChange(of: sidebarFocus) { old, new in
             if old == nil, new != nil { sidebarEngagedAt = Date() }
+            // Focus left a revealed auto-hiding rail by some route other than
+            // Back / Right (which hide it themselves): it goes away again.
+            if new == nil { hideRevealedRailIfUnfocused() } else { railUnfocusedHideTask?.cancel() }
         }
         .background(ATVBackground())
     }
@@ -1457,6 +1536,7 @@ struct RootView: View {
         sidebarEngagedAt = Date()
         setSidebarEnabled(true)
         DispatchQueue.main.async { sidebarFocus = tab }
+        hideRevealedRailIfUnfocused()
     }
 
     /// Back pressed while the rail itself is focused: close the panel. Always
@@ -1618,6 +1698,7 @@ struct RootView: View {
                     onPlayManually: { meta, video in path.wrappedValue.append(Route.streamsManual(meta, video)) },
                     onPlayInInfuse: { meta, video in path.wrappedValue.append(Route.streamsInfuse(meta, video)) },
                     onPlayFromBeginning: { meta, video in path.wrappedValue.append(Route.streamsFromStart(meta, video)) },
+                    onShuffle: { meta, video in path.wrappedValue.append(Route.streamsShuffle(meta, video)) },
                     onSelectItem: { path.wrappedValue.append(Route.detail($0)) },
                     onSelectPerson: { id, name in path.wrappedValue.append(Route.person(id: id, name: name)) },
                     onSelectCompany: { id, name in path.wrappedValue.append(Route.tmdbCompany(id: id, name: name)) }
@@ -1699,6 +1780,24 @@ struct RootView: View {
                     entry: entry,
                     allEntries: all,
                     resumePosition: nil
+                ))
+            }
+        case .streamsShuffle(let meta, let video):
+            // Always an automatic pick, whatever the auto-select settings say:
+            // the dice promise no source list, now or between episodes.
+            StreamsView(
+                meta: meta, video: video,
+                forceAutoPick: true,
+                onAutoDismiss: { pendingAutoPlayPop = true }
+            ) { entry, all in
+                let key = ProgressStore.key(metaID: meta.id, video: video)
+                startPlayback(PlaybackRequest(
+                    meta: meta,
+                    video: video,
+                    entry: entry,
+                    allEntries: all,
+                    resumePosition: progressStore.progress(for: key)?.positionSeconds,
+                    shuffle: true
                 ))
             }
         case .streamsResume(let meta, let video, let fromStart):
@@ -2464,6 +2563,12 @@ struct RootView: View {
         }
 
         var metaID = progress.metaID
+        // A row saved under an add-on's "Up Next" id (`simkl_upnext_tt…_S3E7`)
+        // before the Detail page learned to key those by the show — see
+        // `MetaItem.upNextShowID`. Back to the show's id, so the episode id
+        // below is rebuilt in the form stream add-ons answer, and the stored
+        // row migrates with it.
+        if let showID = MetaItem.upNextShowID(from: metaID) { metaID = showID }
         // TMDB-sourced ids can't be served by Cinemeta/Torrentio — resolve to
         // the IMDb tt id (DetailView does the same).
         if metaID.hasPrefix("tmdb:"), let n = Int(metaID.dropFirst("tmdb:".count)),
@@ -2529,25 +2634,39 @@ struct RootView: View {
 @MainActor
 enum FocusTrace {
     private static var tokens: [NSObjectProtocol] = []
-    static let enabled = ProcessInfo.processInfo.arguments.contains("-focusLog")
+    /// On with `-focusLog`, OR whenever the diagnostics capture is on — so the
+    /// live `:8123` probe streams focus movement too, not just the console.
+    ///
+    /// Read LIVE, not snapshotted: capture can be switched off mid-session, and
+    /// the observers below format and `NSLog` on every focus move — the cost
+    /// `HoldInteractionTrace` is uninstalled to avoid on the A8/A10X boxes.
+    nonisolated static var enabled: Bool { focusLogFlag || ProbeGate.isEnabled }
+    private nonisolated static let focusLogFlag = ProcessInfo.processInfo.arguments.contains("-focusLog")
 
     static func installIfRequested() {
         guard tokens.isEmpty, enabled else { return }
         let center = NotificationCenter.default
         tokens.append(center.addObserver(forName: UIFocusSystem.didUpdateNotification,
                                          object: nil, queue: .main) { note in
-            guard let ctx = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext else { return }
-            NSLog("[FocusTrace] UPDATE %@ -> %@ (heading %ld)",
-                  describe(ctx.previouslyFocusedItem), describe(ctx.nextFocusedItem),
-                  ctx.focusHeading.rawValue)
+            guard enabled,
+                  let ctx = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext else { return }
+            let line = String(format: "UPDATE %@ -> %@ (heading %ld)",
+                              describe(ctx.previouslyFocusedItem), describe(ctx.nextFocusedItem),
+                              ctx.focusHeading.rawValue)
+            NSLog("[FocusTrace] %@", line)
+            PlayerProbe.event("focus", line)
         })
         tokens.append(center.addObserver(forName: UIFocusSystem.movementDidFailNotification,
                                          object: nil, queue: .main) { note in
-            guard let ctx = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext else { return }
-            NSLog("[FocusTrace] MOVE FAILED from %@ heading %ld",
-                  describe(ctx.previouslyFocusedItem), ctx.focusHeading.rawValue)
+            guard enabled,
+                  let ctx = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext else { return }
+            let line = String(format: "MOVE FAILED from %@ heading %ld",
+                              describe(ctx.previouslyFocusedItem), ctx.focusHeading.rawValue)
+            NSLog("[FocusTrace] %@", line)
+            PlayerProbe.event("focus", line)
         })
         NSLog("[FocusTrace] installed")
+        PlayerProbe.event("focus", "tracer installed")
     }
 
     private static func describe(_ item: UIFocusItem?) -> String {

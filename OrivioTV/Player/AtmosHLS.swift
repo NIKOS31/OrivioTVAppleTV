@@ -281,18 +281,27 @@ enum AtmosDec3 {
 ///
 /// The output muxer writes through a custom `AVIOContext`, so every byte it
 /// produces lands in `sink` instead of a file. `sink` splits the stream into
-/// the init segment and each `moof`+`mdat` pair.
+/// the init segment and each `moof`+`mdat` pair, and stamps each pair with the
+/// SOURCE time span it covers.
+///
+/// Paced by the playhead: the read loop stays at most `maxLead` seconds ahead
+/// of `playheadSeconds`. There used to be no pacing at all — the loop read the
+/// whole file as fast as the network allowed, holding every segment in memory,
+/// behind a 20-minute WALL-CLOCK stop. On a large 4K remux that could not be
+/// read through in 20 minutes the Atmos audio simply ended mid-film, and on a
+/// fast link the retained segments ran to hundreds of MB.
 final class AtmosAudioRemuxer {
-    /// (url, requestHeaders, startSeconds)
     private let inputURL: String
     private let headers: [String: String]?
     private let startAt: Double
     /// The FFmpeg audio stream index the player selected (-1 = first E-AC-3).
     private let preferredIndex: Int32
 
-    /// Called on the remux queue: the init segment, then each media segment.
+    /// Called on the remux queue: the init segment, then each media segment
+    /// with its SOURCE start time and duration in seconds.
     var onInit: ((Data) -> Void)?
-    var onSegment: ((Data) -> Void)?
+    var onSegment: ((Data, Double, Double) -> Void)?
+    /// A clean end of file. Not called after `cancel()` or an error.
     var onEnded: (() -> Void)?
     var onError: ((String) -> Void)?
 
@@ -300,11 +309,22 @@ final class AtmosAudioRemuxer {
     /// Set from `cancel()` on the CALLER's thread (the main actor), read by the
     /// loop in `run()` on `queue`. It must NOT go through `queue`: `run()` owns
     /// that serial queue for its whole lifetime, so an enqueued cancel block
-    /// could never execute — the download ran on to EOF (or the 20-minute
-    /// safety stop) against the raw CDN URL after playback had already ended,
-    /// saturating Wi-Fi and CPU while the viewer was back on Home. `@Atomic`
-    /// makes the flag cross the threads without the deadlock.
+    /// could never execute. `@Atomic` makes the flag cross the threads without
+    /// the deadlock.
     @Atomic private var cancelled = false
+
+    /// Where playback is, in SOURCE seconds. Written by the orchestrator on the
+    /// main actor, read by the read loop.
+    @Atomic var playheadSeconds: Double = 0
+
+    /// How far past the playhead the remux may read. Covers a forward skip of
+    /// this size without a restart, and bounds both memory and the second
+    /// download of the source this path costs.
+    static let maxLead: Double = 90
+
+    /// FFmpeg's `AVERROR_EOF` (a macro, so not imported): -MKTAG('E','O','F',' ').
+    /// Same value `DVSampleEngine` uses.
+    private static let averrorEOF: Int32 = -541_478_725
 
     init(inputURL: String, headers: [String: String]?, startAt: Double,
          preferredIndex: Int32 = -1) {
@@ -312,6 +332,7 @@ final class AtmosAudioRemuxer {
         self.headers = headers
         self.startAt = max(startAt, 0)
         self.preferredIndex = preferredIndex
+        playheadSeconds = self.startAt
     }
 
     func cancel() { cancelled = true }
@@ -329,10 +350,28 @@ final class AtmosAudioRemuxer {
         /// A top-level box that spans writes (rare) is carried here.
         var pending = Data()
         var onInit: ((Data) -> Void)?
-        var onSegment: ((Data) -> Void)?
+        var onSegment: ((Data, Double, Double) -> Void)?
         /// fMP4 segments are ~1-2s of E-AC-3 (tens of KB); cap the buffer so a
         /// malformed muxer can't grow it without bound.
         let maxBuffer = 8 * 1024 * 1024
+
+        /// Source-seconds start of the packet being handed to the muxer now.
+        /// The mov muxer cuts a fragment BEFORE adding the packet that crosses
+        /// `frag_duration`, so a segment emitted during that write ends
+        /// exactly where this packet starts.
+        private var packetSeconds: Double = 0
+        /// End of the last packet handed in: the close of the final fragment,
+        /// which only the trailer flushes.
+        private var lastPacketEnd: Double = 0
+        private var segmentStart: Double?
+        /// Set just before `av_write_trailer`.
+        var atTrailer = false
+
+        func notePacket(start: Double, end: Double) {
+            if segmentStart == nil { segmentStart = start }
+            packetSeconds = start
+            lastPacketEnd = max(lastPacketEnd, end)
+        }
 
         func append(_ bytes: UnsafePointer<UInt8>, count: Int) {
             pending.append(bytes, count: count)
@@ -341,6 +380,13 @@ final class AtmosAudioRemuxer {
 
         func append(_ bytes: UnsafeMutablePointer<UInt8>, count: Int) {
             append(UnsafePointer(bytes), count: count)
+        }
+
+        private func emitSegment() {
+            let end = atTrailer ? lastPacketEnd : packetSeconds
+            let start = segmentStart ?? end
+            onSegment?(buffer, start, max(end - start, 0.001))
+            segmentStart = end
         }
 
         /// Pull whole top-level boxes out of `pending`. `ftyp`+`moov` (the
@@ -366,8 +412,6 @@ final class AtmosAudioRemuxer {
                 if !initWritten {
                     // Everything up to the first `moof` is the init segment.
                     if type == Data("moof".utf8) {
-                        // The accumulated init is everything already emitted
-                        // minus this box; emit once.
                         initWritten = true
                         onInit?(buffer)
                         buffer.removeAll(keepingCapacity: true)
@@ -378,7 +422,7 @@ final class AtmosAudioRemuxer {
                 } else {
                     buffer.append(box)
                     if type == Data("mdat".utf8) {
-                        onSegment?(buffer)
+                        emitSegment()
                         buffer.removeAll(keepingCapacity: true)
                     }
                 }
@@ -392,7 +436,7 @@ final class AtmosAudioRemuxer {
 
     private func run() {
         var ictx: UnsafeMutablePointer<AVFormatContext>? = avformat_alloc_context()
-        guard let input = ictx else { onError?("alloc failed"); return }
+        guard ictx != nil else { onError?("alloc failed"); return }
         defer {
             if ictx != nil { avformat_close_input(&ictx) }
         }
@@ -408,7 +452,9 @@ final class AtmosAudioRemuxer {
         // remux thread inside `av_read_frame` indefinitely — no error, no
         // timeout, the worker leaked for the rest of the session. The engines
         // use the same 20s read bound; the reconnect ladder is capped too, or
-        // one hung read becomes minutes of 0/1/3/7/… retries.
+        // one hung read becomes minutes of 0/1/3/7/… retries. `reconnect` also
+        // covers the origin dropping the idle connection while the read loop
+        // waits on the playhead (a long pause).
         av_dict_set(&opts, "rw_timeout", "20000000", 0)
         av_dict_set(&opts, "reconnect", "1", 0)
         av_dict_set(&opts, "reconnect_delay_max", "5", 0)
@@ -483,8 +529,13 @@ final class AtmosAudioRemuxer {
                 self?.onInit?(data)
             }
         }
-        sink.onSegment = { [weak self] data in self?.onSegment?(data) }
+        sink.onSegment = { [weak self] data, start, duration in
+            self?.onSegment?(data, start, duration)
+        }
         let opaque = Unmanaged.passRetained(sink).toOpaque()
+        // Balanced on EVERY exit, the early returns below included (each of
+        // them used to leak the sink). Runs after the I/O context is freed.
+        defer { Unmanaged<Sink>.fromOpaque(opaque).release() }
         let writeCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<UInt8>?, Int32) -> Int32 = { opaque, buf, size in
             guard let opaque, let buf, size > 0 else { return 0 }
             let sink = Unmanaged<Sink>.fromOpaque(opaque).takeUnretainedValue()
@@ -495,8 +546,22 @@ final class AtmosAudioRemuxer {
             onError?("couldn't allocate IO buffer")
             return
         }
-        let ioBuffer = ioRaw.assumingMemoryBound(to: UInt8.self)
-        let avio = avio_alloc_context(ioBuffer, 64 * 1024, 1, opaque, nil, writeCallback, nil)
+        var avio = avio_alloc_context(ioRaw.assumingMemoryBound(to: UInt8.self), 64 * 1024, 1,
+                                      opaque, nil, writeCallback, nil)
+        guard avio != nil else {
+            av_free(ioRaw)
+            onError?("couldn't allocate IO context")
+            return
+        }
+        // With AVFMT_FLAG_CUSTOM_IO the context and its buffer are OURS —
+        // `avformat_free_context` never frees `pb`, so both leaked on every
+        // session. The buffer is read back off the context because avio may
+        // have replaced the one allocated above.
+        defer {
+            out.pointee.pb = nil
+            if let ctx = avio { av_free(ctx.pointee.buffer) }
+            avio_context_free(&avio)
+        }
         out.pointee.pb = avio
         out.pointee.flags |= AVFMT_FLAG_CUSTOM_IO
         // Fragment on a duration so audio (every packet a "keyframe") yields
@@ -527,40 +592,67 @@ final class AtmosAudioRemuxer {
             return
         }
 
-        // Seek to the resume point if asked.
+        // Seek to the start point if asked. By the DEFAULT stream (-1, in
+        // AV_TIME_BASE units), exactly as the sample engine seeks: Matroska's
+        // cues index the video track, and a seek keyed on an audio stream has
+        // no index of its own to use.
         if startAt > 1 {
             let ts = Int64(startAt * Double(AV_TIME_BASE))
-            let micros = AVRational(num: 1, den: AV_TIME_BASE)
-            _ = av_seek_frame(ictx, audioIndex, av_rescale_q(ts, micros, srcTB), AVSEEK_FLAG_BACKWARD)
+            _ = av_seek_frame(ictx, -1, ts, AVSEEK_FLAG_BACKWARD)
         }
 
         var packet = av_packet_alloc()
         defer { av_packet_free(&packet) }
-        let maxSegmentSeconds = 20 * 60.0   // safety stop, not a normal path
-        let wallStart = Date()
+        guard let pkt = packet else {
+            onError?("couldn't allocate packet")
+            return
+        }
+        let secondsPerTick = av_q2d(srcTB)
+        var lastPacketSeconds = -Double.infinity
+        var failure: String?
         while !cancelled {
-            if Date().timeIntervalSince(wallStart) > maxSegmentSeconds { break }
-            guard av_read_frame(ictx, packet) >= 0 else { break }
-            defer { av_packet_unref(packet) }
-            guard packet!.pointee.stream_index == audioIndex else { continue }
-            guard packet!.pointee.pts != Int64.min else { continue }
+            // Stay a bounded lead ahead of playback. Checked BEFORE the read so
+            // a long pause parks here, not inside a network read.
+            while !cancelled, lastPacketSeconds > playheadSeconds + Self.maxLead {
+                usleep(100_000)
+            }
+            if cancelled { break }
+            let status = av_read_frame(ictx, pkt)
+            if status < 0 {
+                // Only a real end of file is an end. Anything else (the
+                // reconnect ladder gave up, a timeout) is a failure: reported
+                // as an end, the audio would just stop with nothing to say why
+                // and nothing to hand the sound back to the engine.
+                if status != Self.averrorEOF { failure = "source read failed (\(status))" }
+                break
+            }
+            defer { av_packet_unref(pkt) }
+            guard pkt.pointee.stream_index == audioIndex else { continue }
+            guard pkt.pointee.pts != Int64.min else { continue }
+            if pkt.pointee.dts == Int64.min { pkt.pointee.dts = pkt.pointee.pts }
+            let start = Double(pkt.pointee.pts) * secondsPerTick
+            let end = start + Double(max(pkt.pointee.duration, 0)) * secondsPerTick
+            sink.notePacket(start: start, end: end)
+            lastPacketSeconds = start
             // Rescale into the output stream's timebase.
-            let pts = av_rescale_q(packet!.pointee.pts, srcTB, stream.pointee.time_base)
-            let dts = av_rescale_q(packet!.pointee.dts, srcTB, stream.pointee.time_base)
-            packet!.pointee.pts = pts
-            packet!.pointee.dts = dts
-            packet!.pointee.duration = av_rescale_q(packet!.pointee.duration, srcTB, stream.pointee.time_base)
-            packet!.pointee.stream_index = outIndex
-            if av_interleaved_write_frame(out, packet) < 0 {
-                onError?("write failed")
+            pkt.pointee.pts = av_rescale_q(pkt.pointee.pts, srcTB, stream.pointee.time_base)
+            pkt.pointee.dts = av_rescale_q(pkt.pointee.dts, srcTB, stream.pointee.time_base)
+            pkt.pointee.duration = av_rescale_q(pkt.pointee.duration, srcTB, stream.pointee.time_base)
+            pkt.pointee.stream_index = outIndex
+            if av_interleaved_write_frame(out, pkt) < 0 {
+                failure = "write failed"
                 break
             }
         }
+        if cancelled { return }
+        if let failure {
+            onError?(failure)
+            return
+        }
+        // Flushes the final fragment through the sink.
+        sink.atTrailer = true
         av_write_trailer(out)
-        // The sink retains a pending tail; flush anything left as a segment.
-        Unmanaged<Sink>.fromOpaque(opaque).release()
-        _ = avio
-        if !cancelled { onEnded?() }
+        onEnded?()
     }
 }
 
@@ -568,20 +660,47 @@ final class AtmosAudioRemuxer {
 
 /// Serves the remuxed playlist + init + segments over loopback HTTP. AVPlayer
 /// only accepts HLS over a network URL, never a local file.
+///
+/// The playlist is an EVENT playlist (append-only, the whole of it seekable)
+/// built on each request from the segment list, and closed with ENDLIST once
+/// the remux reaches the end of the file. Segment BODIES behind the playhead
+/// are dropped (`prune`), so memory stays bounded; the orchestrator never
+/// seeks the AVPlayer into a dropped range (it restarts the remux instead), and
+/// a request for one gets a 404 rather than an empty 200.
 final class AtmosHLSServer {
     private let queue = DispatchQueue(label: "orivio.atmos.server")
     private var listener: NWListener?
     /// Written on `queue` by the listener's state handler, read on the main
-    /// actor by `AtmosPassthrough.startPlayerIfNeeded` — worth the lock rather
-    /// than a cross-thread `UInt16` race.
+    /// actor by `AtmosPassthrough` — worth the lock rather than a cross-thread
+    /// `UInt16` race.
     @Atomic private(set) var port: UInt16 = 0
 
-    /// path → body. Replaced per session.
-    private var files: [String: Data] = [:]
-    private var playlist = ""
-    private var segments: [(name: String, seconds: Double)] = []
+    private struct Segment {
+        let name: String
+        let start: Double
+        let duration: Double
+    }
 
-    var isRunning: Bool { listener != nil }
+    // All below: `queue` only.
+    private var initSegment: Data?
+    private var files: [String: Data] = [:]
+    private var segments: [Segment] = []
+    /// Index of the oldest segment whose body is still held.
+    private var firstRetained = 0
+    private var longestSegment: Double = 0
+    private var ended = false
+
+    /// What is on offer, in SOURCE seconds.
+    struct Window {
+        /// Source time of the first segment — the AVPlayer timeline's zero.
+        let origin: Double
+        /// Start of the oldest segment still held.
+        let retainedStart: Double
+        /// End of the newest segment.
+        let end: Double
+        /// The remux reached the end of the file.
+        let ended: Bool
+    }
 
     func start() -> Bool {
         guard listener == nil else { return true }
@@ -611,77 +730,100 @@ final class AtmosHLSServer {
     func stop() {
         listener?.cancel()
         listener = nil
+        port = 0
         queue.sync {
+            initSegment = nil
             files.removeAll()
             segments.removeAll()
-            playlist = ""
+            firstRetained = 0
+            longestSegment = 0
+            ended = false
         }
     }
 
-    func reset(playlist: String) {
-        queue.sync {
-            files.removeAll()
-            segments.removeAll()
-            self.playlist = playlist
-        }
+    func setInit(_ data: Data) {
+        queue.sync { initSegment = data }
     }
 
-    func addSegment(name: String, data: Data, seconds: Double) {
+    func addSegment(_ data: Data, start: Double, duration: Double) {
         queue.sync {
+            let name = "seg\(segments.count).m4s"
+            segments.append(Segment(name: name, start: start, duration: duration))
             files[name] = data
-            segments.append((name, seconds))
+            longestSegment = max(longestSegment, duration)
         }
     }
 
-    func updatePlaylist() {
+    func markEnded() {
+        queue.sync { ended = true }
+    }
+
+    /// Drop the bodies of segments that end before `seconds`. The newest
+    /// segment is always kept.
+    func prune(before seconds: Double) {
         queue.sync {
-            var lines = ["#EXTM3U", "#EXT-X-VERSION:7",
-                         "#EXT-X-TARGETDURATION:\(Int(ceil(segments.map(\.seconds).max() ?? 2)))",
-                         "#EXT-X-MEDIA-SEQUENCE:0",
-                         "#EXT-X-MAP:URI=\"init.mp4\""]
-            for s in segments {
-                lines.append(String(format: "#EXTINF:%.3f,", s.seconds))
-                lines.append(s.name)
+            while firstRetained < segments.count - 1 {
+                let s = segments[firstRetained]
+                guard s.start + s.duration < seconds else { break }
+                files[s.name] = nil
+                firstRetained += 1
             }
-            // The playlist is rewritten as segments arrive; without ENDLIST
-            // AVPlayer treats it as live and keeps polling (which is what we
-            // want until the remux finishes).
-            playlist = lines.joined(separator: "\n") + "\n"
         }
     }
 
-    /// Replace the whole file set (used when a session restarts).
-    func replaceAll(playlist: String, files: [String: Data], order: [(String, Double)]) {
+    /// nil until the init segment and at least one media segment exist.
+    func window() -> Window? {
         queue.sync {
-            self.files = files
-            self.segments = order
-            self.playlist = playlist
+            guard initSegment != nil, let first = segments.first, let last = segments.last
+            else { return nil }
+            return Window(origin: first.start, retainedStart: segments[firstRetained].start,
+                          end: last.start + last.duration, ended: ended)
         }
+    }
+
+    /// `queue` only.
+    private func playlistText() -> String {
+        // Every EXTINF, rounded, must be ≤ the target duration. Fragments are
+        // cut at 2 s, so 3 covers them with room; a longer one (a gap in the
+        // source's audio) raises it rather than break the rule.
+        let target = max(3, Int(longestSegment.rounded(.up)))
+        var lines = ["#EXTM3U", "#EXT-X-VERSION:7",
+                     "#EXT-X-TARGETDURATION:\(target)",
+                     "#EXT-X-PLAYLIST-TYPE:EVENT",
+                     "#EXT-X-MEDIA-SEQUENCE:0",
+                     "#EXT-X-MAP:URI=\"init.mp4\""]
+        lines.reserveCapacity(lines.count + segments.count * 2 + 1)
+        for s in segments {
+            lines.append(String(format: "#EXTINF:%.6f,", s.duration))
+            lines.append(s.name)
+        }
+        if ended { lines.append("#EXT-X-ENDLIST") }
+        return lines.joined(separator: "\n") + "\n"
     }
 
     private func respond(to path: String, on connection: NWConnection) {
-        let name = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        var name = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        if let query = name.firstIndex(of: "?") { name = String(name[..<query]) }
         queue.async { [weak self] in
-            guard let self else { return }
-            let body: Data
+            guard let self else { connection.cancel(); return }
+            let body: Data?
             let type: String
             if name == "playlist.m3u8" || name.isEmpty {
-                body = Data(self.playlist.utf8)
+                body = Data(self.playlistText().utf8)
                 type = "application/vnd.apple.mpegurl"
             } else if name == "init.mp4" {
-                body = self.files["init.mp4"] ?? Data()
+                body = self.initSegment
                 type = "video/mp4"
-            } else if let data = self.files[name] {
-                body = data
-                type = "video/iso.segment"
             } else {
-                body = Data()
-                type = "application/octet-stream"
+                body = self.files[name]
+                type = "video/iso.segment"
             }
-            let head = "HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\n"
-                + "Content-Length: \(body.count)\r\nCache-Control: no-store\r\n"
+            let status = body == nil ? "404 Not Found" : "200 OK"
+            let payload = body ?? Data()
+            let head = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\n"
+                + "Content-Length: \(payload.count)\r\nCache-Control: no-store\r\n"
                 + "Connection: close\r\n\r\n"
-            connection.send(content: Data(head.utf8) + body,
+            connection.send(content: Data(head.utf8) + payload,
                             completion: .contentProcessed { _ in connection.cancel() })
         }
     }
@@ -689,92 +831,193 @@ final class AtmosHLSServer {
 
 // MARK: - Orchestrator
 
-/// Ties the three pieces together for one playback: remux the source's E-AC-3
-/// into the loopback HLS server and play it with an `AVPlayer`.
+/// Ties the pieces together for one remux: the source's E-AC-3 remuxed into
+/// the loopback HLS server and played by an `AVPlayer`.
 ///
-/// `currentTime` is in SOURCE seconds (the AVPlayer's 0-based timeline plus the
-/// remux start offset), which is the same axis the video engine's clock runs
-/// on — so the caller can align the two.
+/// This type does not decide WHEN to play. The caller drives it from the video
+/// clock (`PlayerViewModel.atmosTick`): `resume(at:)` whenever the picture is
+/// running and the audio is not, `pause()` whenever the picture stops. So pause,
+/// buffering, seeks and play all converge on one rule — audio follows the
+/// picture — instead of each needing its own forwarding.
+///
+/// All times are SOURCE seconds, the axis the video engine's clock runs on.
 @MainActor
 final class AtmosPassthrough {
+    enum ResumeResult {
+        /// Working on it: waiting for audio, for the player, or for a seek.
+        case pending
+        /// The target is outside what this remux holds or can reach soon —
+        /// start a fresh one there.
+        case outOfRange
+        /// The target is past the end of the file's audio.
+        case finished
+    }
+
     private let server = AtmosHLSServer()
     private var remuxer: AtmosAudioRemuxer?
     private var player: AVPlayer?
-    private(set) var startAt: Double = 0
-    /// Fired once the AVPlayer exists and the playlist has its first segment.
-    var onReady: (() -> Void)?
-    var onError: ((String) -> Void)?
+    private var statusObservation: NSKeyValueObservation?
+    private var controlObservation: NSKeyValueObservation?
+    private var seeking = false
+    private var wantsPlay = false
+    private var stopped = false
 
-    var isActive: Bool { player != nil }
-    var playerForSync: AVPlayer? { player }
+    /// The FFmpeg stream index this remux was asked for.
+    private(set) var trackIndex: Int32 = -1
+    /// The AVPlayer has produced sound at least once.
+    private(set) var hasPlayed = false
+    /// When the AVPlayer last started producing sound; nil while it isn't.
+    private(set) var audibleSince: Date?
+
+    /// A failure this session cannot recover from. Main actor.
+    var onError: ((String) -> Void)?
+    /// The AVPlayer started or stopped producing sound. Main actor.
+    var onAudibleChange: ((Bool) -> Void)?
+
+    /// Remuxed audio needed past the target before the AVPlayer is built, so
+    /// it does not open against a playlist it immediately plays off the end of.
+    private static let playerLead: Double = 6
+    /// How far past the remuxed end a target may be and still be waited for.
+    /// Further than this (a forward seek) the remux would have to read its way
+    /// there, so a fresh one is cheaper.
+    private static let waitAheadLimit: Double = 10
+    /// Segment bodies kept behind the playhead, for short backward seeks.
+    private static let keepBehind: Double = 30
 
     func start(inputURL: String, headers: [String: String]?, startAt: Double,
                trackIndex: Int32 = -1) {
-        self.startAt = max(startAt, 0)
-        guard server.start() else { onError?("hls server failed"); return }
-        server.replaceAll(
-            playlist: "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MAP:URI=\"init.mp4\"\n",
-            files: [:], order: []
-        )
+        self.trackIndex = trackIndex
+        guard server.start() else { fail("hls server failed"); return }
+        // The remux queue writes straight into the server (which is locked by
+        // its own queue), so segments land in the order they are cut.
+        let server = self.server
         let remuxer = AtmosAudioRemuxer(inputURL: inputURL, headers: headers,
-                                        startAt: self.startAt, preferredIndex: trackIndex)
-        self.remuxer = remuxer
-        var segmentIndex = 0
-        remuxer.onInit = { [weak self] data in
-            Task { @MainActor in self?.server.addSegment(name: "init.mp4", data: data, seconds: 0) }
+                                        startAt: startAt, preferredIndex: trackIndex)
+        remuxer.onInit = { data in server.setInit(data) }
+        remuxer.onSegment = { data, start, duration in
+            server.addSegment(data, start: start, duration: duration)
         }
-        remuxer.onSegment = { [weak self] data in
-            Task { @MainActor in
-                guard let self else { return }
-                let name = "seg\(segmentIndex).m4s"
-                segmentIndex += 1
-                self.server.addSegment(name: name, data: data, seconds: 2.0)
-                self.server.updatePlaylist()
-                self.startPlayerIfNeeded()
+        remuxer.onEnded = { server.markEnded() }
+        remuxer.onError = { [weak self] message in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.fail(message) }
             }
         }
-        remuxer.onError = { [weak self] message in
-            Task { @MainActor in self?.onError?(message) }
-        }
+        self.remuxer = remuxer
         remuxer.start()
     }
 
-    private func startPlayerIfNeeded() {
-        guard player == nil, server.port != 0 else { return }
-        guard let url = URL(string: "http://127.0.0.1:\(server.port)/playlist.m3u8") else { return }
-        let player = AVPlayer(url: url)
-        player.automaticallyWaitsToMinimizeStalling = false
-        self.player = player
-        onReady?()
+    var isAudible: Bool { player?.timeControlStatus == .playing }
+
+    /// Where the AVPlayer is, in source seconds; nil before it exists.
+    var currentTime: Double? {
+        guard let player, let w = server.window() else { return nil }
+        let t = CMTimeGetSeconds(player.currentTime())
+        guard t.isFinite else { return nil }
+        return w.origin + t
     }
 
-    func play() { player?.play() }
-    func pause() { player?.pause() }
-
-    /// Seek on the SOURCE axis; the AVPlayer is 0-based from `startAt`.
-    func seek(to sourceSeconds: Double) {
-        let relative = max(sourceSeconds - startAt, 0)
-        player?.seek(to: CMTime(seconds: relative, preferredTimescale: 600),
-                     toleranceBefore: .zero, toleranceAfter: .zero)
+    /// Feed the picture's position: paces the remux and drops old segments.
+    func noteVideoPlayhead(_ source: Double) {
+        guard !stopped, source.isFinite else { return }
+        remuxer?.playheadSeconds = source
+        let audio = currentTime ?? source
+        server.prune(before: min(source, audio) - Self.keepBehind)
     }
 
-    /// Source-seconds position, aligned with the video clock's axis.
-    var currentTime: Double {
-        guard let player else { return startAt }
-        return startAt + CMTimeGetSeconds(player.currentTime())
+    /// Get the audio playing at `source`. Idempotent: call it every tick the
+    /// picture is running and the audio is not.
+    func resume(at source: Double) -> ResumeResult {
+        guard !stopped, source.isFinite, let w = server.window() else { return .pending }
+        if source < w.retainedStart - 0.5 { return .outOfRange }
+        if w.ended, source >= w.end - 0.25 { return .finished }
+        if !w.ended, source > w.end + Self.waitAheadLimit { return .outOfRange }
+        wantsPlay = true
+        if player == nil {
+            guard server.port != 0, w.ended || w.end >= source + Self.playerLead else { return .pending }
+            makePlayer()
+        }
+        guard let player, player.currentItem?.status == .readyToPlay else { return .pending }
+        // Already asked to play and getting there, or mid-seek: leave it. A
+        // stall is the caller's watchdog's to judge.
+        guard player.rate == 0, !seeking else { return .pending }
+        // A little audio past the target, or the AVPlayer plays off the end.
+        if !w.ended, source > w.end - 2 { return .pending }
+        seeking = true
+        let relative = max(source - w.origin, 0)
+        player.seek(to: CMTime(seconds: relative, preferredTimescale: 90_000),
+                    toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.seeking = false
+                    guard finished, self.wantsPlay, !self.stopped else { return }
+                    self.player?.playImmediately(atRate: 1)
+                }
+            }
+        }
+        return .pending
     }
 
-    var rate: Float {
-        get { player?.rate ?? 0 }
-        set { player?.rate = newValue }
+    func pause() {
+        wantsPlay = false
+        player?.pause()
     }
 
     func stop() {
+        stopped = true
+        statusObservation?.invalidate()
+        statusObservation = nil
+        controlObservation?.invalidate()
+        controlObservation = nil
         remuxer?.cancel()
         remuxer = nil
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         player = nil
         server.stop()
+        // The callbacks close over the player model; drop them with the session.
+        onError = nil
+        onAudibleChange = nil
+    }
+
+    private func makePlayer() {
+        guard let url = URL(string: "http://127.0.0.1:\(server.port)/playlist.m3u8") else { return }
+        let item = AVPlayerItem(url: url)
+        let player = AVPlayer(playerItem: item)
+        player.automaticallyWaitsToMinimizeStalling = false
+        // A failed item used to go unnoticed: the engine was already muted, so
+        // the film played on in silence while the sync pinned the picture to a
+        // clock that never moved.
+        statusObservation = item.observe(\.status) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            let message = item.error?.localizedDescription ?? "the audio stream failed to load"
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.fail(message) }
+            }
+        }
+        controlObservation = player.observe(\.timeControlStatus) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.controlStatusChanged() }
+            }
+        }
+        self.player = player
+    }
+
+    private func controlStatusChanged() {
+        guard !stopped else { return }
+        let audible = isAudible
+        if audible {
+            hasPlayed = true
+            if audibleSince == nil { audibleSince = Date() }
+        } else {
+            audibleSince = nil
+        }
+        onAudibleChange?(audible)
+    }
+
+    private func fail(_ message: String) {
+        guard !stopped else { return }
+        onError?(message)
     }
 }

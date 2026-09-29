@@ -127,7 +127,7 @@ targets:
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "3"
         # Tracks the Android APK release this port mirrors (v0.7.15-beta).
-        MARKETING_VERSION: "9"
+        MARKETING_VERSION: "0.11"
         CURRENT_PROJECT_VERSION: "1"
         # The sanitize script below writes into the built .app, so user
         # script sandboxing must be off or the phase is denied file access.
@@ -173,6 +173,13 @@ targets:
           # carry `com.orivio.tv.appletv` (scripts/make-ipa.sh swaps it in
           # after the build), so a Debug run still installs alongside them —
           # two icons, separate data — exactly as before.
+          #
+          # 2026-09-26: `.dev` lapsed too — no profile left on this Mac and
+          # Apple answers "not available" for it, so device runs died at
+          # signing again. Debug now has an id of its own, Top Shelf below
+          # following it. Release keeps `.dev`: the Sideload IPA ships it
+          # as built and existing installs are keyed on it.
+          PRODUCT_BUNDLE_IDENTIFIER: com.prestonhakanson.orivio.tv
           CODE_SIGN_ENTITLEMENTS: Config/OrivioTV-Debug.entitlements
     preBuildScripts:
       # FFmpegKit (pulled in transitively by KSPlayer) ships
@@ -265,7 +272,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "3"
-        MARKETING_VERSION: "9"
+        MARKETING_VERSION: "0.11"
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_ENTITLEMENTS: OrivioTopShelf/OrivioTopShelf.entitlements
       configs:
@@ -273,6 +280,8 @@ targets:
           # Follows the app, which no longer overrides its id either — so this
           # is `com.orivio.tv.appletv.dev.topshelf`, which IS registered. See
           # the app target's Debug note for why that matters.
+          # Must mirror the app's Debug id (see the app target's note).
+          PRODUCT_BUNDLE_IDENTIFIER: com.prestonhakanson.orivio.tv.topshelf
           CODE_SIGN_ENTITLEMENTS: OrivioTopShelf/OrivioTopShelf-Debug.entitlements
   # UI-test target: drives the tvOS remote (XCUIRemote) to verify focus/menu
   # behavior, which osascript keystroke automation can't do. Simulator only.

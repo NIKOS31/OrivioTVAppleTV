@@ -1071,6 +1071,8 @@ final class HeroFocus: ObservableObject {
     }
 
     func focus(_ newItem: MetaItem, progress newProgress: WatchProgress? = nil) {
+        AppProbe.focus("home card focus \(newItem.id) \"\(newItem.name)\""
+                       + " layout=\(layout) browsed=\(browsedIntoContent)")
         // Browsing cards counts as interaction — pause spotlight rotation.
         lastInteraction = Date()
         // THE HYBRID HAND-OFF, and it happens BEFORE the gate below so the very
@@ -1295,6 +1297,7 @@ struct HomeView: View {
             isVisible = true
             hero.layout = homeCatalogSettings.heroLayout
             hero.onBrowseStateChange = { browsing in
+                AppProbe.focus("home handoff browsedIntoContent=\(browsing)")
                 // DEFERRED BY ONE TURN, and that is the whole fix for "the
                 // first time I go down, the hero doesn't pin".
                 //
@@ -1329,6 +1332,7 @@ struct HomeView: View {
         // clears the handoff, so arriving in Hybrid from Pinned Focus starts
         // on the roll instead of inheriting a browse that already happened.
         .onChange(of: homeCatalogSettings.heroLayout) { _, mode in
+            AppProbe.focus("home heroLayout=\(mode)")
             hero.layout = mode
             hero.resetBrowseHandoff()
         }
@@ -1345,6 +1349,8 @@ struct HomeView: View {
             // `heroButtonFocused` stale-false and the first Left/Right press
             // after it was swallowed by the stepper's guard.
             hero.heroButtonFocused = focused
+            AppProbe.focus("home heroPlayFocused=\(focused) pinned=\(hybridPinned)"
+                           + " browsed=\(hero.browsedIntoContent)")
             if focused {
                 hero.markInteraction()
                 // The hero is somewhere the viewer can BE: leaving the rail
@@ -1354,6 +1360,7 @@ struct HomeView: View {
                 heroLostFocusAt = Date()
             }
             guard focused, hybridPinned else { return }
+            AppProbe.focus("home hero UNPIN via strip (focused & pinned)")
             hero.resetBrowseHandoff()
         }
         .onReceive(spotlightTick) { _ in
@@ -1477,6 +1484,18 @@ struct HomeView: View {
                     .focusable()
                     .focused($heroPlayFocused)
             }
+            // Clear the rail's lane. The strip exists to catch an UP press out
+            // of the first row, but full-width it reached all the way to x=0 —
+            // so a LEFT move out of the RAIL (which sits at the leading edge)
+            // found it as a candidate, landed on it, and its focus runs
+            // `resetBrowseHandoff()` (unpinning the hero and removing the
+            // strip). That re-resolved focus and the two fought: the rail
+            // opened and bounced, the rows scrolled, the screen went black.
+            // Insetting the leading edge to the content's own rail clearance
+            // keeps the strip above the first row (its only intended entry)
+            // while taking it out of the rail's path. 100 matches the rows'
+            // own `RailClearingLeading(withRail: 100)`.
+            .padding(.leading, 100)
             .focusSection()
         }
     }
@@ -1512,6 +1531,8 @@ struct HomeView: View {
     /// `onChange`) and after the live load, whichever happens first.
     private func seedHero(_ item: MetaItem?) {
         guard let item else { return }
+        AppProbe.focus("home seedHero \(item.id) force=\(forceHeroReseed)"
+                       + " pinned=\(heroIsPinned) didSeedFocus=\(didSeedHeroFocus)")
         // `hero.item == nil` is the normal one-shot seed. After a SOURCE change
         // the model republishes a recomputed `initialHero` while the old
         // source's title is still up, so allow one forced reseed. Never while
@@ -1632,9 +1653,11 @@ struct HomeView: View {
                 // hero, which is the only one that lands on the first row.
                 // Focus arriving from somewhere else must keep its own scroll.
                 .onChange(of: heroIsPinned) { _, pinned in
+                    AppProbe.focus("home heroIsPinned=\(pinned) (layout=\(homeCatalogSettings.heroLayout))")
                     guard pinned, homeCatalogSettings.heroLayout == .hybrid,
                           let left = heroLostFocusAt,
                           Date().timeIntervalSince(left) < 1 else { return }
+                    AppProbe.focus("home scroll repair → rowsTop")
                     proxy.scrollTo(Self.rowsTopID, anchor: .top)
                 }
                 }
@@ -1927,6 +1950,9 @@ struct HomeView: View {
             progressHash ^= item.id.hashValue &+ Int(item.positionSeconds)
         }
         for show in progressStore.dismissedNextUpShows { dismissedHash ^= show.hashValue }
+        // Dropped on Trakt frees a Next Up slot for another show, which only a
+        // re-run can fill.
+        for show in trakt.droppedShowIDs { dismissedHash ^= show.hashValue &* 31 }
         // Day bucket: an episode "becomes available" on its air DATE, which is
         // invisible to every store. Without this the row only recomputed when
         // something else changed, so a new episode that aired while the app sat
@@ -1951,6 +1977,7 @@ struct HomeView: View {
         let additions = nextUpContinueItems.filter {
             !activeMetaIDs.contains($0.metaID)
                 && !progressStore.dismissedNextUpShows.contains($0.metaID)
+                && !trakt.droppedShowIDs.contains($0.metaID)
         }
         // Synthesised Next Up rows already carry their count; stamp the ones
         // with a real progress row here. Doing it on the row (rather than
@@ -2064,7 +2091,12 @@ struct HomeView: View {
             // Removed from Continue Watching means removed, including the
             // synthesised suggestion that would otherwise replace the card.
             .filter { !progressStore.dismissedNextUpShows.contains($0.contentID) }
-            .prefix(20)
+            // Dropped on Trakt ("Stop watching"): official Nuvio keeps these
+            // out of Next Up too. The set holds every id form of each show.
+            .filter { !trakt.droppedShowIDs.contains($0.contentID) }
+            // 32 shows, official Nuvio's `CW_MAX_NEXT_UP_LOOKUPS`. Fetched
+            // bounded-concurrent below, so this costs time, not a burst.
+            .prefix(32)
             .map { NextUpTarget(contentID: $0.contentID, contentType: $0.contentType,
                                 lastWatchedAt: $0.watchedAt, wantsCard: true) }
 

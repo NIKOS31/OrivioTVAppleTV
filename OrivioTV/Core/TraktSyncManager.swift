@@ -188,6 +188,9 @@ final class TraktSyncManager: ObservableObject {
         if trakt.syncWatchHistory {
             let n = await syncWatchHistory(token: token, profile: profile)
             parts.append("\(n) history")
+            // Next Up is built from this history, so the dropped list rides
+            // the same switch.
+            await refreshDroppedShows(token: token, profile: profile)
         }
         if trakt.syncPlayback {
             let n = await pullPlayback(token: token, profile: profile)
@@ -212,7 +215,9 @@ final class TraktSyncManager: ObservableObject {
     /// Two-way watch history. Pull Trakt → add missing locally; push local
     /// items Trakt doesn't have. Returns the count pulled.
     private func syncWatchHistory(token: String, profile: Int) async -> Int {
-        let remote = await TraktService.watchedHistory(accessToken: token)
+        // nil = the fetch FAILED. Skip the phase rather than treat an outage as
+        // an empty history, which would push every local row to Trakt.
+        guard let remote = await TraktService.watchedHistory(accessToken: token) else { return 0 }
         guard profileStillActive(profile) else { return 0 }
         let clearedAt = WatchHistoryClearState.clearedAt
         // The transform is O(remote × local) value work — struct building,
@@ -224,9 +229,10 @@ final class TraktSyncManager: ObservableObject {
         // adds is one Trakt already has, so it is excluded by `remoteKeys`
         // either way.
         let localRows = watched.allForSync()
-        let (remoteItems, pushable) = await Task.detached(
+        let (remoteItems, pushable, aliases) = await Task.detached(
             priority: .utility
-        ) { [self] () -> ([WatchedItem], [TraktService.SyncItem]) in
+        ) { [self] () -> ([WatchedItem], [TraktService.SyncItem],
+                         (series: [String: [String]], movies: [String: [String]])) in
             let remoteItems = remote.compactMap(watchedItem(from:)).filter { item in
                 guard let clearedAt else { return true }
                 return item.watchedAt > clearedAt
@@ -240,9 +246,12 @@ final class TraktSyncManager: ObservableObject {
             })
             let pushable = localRows.filter { !remoteKeys.contains($0.key) }
                 .compactMap(syncItem(from:))
-            return (remoteItems, pushable)
+            let aliases = (series: Self.idAliases(remote, type: "series"),
+                           movies: Self.idAliases(remote, type: "movie"))
+            return (remoteItems, pushable, aliases)
         }.value
         guard profileStillActive(profile) else { return 0 }
+        watched.setIDAliases(series: aliases.series, movies: aliases.movies)
         // Add Trakt items missing locally (additive — never delete local
         // history from a partial Trakt response). Anything new goes on to the
         // Orivio account as well.
@@ -253,6 +262,42 @@ final class TraktSyncManager: ObservableObject {
             _ = await TraktService.addToHistory(pushable, accessToken: token)
         }
         return remoteItems.count
+    }
+
+    /// id → the other ids of the same title, from one kind of Trakt's watched
+    /// rows. Official Nuvio's rule (`getWatchedShowSeedsSnapshot`): an id that
+    /// appears on MORE than one Trakt title is ambiguous — an anthology whose
+    /// seasons Trakt splits into separate shows under one IMDb id — and is left
+    /// out entirely, so one show's episodes can't be credited to another.
+    private nonisolated static func idAliases(
+        _ remote: [TraktService.SyncItem], type: String
+    ) -> [String: [String]] {
+        // One group per Trakt title; an episode row repeats its show's ids.
+        var groups = Set<[String]>()
+        for s in remote where s.type == type {
+            var forms: [String] = []
+            if let imdb = s.imdb, imdb.hasPrefix("tt") { forms.append(imdb) }
+            if let tmdb = s.tmdb { forms.append("tmdb:\(tmdb)") }
+            if let trakt = s.trakt { forms.append("trakt:\(trakt)") }
+            if forms.count > 1 { groups.insert(forms) }
+        }
+        var titlesPerID: [String: Int] = [:]
+        for group in groups { for id in group { titlesPerID[id, default: 0] += 1 } }
+        var out: [String: [String]] = [:]
+        for group in groups {
+            let unambiguous = group.filter { titlesPerID[$0] == 1 }
+            guard unambiguous.count > 1 else { continue }
+            for id in unambiguous { out[id] = unambiguous.filter { $0 != id } }
+        }
+        return out
+    }
+
+    /// Refresh the shows this account dropped on Trakt, which Home keeps out
+    /// of Next Up. A failed fetch keeps the previous set.
+    private func refreshDroppedShows(token: String, profile: Int) async {
+        guard let ids = await TraktService.droppedShowIDs(accessToken: token),
+              profileStillActive(profile) else { return }
+        trakt.setDroppedShowIDs(ids)
     }
 
     /// Pull Trakt playback progress into Continue Watching (additive), enriched
@@ -474,7 +519,8 @@ final class TraktSyncManager: ObservableObject {
     /// Two-way watchlist ↔ Library. Pull Trakt → add missing to Library
     /// (enriched); push local-only Library items to the watchlist.
     private func syncWatchlist(token: String, profile: Int) async -> Int {
-        let remote = await TraktService.watchlist(accessToken: token)
+        // nil = the fetch failed; see syncWatchHistory.
+        guard let remote = await TraktService.watchlist(accessToken: token) else { return 0 }
         guard profileStillActive(profile) else { return 0 }
         let missing: [(item: TraktService.SyncItem, id: String)] = remote.compactMap { s in
             guard let id = localID(from: s), !library.contains(id: id, type: s.type) else { return nil }

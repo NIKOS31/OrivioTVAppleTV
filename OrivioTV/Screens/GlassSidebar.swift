@@ -61,6 +61,24 @@ struct GlassSidebar: View {
     /// 28..112pt — the safe inset (~90) covers most of it.
     static let collapsedWidth: CGFloat = 60
     static let expandedWidth: CGFloat = 240
+
+    /// Transparent leading extension added to every rail item's focus frame.
+    ///
+    /// The rail is an OVERLAY, so the content's focus region runs UNDERNEATH it.
+    /// The content's leading-edge focus filler (a `UIKitFocusableFillerItem` at
+    /// x≈0, the vertical scroll's own region) is therefore a valid LEFT
+    /// candidate from a rail item — the engine steps onto it, the panel
+    /// collapses (it expands only while `sidebarFocus != nil`), the rows scroll,
+    /// and on the pinned-Hybrid pin/unpin swap the screen blanks. Extending each
+    /// item's focus frame to the screen edge leaves LEFT with no candidate, so
+    /// the press is swallowed exactly like a LEFT at the content's own edge.
+    ///
+    /// The gutter is TRANSPARENT and sits inside the button (its content is
+    /// pushed back by the same amount via the container's negative leading
+    /// padding), so nothing moves and nothing is drawn — only the focus frame
+    /// grows. Up/Down are unaffected: the gutter is part of each item, not a
+    /// separate item the engine can land on.
+    private static let focusGuard: CGFloat = 40
     /// Clearance a tab gives the TOP bar, applied as SAFE-AREA padding rather
     /// than plain padding.
     ///
@@ -145,11 +163,14 @@ struct GlassSidebar: View {
             if expanded {
                 Button(action: onProfileTap) {
                     GlassProfileHeader(profile: profiles.active)
+                        // Transparent focus extension — see `focusGuard`.
+                        .padding(.leading, Self.focusGuard)
                 }
                 .buttonStyle(PlainCardButtonStyle())
                 .focused(focusBinding, equals: -1)
                 .transition(.opacity)
-                .padding(.horizontal, OrivioSpacing.sm)
+                .padding(.leading, OrivioSpacing.sm - Self.focusGuard)
+                .padding(.trailing, OrivioSpacing.sm)
                 .padding(.bottom, 14)
             }
 
@@ -166,12 +187,27 @@ struct GlassSidebar: View {
                     } label: {
                         GlassItemLabel(tab: tab, selected: selected == tab.rawValue,
                                        expanded: expanded, horizontal: false)
+                            // Transparent focus extension — see `focusGuard`.
+                            .padding(.leading, Self.focusGuard)
                     }
                     .buttonStyle(PlainCardButtonStyle())
                     .focused(focusBinding, equals: tab.rawValue)
+                    // COLLAPSED, only the current tab can take focus, so a Left
+                    // press or a swipe from any card enters the rail ON the tab
+                    // you're on. With every icon focusable the engine picked
+                    // the one geometrically nearest the card, and the snap to
+                    // the current tab below then moved focus a second time —
+                    // the jump on every entry, all the way to the top when the
+                    // current tab is Home. Never disables the focused item:
+                    // collapsed means nothing in the rail holds focus, and the
+                    // others unlock the moment it opens.
+                    .disabled(!expanded && tab.rawValue != selected)
                 }
             }
-            .padding(.horizontal, expanded ? OrivioSpacing.sm : 12)
+            // Negative leading cancels the transparent extension inside each
+            // button, so the visible items stay exactly where they were.
+            .padding(.leading, (expanded ? OrivioSpacing.sm : 12) - Self.focusGuard)
+            .padding(.trailing, expanded ? OrivioSpacing.sm : 12)
             // Entering the sidebar lands on the tab you're on, not a stale row.
             .defaultFocus(focusBinding, selected)
             .padding(.vertical, expanded ? 0 : 20)
@@ -196,7 +232,8 @@ struct GlassSidebar: View {
         .animation(PerformanceSettingsStore.shared.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: expanded)
         // On ENTRY (collapsed → expanded), snap focus to the current tab —
-        // tvOS otherwise lands on the geometrically nearest row.
+        // tvOS otherwise lands on the geometrically nearest row. A backstop
+        // now: collapsed, the current tab is the only candidate.
         .onChange(of: expanded) { _, isExpanded in
             if isExpanded && focusBinding.wrappedValue != selected {
                 focusBinding.wrappedValue = selected

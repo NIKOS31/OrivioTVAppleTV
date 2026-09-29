@@ -458,6 +458,47 @@ struct MetaItem: Codable, Identifiable, Hashable {
         return copy
     }
 
+    /// This title under another id, every other field carried over.
+    func withID(_ newID: String) -> MetaItem {
+        MetaItem(id: newID, type: type, name: name, poster: poster, background: background,
+                 logo: logo, description: description, releaseInfo: releaseInfo,
+                 imdbRating: imdbRating, runtime: runtime, genres: genres, cast: cast,
+                 videos: videos, posterFallback: posterFallback)
+    }
+
+    /// The show behind an add-on's synthesised "Up Next" id, or nil when `id`
+    /// is not one.
+    ///
+    /// AIOMetadata's up-next catalogs (SIMKL, MDBList, PublicMetaDB, Trakt)
+    /// name each row `<prefix><show>_<episode>` — `simkl_upnext_tt0903747_S3E7`
+    /// — so the row can open on that one episode. The id means nothing to any
+    /// other store or add-on, and it goes stale as soon as the next episode is
+    /// the one up. Mirrors the add-on's own `extractCanonicalIdFromDynamicUpNextId`
+    /// (addon/utils/metaIds.ts): the same prefixes, and the same strict shapes
+    /// for both halves, so an ordinary id is never mistaken for one.
+    static func upNextShowID(from id: String) -> String? {
+        let prefixes = ["mdblist_upnext_", "simkl_upnext_", "pmdb_resume_", "upnext_"]
+        guard let prefix = prefixes.first(where: { id.hasPrefix($0) }) else { return nil }
+        let remainder = id.dropFirst(prefix.count)
+        guard let separator = remainder.lastIndex(of: "_"),
+              separator > remainder.startIndex else { return nil }
+        let show = remainder[..<separator]
+        let episode = remainder[remainder.index(after: separator)...]
+        func digits(_ s: Substring) -> Bool {
+            !s.isEmpty && s.allSatisfy { $0.isASCII && $0.isNumber }
+        }
+        let showOK = (show.hasPrefix("tt") && digits(show.dropFirst(2)))
+            || (show.hasPrefix("tmdb:") && digits(show.dropFirst(5)))
+            || (show.hasPrefix("tvdb:") && digits(show.dropFirst(5)))
+        var episodeOK = episode == "unknown"
+            || (episode.hasPrefix("trakt") && digits(episode.dropFirst(5)))
+        if !episodeOK, episode.hasPrefix("S") {
+            let parts = episode.dropFirst().split(separator: "E", omittingEmptySubsequences: false)
+            episodeOK = parts.count == 2 && digits(parts[0]) && digits(parts[1])
+        }
+        return showOK && episodeOK ? String(show) : nil
+    }
+
     var year: String? {
         guard let releaseInfo, !releaseInfo.isEmpty else { return nil }
         return String(releaseInfo.prefix(4))
@@ -894,6 +935,13 @@ struct Stream: Codable, Hashable {
         ) != nil
     }
 
+    /// The add-on says outright that the debrid service doesn't have this
+    /// file yet ("[TB download]", a ⏳, Comet's ⬇️). Such a link resolves, but
+    /// to a "still downloading" notice clip rather than the title.
+    var isMarkedUncached: Bool {
+        isUncachedMarked("\(name ?? "") \(title ?? "") \(description ?? "")".lowercased())
+    }
+
     private static let uncachedRegex = try? NSRegularExpression(
         pattern: #"\b(?:rd|ad|pm|tb|dl|oc|pk|torbox|debrid)\b[\s\-\]]*download|download\]|uncached|not cached"#,
         options: [.caseInsensitive]
@@ -902,6 +950,10 @@ struct Stream: Codable, Hashable {
         if lower.contains("uncached") { return true }
         let raw = "\(name ?? "") \(title ?? "") \(description ?? "")"
         if raw.contains("⏳") || raw.contains("⌛") || raw.contains("⏬") { return true }
+        // Comet's "[TB⬇️]" (U+2B07, usually followed by a variation selector,
+        // so matched by scalar): not on the debrid service yet — picking it
+        // plays a "still downloading" notice clip, never the title.
+        if raw.unicodeScalars.contains(where: { $0.value == 0x2B07 }) { return true }
         guard let regex = Self.uncachedRegex else { return false }
         return regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)) != nil
     }

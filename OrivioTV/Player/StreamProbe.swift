@@ -109,8 +109,29 @@ enum StreamProbe {
         av_dict_set(&opts, "reconnect_delay_max", String(max(1, Int(timeoutSeconds))), 0)
 
         defer { av_dict_free(&opts) }
+
+        // A WALL CLOCK on reading the header. `rw_timeout` bounds each read,
+        // not the probe: a link that trickles a few bytes per interval, or a
+        // proxy that answers every reconnect late, kept "3 seconds" going for
+        // 18.8 s and 19.5 s on the device (2026-09-26) while the viewer
+        // stared at a spinner — and every caller already treats a probe that
+        // gives up as "use the normal path". A few seconds of slack over the
+        // read timeout, so a healthy-but-slow header still lands.
+        let deadline = ProbeDeadline(at: CFAbsoluteTimeGetCurrent() + timeoutSeconds + 3)
+        ctx = avformat_alloc_context()
+        var interrupt = AVIOInterruptCB()
+        interrupt.opaque = Unmanaged.passUnretained(deadline).toOpaque()
+        interrupt.callback = { opaque -> Int32 in
+            guard let opaque else { return 0 }
+            return Unmanaged<ProbeDeadline>.fromOpaque(opaque).takeUnretainedValue().passed ? 1 : 0
+        }
+        ctx?.pointee.interrupt_callback = interrupt
         guard avformat_open_input(&ctx, url, nil, &opts) == 0, let ctx else { return result }
-        defer { var c: UnsafeMutablePointer<AVFormatContext>? = ctx; avformat_close_input(&c) }
+        defer {
+            var c: UnsafeMutablePointer<AVFormatContext>? = ctx
+            avformat_close_input(&c)
+            withExtendedLifetime(deadline) {}
+        }
 
         // Bound the probe the same way the playback path does (PlayerViewModel
         // sets probesize/maxAnalyzeDuration). This runs on a SECOND connection
@@ -122,6 +143,8 @@ enum StreamProbe {
         ctx.pointee.probesize = 2 << 20              // 2 MB
         ctx.pointee.max_analyze_duration = 1_000_000 // 1s (microseconds)
         guard avformat_find_stream_info(ctx, nil) >= 0 else { return result }
+        // The header is in. The HDR10+ packet scan below keeps its own budget.
+        deadline.lift()
 
         var videoIndex: Int32 = -1
         var isPQ = false
@@ -281,5 +304,19 @@ enum StreamProbe {
             }
         }
         return false
+    }
+}
+
+/// Wall-clock deadline polled by FFmpeg's interrupt callback (any thread).
+private final class ProbeDeadline: @unchecked Sendable {
+    private let lock = NSLock()
+    private var at: CFAbsoluteTime
+    init(at: CFAbsoluteTime) { self.at = at }
+    var passed: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return CFAbsoluteTimeGetCurrent() > at
+    }
+    func lift() {
+        lock.lock(); at = .infinity; lock.unlock()
     }
 }

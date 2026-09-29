@@ -50,12 +50,18 @@ final class ContentFocusRouter {
     /// row is mounted (another tab, a pushed screen, an unrouted row) — the
     /// caller then falls back to letting the engine choose.
     func focusLastRowStart() -> Bool {
-        guard let id = lastRowID, let handler = handlers[id] else {
+        focusRowStart(lastRowID)
+    }
+
+    /// `focusLastRowStart` for a row recorded earlier — the rail's Right exit
+    /// reads the row before the engine's own landing can note another one.
+    func focusRowStart(_ rowID: String?) -> Bool {
+        guard let id = rowID, let handler = handlers[id] else {
             // The fallback that historically dropped focus on the wrong card:
             // worth seeing every time it happens, with the reason.
             AppProbe.focus("hand-off DECLINED — "
-                           + (lastRowID == nil ? "no row has held focus"
-                                               : "row \(lastRowID!) is not mounted")
+                           + (rowID == nil ? "no row has held focus"
+                                           : "row \(rowID!) is not mounted")
                            + "; the engine will pick")
             return false
         }

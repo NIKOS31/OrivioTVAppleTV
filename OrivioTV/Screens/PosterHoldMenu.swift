@@ -10,6 +10,34 @@ import SwiftUI
 // menu there use the flat card style instead (see `mediaCardButtonStyle`). The
 // parallax stays on the browse cards; only the Continue Watching row opts out.
 
+// MARK: - Menu that only rebuilds when it would read differently
+
+/// A `.contextMenu` that SwiftUI rebuilds only when `key` changes.
+///
+/// A context menu's items are re-evaluated whenever the view carrying it
+/// re-renders — and if that happens while the menu is OPEN, tvOS reloads its
+/// rows under the viewer: the white focus highlight drops out for ~200ms and
+/// comes back (measured in the sim, frame by frame). The menus here observe
+/// whole stores (library, watched, progress), so any change anywhere in them —
+/// a sync pull landing, another title's progress — re-rendered every visible
+/// card's menu. That was the "flicker in the white of the focus".
+///
+/// `key` must cover everything the menu SHOWS and every value its actions
+/// capture, because a skipped rebuild keeps the previous closures. Used
+/// through a ViewModifier, `content` is the modifier's proxy, so the card
+/// itself keeps updating normally; only the menu is held.
+struct StableContextMenu<Content: View, MenuItems: View>: View, Equatable {
+    let content: Content
+    let key: String
+    @ViewBuilder let menuItems: () -> MenuItems
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.key == rhs.key }
+
+    var body: some View {
+        content.contextMenu(menuItems: menuItems)
+    }
+}
+
 // MARK: - Poster hold menu (Details / Library / Watched)
 
 struct PosterHoldMenu: ViewModifier {
@@ -19,14 +47,18 @@ struct PosterHoldMenu: ViewModifier {
     let onDetails: () -> Void
 
     func body(content: Content) -> some View {
-        content.contextMenu {
+        // Read here, so the menu below rebuilds only when THIS title's answers
+        // change (see StableContextMenu).
+        let inLibrary = library.contains(item)
+        let isWatched = !item.isSeries && watched.isWatched(item)
+        StableContextMenu(content: content, key: "\(item.id)|\(inLibrary)|\(isWatched)") {
             // tvOS only evaluates this closure when it is about to PRESENT the
             // menu, so reaching this line proves the hold was accepted.
             let _ = HoldProbe.log("MENU BUILT — poster \(item.name)")
             Button { onDetails() } label: { Label("Go to Details", systemImage: "info.circle") }
             Button { library.toggle(item) } label: {
-                Label(library.contains(item) ? "Remove from Library" : "Add to Library",
-                      systemImage: library.contains(item) ? "bookmark.slash" : "bookmark")
+                Label(inLibrary ? "Remove from Library" : "Add to Library",
+                      systemImage: inLibrary ? "bookmark.slash" : "bookmark")
             }
             // Movies only. `WatchedStore.isWatched(_ meta:)` is hard-false for a
             // series, so on a show poster this read "Mark as Watched" forever,
@@ -34,11 +66,12 @@ struct PosterHoldMenu: ViewModifier {
             // reads — a dead toggle. Series watched state lives per episode.
             if !item.isSeries {
                 Button { watched.toggleMovie(item) } label: {
-                    Label(watched.isWatched(item) ? "Mark as Unwatched" : "Mark as Watched",
-                          systemImage: watched.isWatched(item) ? "eye.slash" : "checkmark.circle")
+                    Label(isWatched ? "Mark as Unwatched" : "Mark as Watched",
+                          systemImage: isWatched ? "eye.slash" : "checkmark.circle")
                 }
             }
         }
+        .equatable()
     }
 }
 
@@ -167,7 +200,10 @@ struct ContinueHoldMenu: ViewModifier {
     private var isEpisode: Bool { isSeriesType && episodeCoordinates != nil }
 
     func body(content: Content) -> some View {
-        content.contextMenu {
+        // The stores are only used by the actions, never to build the items —
+        // so the row is the whole key (see StableContextMenu).
+        StableContextMenu(content: content,
+                          key: "\(progress.id)|\(progress.metaID)|\(progress.type)|\(isEpisode)") {
             let _ = HoldProbe.log("MENU BUILT — CW \(progress.name)")
             Button { onPlayManually() } label: { Label("Play Manually", systemImage: "list.and.film") }
             Button { onDetails() } label: { Label("Go to Details", systemImage: "info.circle") }
@@ -188,6 +224,7 @@ struct ContinueHoldMenu: ViewModifier {
                 Label("Remove from Continue Watching", systemImage: "xmark")
             }
         }
+        .equatable()
     }
 
     /// Mark ONLY this episode watched through the same progress/watch-history

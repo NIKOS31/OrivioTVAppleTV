@@ -143,6 +143,15 @@ final class DetailViewModel: ObservableObject {
             if !(full.videos ?? []).isEmpty { best = full; break }
         }
         if let best { meta = best }
+        // An add-on "Up Next" row (`simkl_upnext_tt0903747_S3E7`, see
+        // `MetaItem.upNextShowID`) is fetched under its own id above — that is
+        // what makes it open on its one next episode — but kept under that id,
+        // everything played from here saved progress and watched history
+        // against an id no other store or stream add-on knows, and resuming it
+        // from Continue Watching found nothing. Same meta, the show's real id.
+        if let showID = MetaItem.upNextShowID(from: meta.id) {
+            meta = meta.withID(showID)
+        }
         // Still no episodes: TMDB knows the structure of essentially every
         // series, and an episode list from there is far better than a detail
         // page that can't be played.
@@ -281,30 +290,49 @@ private extension View {
     /// Adds the hold-Select menu to the Play button ONLY while an auto-select
     /// feature is armed (Play Manually / Play in Infuse); with both off, Play
     /// already opens the source list, so there is no menu at all.
+    ///
+    /// `key` names what the actions capture (the episode Play would start):
+    /// the page observes every store, so without it each publish rebuilt this
+    /// menu while open — see `StableContextMenu`.
     @ViewBuilder
     func playManuallyMenu(enabled: Bool,
+                          key: String,
                           action: @escaping () -> Void,
                           infuse: (() -> Void)? = nil) -> some View {
         if enabled {
-            contextMenu {
-                // Marks that tvOS actually asked for this menu's content, so a
-                // "hold does nothing" report can be split into "the press
-                // never became a long-press" vs "the menu built and failed to
-                // present" without guessing. Costs nothing when the hold probe
-                // is off.
-                let _ = HoldProbe.log("MENU BUILT — detail Play")
-                Button(action: action) {
-                    Label("Play Manually", systemImage: "list.and.film")
-                }
-                if let infuse {
-                    Button(action: infuse) {
-                        Label("Play in Infuse", systemImage: "arrow.up.forward.app.fill")
-                    }
-                }
-            }
+            modifier(PlayManuallyMenu(key: key, action: action, infuse: infuse))
         } else {
             self
         }
+    }
+}
+
+/// A modifier, not a plain wrapper: inside `StableContextMenu` its `content`
+/// is the modifier's proxy, so the Play button itself keeps updating (its
+/// title changes when episodes load) while only the menu is held.
+private struct PlayManuallyMenu: ViewModifier {
+    let key: String
+    let action: () -> Void
+    let infuse: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        StableContextMenu(content: content, key: key + (infuse == nil ? "" : "|infuse")) {
+            // Marks that tvOS actually asked for this menu's content, so a
+            // "hold does nothing" report can be split into "the press
+            // never became a long-press" vs "the menu built and failed to
+            // present" without guessing. Costs nothing when the hold probe
+            // is off.
+            let _ = HoldProbe.log("MENU BUILT — detail Play")
+            Button(action: action) {
+                Label("Play Manually", systemImage: "list.and.film")
+            }
+            if let infuse {
+                Button(action: infuse) {
+                    Label("Play in Infuse", systemImage: "arrow.up.forward.app.fill")
+                }
+            }
+        }
+        .equatable()
     }
 }
 
@@ -329,13 +357,16 @@ struct DetailView: View {
     /// Resolve the auto-picked link and hand it to Infuse (hold-Play).
     var onPlayInInfuse: (MetaItem, MetaVideo?) -> Void = { _, _ in }
     let onPlayFromBeginning: (MetaItem, MetaVideo?) -> Void
+    /// Shuffle (the dice, shows only): play this random episode, then keep
+    /// going on random episodes with no source list.
+    var onShuffle: (MetaItem, MetaVideo) -> Void = { _, _ in }
     var onSelectItem: (MetaItem) -> Void = { _ in }
     var onSelectPerson: (Int, String) -> Void = { _, _ in }
     var onSelectCompany: (Int, String) -> Void = { _, _ in }
     @State private var activeTrailer: TMDBService.Trailer?
     /// The action row's controls, for the enter-lands-on-Play redirect.
     private enum ActionControl: Hashable {
-        case play, startOver, library, watched, rate, trailer
+        case play, startOver, library, watched, rate, trailer, shuffle
     }
     /// Entering the action row from ANY direction lands on the Play button:
     /// when focus arrives on any other control while the row didn't previously
@@ -399,6 +430,7 @@ struct DetailView: View {
         onPlayManually: @escaping (MetaItem, MetaVideo?) -> Void = { _, _ in },
         onPlayInInfuse: @escaping (MetaItem, MetaVideo?) -> Void = { _, _ in },
         onPlayFromBeginning: @escaping (MetaItem, MetaVideo?) -> Void = { _, _ in },
+        onShuffle: @escaping (MetaItem, MetaVideo) -> Void = { _, _ in },
         onSelectItem: @escaping (MetaItem) -> Void = { _ in },
         onSelectPerson: @escaping (Int, String) -> Void = { _, _ in },
         onSelectCompany: @escaping (Int, String) -> Void = { _, _ in }
@@ -407,6 +439,7 @@ struct DetailView: View {
         self.onPlay = onPlay
         self.onPlayManually = onPlayManually
         self.onPlayInInfuse = onPlayInInfuse
+        self.onShuffle = onShuffle
         self.onPlayFromBeginning = onPlayFromBeginning
         self.onSelectItem = onSelectItem
         self.onSelectPerson = onSelectPerson
@@ -938,6 +971,7 @@ struct DetailView: View {
                     // manually instead of auto-playing the best match.
                     .playManuallyMenu(
                         enabled: autoLinkOn,
+                        key: target?.id ?? "pending",
                         action: {
                             if let target { onPlayManually(viewModel.meta, target) }
                             else { pendingSeriesPlay = .manual }
@@ -962,6 +996,7 @@ struct DetailView: View {
                     .focused($actionFocus, equals: .play)
                     .playManuallyMenu(
                         enabled: autoLinkOn,
+                        key: viewModel.meta.id,
                         action: { onPlayManually(viewModel.meta, nil) },
                         infuse: { onPlayInInfuse(viewModel.meta, nil) }
                     )
@@ -1016,6 +1051,20 @@ struct DetailView: View {
                         activeTrailer = trailer
                     }
                     .focused($actionFocus, equals: .trailer)
+                }
+                if viewModel.meta.isSeries {
+                    // Shuffle: a random aired episode from the whole show.
+                    // Last in the row so nothing already here moves.
+                    CircleIconButton(systemName: "dice", active: false) {
+                        let pool = viewModel.allEpisodesInPlayOrder
+                            .filter { ($0.season ?? 0) > 0 && $0.hasAired }
+                        guard let episode = pool.randomElement() else {
+                            ToastCenter.shared.show("Episodes are still loading", icon: "dice")
+                            return
+                        }
+                        onShuffle(viewModel.meta, episode)
+                    }
+                    .focused($actionFocus, equals: .shuffle)
                 }
                 }
                 .focusSection()
@@ -1254,6 +1303,7 @@ struct DetailView: View {
                                 imageURL: episode.thumbnail ?? extra?.still
                                     ?? viewModel.meta.background ?? viewModel.meta.poster,
                                 title: episodeTitle(episode),
+                                airDateText: DateFormat.airDate(extra?.airDate ?? episode.released),
                                 subtitle: episodeSubtitle(episode, extra: extra),
                                 progress: progressStore.progress(for: episode.id)?.fraction,
                                 isWatched: watched.isWatched(
@@ -1326,15 +1376,16 @@ struct DetailView: View {
         }
     }
 
-    /// Episode caption: the overview if present, otherwise the localized air
-    /// date. An episode that has not aired yet leads with when it WILL — the
-    /// overview is written for the episode, not for the wait.
+    /// Episode caption: the overview. An episode that has not aired yet leads
+    /// with when it WILL — the overview is written for the episode, not for
+    /// the wait. The air date has its own line under the title
+    /// (`EpisodeCell.airDateText`), so it is no longer the fallback here.
     private func episodeSubtitle(_ episode: MetaVideo, extra: TMDBService.EpisodeExtra?) -> String? {
         let air = episode.airCountdownText
         if let overview = episode.overview, !overview.isEmpty {
             return air.map { "\($0) · \(overview)" } ?? overview
         }
-        return air ?? DateFormat.releaseDate(extra?.airDate ?? episode.released)
+        return air
     }
 
     /// Aired episodes in this season the viewer has not watched.
@@ -1509,6 +1560,8 @@ private struct InertButtonStyle: ButtonStyle {
 private struct EpisodeCell: View {
     let imageURL: String?
     let title: String
+    /// Original air date, "Jan 6, 2025" — its own line under the title.
+    var airDateText: String?
     var subtitle: String?
     var progress: Double?
     var isWatched: Bool
@@ -1574,6 +1627,7 @@ private struct EpisodeCell: View {
 
             LandscapeCardCaption(
                 title: title,
+                dateLine: airDateText,
                 subtitle: subtitle,
                 detailLine: detailLine,
                 width: Self.cardWidth,

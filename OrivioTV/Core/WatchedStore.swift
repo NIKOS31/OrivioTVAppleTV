@@ -86,6 +86,9 @@ final class WatchedStore: ObservableObject {
         loadGeneration &+= 1   // invalidate any in-flight load; see clearAll
         suppressChange = true
         items = [:]
+        // Learned from the previous profile's Trakt history.
+        seriesAliases = [:]
+        movieAliases = [:]
         tombstones = tombstonesByProfile[id] ?? [:]
         load()   // also re-reads this profile's removal record
         suppressChange = false
@@ -130,7 +133,36 @@ final class WatchedStore: ObservableObject {
     // MARK: - Queries
 
     func isWatched(contentID: String, season: Int? = nil, episode: Int? = nil) -> Bool {
-        items[WatchedItem.key(contentID: contentID, season: season, episode: episode)] != nil
+        if items[WatchedItem.key(contentID: contentID, season: season, episode: episode)] != nil { return true }
+        // The same title under its other ids: Trakt history is stored under
+        // the imdb id, but an add-on may open the show as `tmdb:1399`.
+        let aliases = (season != nil && episode != nil ? seriesAliases : movieAliases)[contentID] ?? []
+        return aliases.contains {
+            items[WatchedItem.key(contentID: $0, season: season, episode: episode)] != nil
+        }
+    }
+
+    // MARK: - Id aliases
+
+    /// id → the other ids of the same title (imdb ↔ `tmdb:` ↔ `trakt:`), per
+    /// kind, learned from Trakt's watched lists. Official Nuvio keeps the same
+    /// sibling map (`TraktProgressService.showIdSiblingsMap`) so a watched badge
+    /// matches whichever id the catalog or add-on uses.
+    ///
+    /// Read-side only: rows stay keyed by the id they were written under, so
+    /// nothing is duplicated into the store or pushed anywhere. Separate maps
+    /// because TMDB numbers movies and shows independently — `tmdb:1399` is
+    /// one title as a movie and another as a show. Not persisted; the next
+    /// Trakt sync rebuilds it.
+    private var seriesAliases: [String: [String]] = [:]
+    private var movieAliases: [String: [String]] = [:]
+
+    func setIDAliases(series: [String: [String]], movies: [String: [String]]) {
+        guard series != seriesAliases || movies != movieAliases else { return }
+        seriesAliases = series
+        movieAliases = movies
+        // Answers from `isWatched` just changed without `items` changing.
+        objectWillChange.send()
     }
 
     /// Movie-level watched check.

@@ -33,6 +33,14 @@ final class TraktStore: ObservableObject {
     }
     /// Last full-sync outcome, shown in Settings → Trakt.
     @Published private(set) var lastSyncStatus: String?
+    /// Shows this account dropped on Trakt (every id form), kept out of
+    /// Continue Watching's Next Up. In memory only: the next sync refetches it,
+    /// and it belongs to whichever login is loaded, so every account change
+    /// below empties it.
+    @Published private(set) var droppedShowIDs: Set<String> = []
+    func setDroppedShowIDs(_ ids: Set<String>) {
+        if ids != droppedShowIDs { droppedShowIDs = ids }
+    }
     /// Fired when a Trakt sync-related setting changes, so the manager can react.
     var onTraktSettingChange: (() -> Void)?
     /// Fired when the user confirms clearing Trakt's continue-watching list.
@@ -236,6 +244,7 @@ final class TraktStore: ObservableObject {
             refreshToken = nil
         }
         lastSyncStatus = nil
+        droppedShowIDs = []
     }
 
     var isSignedIn: Bool { accessToken != nil }
@@ -270,6 +279,7 @@ final class TraktStore: ObservableObject {
         UserDefaults.standard.removeObject(forKey: scopedTokenKey)
         UserDefaults.standard.removeObject(forKey: scopedUserKey)
         signedInHere = false
+        droppedShowIDs = []
         if !applyingRemote { onLocalChange?() }
     }
 
@@ -500,6 +510,9 @@ enum TraktService {
     struct SyncItem: Hashable {
         var imdb: String? = nil
         var tmdb: Int? = nil
+        /// Trakt's own numeric id. Only read for `WatchedStore`'s id aliases —
+        /// never sent (`traktIDs` posts imdb/tmdb).
+        var trakt: Int? = nil
         var type: String        // "movie" | "series"
         var title: String
         var season: Int? = nil
@@ -522,22 +535,41 @@ enum TraktService {
         return iso.date(from: s) ?? ISO8601DateFormatter().date(from: s)
     }
 
-    private struct TraktIDs: Decodable { let imdb: String?; let tmdb: Int? }
+    private struct TraktIDs: Decodable { let imdb: String?; let tmdb: Int?; let trakt: Int? }
     private struct TraktMedia: Decodable { let title: String?; let ids: TraktIDs? }
 
     /// Full watched history (movies + shows/episodes), for the two-way merge.
-    static func watchedHistory(accessToken: String) async -> [SyncItem] {
+    ///
+    /// Trakt changed `/sync/watched` under us, in two ways, and each one broke
+    /// the import on its own (checked against the live API, 2026-09-28):
+    ///
+    /// * **Shows come back WITHOUT their episodes** unless `extended=progress`
+    ///   is asked for. Every row was just a show and a play count, so this
+    ///   imported ZERO episodes: nothing on a detail page was marked watched,
+    ///   Home had no watched shows to build Next Up cards from (Continue
+    ///   Watching was only Trakt's handful of paused titles), and the push
+    ///   below saw every local episode as "missing on Trakt" on every sync.
+    /// * **Both lists are paginated, 100 rows by default.** An unpaged request
+    ///   silently got the first 100 shows/movies.
+    ///
+    /// Official Nuvio made the same move (`TraktProgressService`:
+    /// `extended=progress`, 250 per page, follow `X-Pagination-Page-Count`).
+    ///
+    /// Returns nil if ANY page fails. A partial history is worse than none
+    /// here: the caller pushes every local row the remote list lacks, so a
+    /// missing page would be re-added to Trakt as new plays.
+    static func watchedHistory(accessToken: String) async -> [SyncItem]? {
         var out: [SyncItem] = []
 
         struct WatchedMovie: Decodable { let last_watched_at: String?; let movie: TraktMedia? }
-        if let (data, code) = await get("/sync/watched/movies", accessToken), code == 200,
-           let rows = try? JSONDecoder().decode([WatchedMovie].self, from: data) {
-            for r in rows where r.movie != nil {
-                out.append(SyncItem(
-                    imdb: r.movie?.ids?.imdb, tmdb: r.movie?.ids?.tmdb, type: "movie",
-                    title: r.movie?.title ?? "", season: nil, episode: nil,
-                    progress: nil, watchedAt: parseDate(r.last_watched_at)))
-            }
+        guard let movies: [WatchedMovie] = await getAllPages(
+            "/sync/watched/movies", accessToken, limit: watchedPageLimit
+        ) else { return nil }
+        for r in movies where r.movie != nil {
+            out.append(SyncItem(
+                imdb: r.movie?.ids?.imdb, tmdb: r.movie?.ids?.tmdb, trakt: r.movie?.ids?.trakt,
+                type: "movie", title: r.movie?.title ?? "", season: nil, episode: nil,
+                progress: nil, watchedAt: parseDate(r.last_watched_at)))
         }
 
         struct WatchedShow: Decodable {
@@ -545,22 +577,85 @@ enum TraktService {
             struct E: Decodable { let number: Int?; let last_watched_at: String? }
             let show: TraktMedia?; let seasons: [S]?
         }
-        if let (data, code) = await get("/sync/watched/shows", accessToken), code == 200,
-           let rows = try? JSONDecoder().decode([WatchedShow].self, from: data) {
-            for r in rows {
-                guard let show = r.show else { continue }
-                for s in r.seasons ?? [] {
-                    for e in s.episodes ?? [] {
-                        guard let sn = s.number, let en = e.number else { continue }
-                        out.append(SyncItem(
-                            imdb: show.ids?.imdb, tmdb: show.ids?.tmdb, type: "series",
-                            title: show.title ?? "", season: sn, episode: en,
-                            progress: nil, watchedAt: parseDate(e.last_watched_at)))
-                    }
+        guard let shows: [WatchedShow] = await getAllPages(
+            "/sync/watched/shows", accessToken, extraQuery: "extended=progress", limit: watchedPageLimit
+        ) else { return nil }
+        for r in shows {
+            guard let show = r.show else { continue }
+            for s in r.seasons ?? [] {
+                for e in s.episodes ?? [] {
+                    guard let sn = s.number, let en = e.number else { continue }
+                    out.append(SyncItem(
+                        imdb: show.ids?.imdb, tmdb: show.ids?.tmdb, trakt: show.ids?.trakt,
+                        type: "series", title: show.title ?? "", season: sn, episode: en,
+                        progress: nil, watchedAt: parseDate(e.last_watched_at)))
                 }
             }
         }
         return out
+    }
+
+    /// Page size for `/sync/watched/*`, as official Nuvio uses. Trakt itself
+    /// caps `extended=progress` pages at 100 (measured: it answers limit=250
+    /// with 100-row pages and a matching page count), which `getAllPages`
+    /// follows either way.
+    private static let watchedPageLimit = 250
+
+    /// Every id form of the shows the viewer DROPPED on Trakt ("Stop watching"
+    /// / hidden from progress): imdb, `tmdb:` and `trakt:`. Official Nuvio reads
+    /// the same list (`TraktProgressService.fetchHiddenProgressShowIds`,
+    /// `users/hidden/dropped?type=show`) and keeps those shows out of Continue
+    /// Watching's Next Up. nil = the fetch failed; keep the previous set.
+    static func droppedShowIDs(accessToken: String) async -> Set<String>? {
+        struct Row: Decodable { let show: TraktMedia? }
+        guard let rows: [Row] = await getAllPages(
+            "/users/hidden/dropped", accessToken, extraQuery: "type=show", limit: 1_000
+        ) else { return nil }
+        var out = Set<String>()
+        for row in rows {
+            guard let ids = row.show?.ids else { continue }
+            if let imdb = ids.imdb, imdb.hasPrefix("tt") { out.insert(imdb) }
+            if let tmdb = ids.tmdb { out.insert("tmdb:\(tmdb)") }
+            if let trakt = ids.trakt { out.insert("trakt:\(trakt)") }
+        }
+        return out
+    }
+
+    /// Every page of a paginated Trakt list, decoded and concatenated in order.
+    ///
+    /// Follows `X-Pagination-Page-Count`; a response without it is a single
+    /// page (the endpoint isn't paginated). Returns nil on ANY failure —
+    /// network, HTTP status, decode, or running past `maxPages` — never a
+    /// partial list, because every caller treats "absent from Trakt" as
+    /// "needs pushing to Trakt".
+    private static func getAllPages<Row: Decodable>(
+        _ path: String, _ token: String, extraQuery: String? = nil,
+        limit: Int, maxPages: Int = 1_000
+    ) async -> [Row]? {
+        var out: [Row] = []
+        for page in 1...maxPages {
+            let query = [extraQuery, "page=\(page)", "limit=\(limit)"]
+                .compactMap { $0 }.joined(separator: "&")
+            guard let req = request("\(path)?\(query)", bearer: token),
+                  let (data, response) = try? await session.data(for: req),
+                  let http = response as? HTTPURLResponse else {
+                NSLog("[OrivioTrakt] GET %@ page %d — network error", path, page)
+                return nil
+            }
+            guard http.statusCode == 200 else {
+                NSLog("[OrivioTrakt] GET %@ page %d → HTTP %d", path, page, http.statusCode)
+                return nil
+            }
+            guard let rows = try? JSONDecoder().decode([Row].self, from: data) else {
+                NSLog("[OrivioTrakt] GET %@ page %d — undecodable response", path, page)
+                return nil
+            }
+            out.append(contentsOf: rows)
+            let pageCount = http.value(forHTTPHeaderField: "X-Pagination-Page-Count").flatMap { Int($0) } ?? 1
+            if rows.isEmpty || page >= pageCount { return out }
+        }
+        NSLog("[OrivioTrakt] GET %@ — more than %d pages, giving up", path, maxPages)
+        return nil
     }
 
     /// In-progress playback (Continue Watching) for movies + episodes.
@@ -678,23 +773,26 @@ enum TraktService {
     // MARK: Watchlist
 
     /// Trakt watchlist (movies + shows), title-level.
-    static func watchlist(accessToken: String) async -> [SyncItem] {
+    ///
+    /// Paginated like `/sync/watched` (100 rows by default), so an unpaged
+    /// request saw only the first 100 of each. Page size 1000, as official
+    /// Nuvio uses (`TraktApi.getWatchlist`). nil if any page fails, for the
+    /// same reason as `watchedHistory`: the caller pushes whatever the remote
+    /// list lacks.
+    static func watchlist(accessToken: String) async -> [SyncItem]? {
         var out: [SyncItem] = []
         struct MovieRow: Decodable { let movie: TraktMedia? }
         struct ShowRow: Decodable { let show: TraktMedia? }
-        if let (data, code) = await get("/sync/watchlist/movies", accessToken), code == 200,
-           let rows = try? JSONDecoder().decode([MovieRow].self, from: data) {
-            for r in rows where r.movie != nil {
-                out.append(SyncItem(imdb: r.movie?.ids?.imdb, tmdb: r.movie?.ids?.tmdb,
-                                    type: "movie", title: r.movie?.title ?? ""))
-            }
+        guard let movies: [MovieRow] = await getAllPages("/sync/watchlist/movies", accessToken, limit: 1_000),
+              let shows: [ShowRow] = await getAllPages("/sync/watchlist/shows", accessToken, limit: 1_000)
+        else { return nil }
+        for r in movies where r.movie != nil {
+            out.append(SyncItem(imdb: r.movie?.ids?.imdb, tmdb: r.movie?.ids?.tmdb,
+                                type: "movie", title: r.movie?.title ?? ""))
         }
-        if let (data, code) = await get("/sync/watchlist/shows", accessToken), code == 200,
-           let rows = try? JSONDecoder().decode([ShowRow].self, from: data) {
-            for r in rows where r.show != nil {
-                out.append(SyncItem(imdb: r.show?.ids?.imdb, tmdb: r.show?.ids?.tmdb,
-                                    type: "series", title: r.show?.title ?? ""))
-            }
+        for r in shows where r.show != nil {
+            out.append(SyncItem(imdb: r.show?.ids?.imdb, tmdb: r.show?.ids?.tmdb,
+                                type: "series", title: r.show?.title ?? ""))
         }
         return out
     }

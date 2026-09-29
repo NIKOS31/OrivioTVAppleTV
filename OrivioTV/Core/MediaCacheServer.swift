@@ -59,6 +59,25 @@ final class MediaCacheServer {
     // MARK: Session state (queue-confined)
 
     private var origin: URL?
+    /// Where `origin` actually led: the final URL of the first good response
+    /// after redirects. Every later worker and side fetch goes STRAIGHT here.
+    ///
+    /// A debrid add-on's link (Comet, Torrentio, Jackettio…) is a resolver,
+    /// not the file: each hit asks the add-on to look the file up with the
+    /// debrid service and answer with a redirect to its CDN. Every chunk this
+    /// pool fetches used to be a fresh request to that resolver — hundreds of
+    /// lookups per film, several at once. Measured 2026-09-26 against the
+    /// TorBox CDN one resolver hop away: a single resolve 3.5 s, four parallel
+    /// ones 4–7 s plus one parked for 31 s and then sent to ElfHosted's
+    /// notice-video host; four ranges straight at the resolved CDN URL
+    /// 2.4–8 MB/s EACH. On the box it read as "origin sent no length within
+    /// 12s" on nearly every load, then direct playback that froze.
+    ///
+    /// Cleared when the CDN refuses it (the signed URL expired or was
+    /// revoked) so the next request re-resolves through `origin` once.
+    private var resolvedOrigin: URL?
+    /// The URL a new origin request should go to.
+    fileprivate var fetchURL: URL? { resolvedOrigin ?? origin }
     /// Addon-declared request headers (Referer/User-Agent/Cookie/…) for the
     /// origin fetches, from `behaviorHints.proxyHeaders`. Without them the
     /// download workers send a bare request and a header-gated CDN answers 403
@@ -911,6 +930,7 @@ final class MediaCacheServer {
             teardownSessionLocked()
             guard startListenerLocked() else { return nil }
             self.origin = origin
+            resolvedOrigin = nil
             sessionHeaders = headers
             token = UUID().uuidString
             redirectAll = false
@@ -1047,6 +1067,7 @@ final class MediaCacheServer {
         }
         fileURL = nil
         origin = nil
+        resolvedOrigin = nil
         sessionHeaders = nil
         token = ""
         ranges = []
@@ -1088,7 +1109,7 @@ final class MediaCacheServer {
     /// is yanked to the tail again, and the front creeps forward a few KB at a
     /// time. That is a startup that never finishes, not a slow one.
     private func sideFetch(start: Int64, endExclusive: Int64, attempt: Int = 0) {
-        guard let origin, writeHandle != nil, !redirectAll else { return }
+        guard let url = fetchURL, writeHandle != nil, !redirectAll else { return }
         guard sideFetchers[start] == nil else { return }   // already in flight
         // NEVER drop the request on the floor: the connection that triggered
         // it is sitting in `serve` waiting for those bytes, and with nobody
@@ -1104,7 +1125,7 @@ final class MediaCacheServer {
         }
         sideFetchSpans[start] = endExclusive
         sideFetchers[start] = SideFetcher(
-            origin: origin, headers: sessionHeaders,
+            origin: url, headers: sessionHeaders,
             start: start, endExclusive: endExclusive, queue: q
         ) { [weak self] data in
             guard let self else { return }
@@ -1113,6 +1134,9 @@ final class MediaCacheServer {
             if let data, self.writeHandle != nil {
                 self.downloaderWrote(data, at: start, isSideFetch: true)
             } else if attempt < 3 {
+                // A second miss against the resolved CDN URL may mean it went
+                // stale — go back through the add-on for the next try.
+                if attempt >= 1 { self.resolvedOrigin = nil }
                 // Backed-off retry — a 429 here clears in seconds.
                 self.q.asyncAfter(deadline: .now() + Double(attempt + 1) * 2) { [weak self] in
                     self?.sideFetch(start: start, endExclusive: endExclusive, attempt: attempt + 1)
@@ -1789,6 +1813,7 @@ final class MediaCacheServer {
     fileprivate func downloaderGotResponse(_ response: HTTPURLResponse, requestedOffset: Int64) -> ResponseVerdict {
         switch response.statusCode {
         case 206:
+            adoptResolvedOrigin(response)
             // "bytes X-Y/TOTAL"
             if totalLength <= 0,
                let contentRange = response.value(forHTTPHeaderField: "Content-Range"),
@@ -1823,6 +1848,7 @@ final class MediaCacheServer {
                     failSession("origin sent no content length")
                     return .abandon
                 }
+                adoptResolvedOrigin(response)
                 publishSnapshot()
                 guard configureBudget() else { return .abandon }
                 fillPool()
@@ -1894,6 +1920,18 @@ final class MediaCacheServer {
             return .retryLater(4)
         default:
             let status = response.statusCode
+            // THE RESOLVED URL WENT STALE, not the film. Debrid CDN links are
+            // signed and expire (or are revoked when the add-on mints a new
+            // one); forget it and let this worker go back through the add-on,
+            // which answers with a fresh redirect. A refusal of the add-on's
+            // OWN url still falls through to the failure below.
+            if resolvedOrigin != nil, [401, 403, 404, 410].contains(status) {
+                requestTrail("resolved URL refused (\(status)) — re-resolving through the add-on",
+                             important: true)
+                PlayerProbe.event("cache", "resolved URL refused (\(status)) — re-resolving")
+                resolvedOrigin = nil
+                return .retryLater(0.5)
+            }
             // SAY WHICH RANGE. A 416 on a link that otherwise plays means the
             // range we asked for was outside the file, and without the numbers
             // there is no way to tell whose arithmetic was wrong — the pool's,
@@ -1921,6 +1959,18 @@ final class MediaCacheServer {
             }
             return .abandon
         }
+    }
+
+    /// Remember where the add-on's link resolved to, once, from a good
+    /// response — see `resolvedOrigin`.
+    private func adoptResolvedOrigin(_ response: HTTPURLResponse) {
+        guard resolvedOrigin == nil, let origin, let final = response.url,
+              final != origin, let scheme = final.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return }
+        resolvedOrigin = final
+        requestTrail("resolved \(origin.host ?? "?") → \(final.host ?? "?") — pool fetches go direct",
+                     important: true)
+        PlayerProbe.event("cache", "resolved \(origin.host ?? "?") → \(final.host ?? "?")")
     }
 
     fileprivate func downloaderWrote(_ data: Data, at offset: Int64, isSideFetch: Bool = false) {
@@ -3378,7 +3428,9 @@ private final class SegmentDownloader: NSObject, URLSessionDataDelegate {
         segmentEnd = endExclusive
         requestedOffset = offset
         writeOffset = offset
-        var request = URLRequest(url: origin)
+        // The resolved CDN URL once the pool has one (on q, like every call
+        // here), so each chunk skips the add-on's resolver hop.
+        var request = URLRequest(url: server?.fetchURL ?? origin)
         for (key, value) in headers ?? [:] {
             request.setValue(value, forHTTPHeaderField: key)
         }

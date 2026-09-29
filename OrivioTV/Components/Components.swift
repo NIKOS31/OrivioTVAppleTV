@@ -1060,6 +1060,8 @@ struct LandscapeCardCaption: View {
     @ObservedObject private var perf = PerformanceSettingsStore.shared
 
     let title: String
+    /// A short line under the title, always shown — an episode's air date.
+    var dateLine: String? = nil
     var subtitle: String? = nil
     var detailLine: String? = nil
     var width: CGFloat
@@ -1089,6 +1091,14 @@ struct LandscapeCardCaption: View {
             )
             .frame(width: width, alignment: .leading)
             .clipped()
+
+            if let dateLine, !dateLine.isEmpty {
+                Text(dateLine)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(theme.palette.textTertiary)
+                    .lineLimit(1)
+                    .frame(width: width, alignment: .leading)
+            }
 
             if let subtitle, !subtitle.isEmpty {
                 subtitleText(subtitle)
@@ -1147,7 +1157,10 @@ struct LandscapeCardCaption: View {
 
     private var captionHeight: CGFloat {
         let expanded = subtitleBehavior == .readableOnFocus && Self.expandedEpisodeDescriptionsEnabled
-        return expanded ? (Self.episodeCastLineEnabled && detailLine?.isEmpty == false ? 156 : 132) : 72
+        let base: CGFloat = expanded ? (Self.episodeCastLineEnabled && detailLine?.isEmpty == false ? 156 : 132) : 72
+        // The date line's own row (17pt text + the stack's 4pt spacing), so
+        // it never squeezes the synopsis or cast line out of the box.
+        return base + (dateLine?.isEmpty == false ? 25 : 0)
     }
 }
 
@@ -1851,6 +1864,32 @@ enum DateFormat {
     private static let output: DateFormatter = {
         let f = DateFormatter(); f.dateStyle = .long; f.timeStyle = .none; return f
     }()
+
+    private static let mediumOutput: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .none; return f
+    }()
+    private static let mediumOutputUTC: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .none
+        f.timeZone = TimeZone(identifier: "UTC"); return f
+    }()
+
+    /// An episode's original air date, medium style ("Jan 6, 2025").
+    ///
+    /// A DATE-ONLY value — TMDB's plain `yyyy-MM-dd`, or an ISO stamp at
+    /// exactly midnight UTC, which is how add-ons write a bare date — is shown
+    /// as that calendar date. Formatted in the viewer's zone, every one of
+    /// those lands a day EARLY anywhere west of Greenwich. A stamp carrying a
+    /// real air time is shown in the viewer's zone, where it airs for them.
+    static func airDate(_ raw: String?) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        if raw.count == 10, let date = plainDate.date(from: raw) {
+            return mediumOutputUTC.string(from: date)
+        }
+        guard let date = isoWithFraction.date(from: raw) ?? iso.date(from: raw)
+                ?? plainDate.date(from: String(raw.prefix(10))) else { return nil }
+        let utcMidnight = Int(date.timeIntervalSince1970) % 86_400 == 0
+        return (utcMidnight ? mediumOutputUTC : mediumOutput).string(from: date)
+    }
 
     /// Localized long date ("5 July 2026") from an ISO date or a plain
     /// `yyyy-MM-dd`. Returns nil if unparseable/empty.

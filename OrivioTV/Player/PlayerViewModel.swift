@@ -64,6 +64,10 @@ struct PlaybackRequest: Identifiable {
     /// when set, `play(episode:)` asks this for the episode's own file
     /// instead of sweeping the stream add-ons for an id they don't know.
     var directEpisodeResolver: ((MetaVideo) async -> StreamEntry?)? = nil
+    /// Shuffle (the Detail page's dice): every "next episode" is a random,
+    /// not-yet-played episode of the show, and the Up Next countdown always
+    /// runs, until the show runs out or the viewer leaves the player.
+    var shuffle: Bool = false
 }
 
 enum PlayerOverlay: Equatable {
@@ -1147,7 +1151,44 @@ final class PlayerViewModel: ObservableObject {
     // Content
     let meta: MetaItem
     @Published private(set) var currentVideo: MetaVideo? {
-        didSet { refreshNextEpisodeAvailability() }
+        didSet {
+            if shuffleMode, let currentVideo { shufflePlayed.insert(Self.shuffleKey(currentVideo)) }
+            refreshNextEpisodeAvailability()
+        }
+    }
+
+    /// See `PlaybackRequest.shuffle`.
+    private let shuffleMode: Bool
+    /// Episodes this shuffle session has already played (see `shuffleKey`), so
+    /// no episode comes round twice.
+    private var shufflePlayed: Set<String> = []
+    /// Fixed per session: the shuffle order is the episodes sorted by a hash of
+    /// this and their key, so `nextEpisode` gives the same answer on every read
+    /// (it is read from the clock tick, the transport and the end handler) and
+    /// still works when the episode list only arrives with the enriched fetch.
+    private let shuffleSeed = UInt64.random(in: .min ... .max)
+
+    /// Season/episode when known — a session's ids can come in two forms (see
+    /// `nextEpisode`), so the id alone would let an episode repeat.
+    private static func shuffleKey(_ video: MetaVideo) -> String {
+        if let season = video.season, let episode = video.episode { return "\(season)x\(episode)" }
+        return video.id
+    }
+
+    /// The next episode in this session's shuffle order that hasn't played.
+    /// Aired episodes only, whatever "Show unaired next up" says: an unaired
+    /// episode has no sources, and a shuffle has no reason to pick one.
+    private var shuffleNextEpisode: MetaVideo? {
+        guard let videos = displayMeta.videos else { return nil }
+        func rank(_ video: MetaVideo) -> Int {
+            var hasher = Hasher()
+            hasher.combine(shuffleSeed)
+            hasher.combine(Self.shuffleKey(video))
+            return hasher.finalize()
+        }
+        return videos
+            .filter { ($0.season ?? 0) > 0 && $0.hasAired && !shufflePlayed.contains(Self.shuffleKey($0)) }
+            .min { rank($0) < rank($1) }
     }
     /// Whether `nextEpisode` would find one, cached.
     ///
@@ -1211,17 +1252,43 @@ final class PlayerViewModel: ObservableObject {
     /// The direct Dolby Vision sample-feed engine (no AVPlayer, no HLS, no
     /// CoreMedia retention) — the Infuse architecture. Mutually exclusive
     /// with the other engines while active.
-    private(set) var dvDirectEngine: DVSampleEngine?
+    private(set) var dvDirectEngine: DVSampleEngine? {
+        didSet {
+            // The Atmos AVPlayer belongs to ONE engine. Several paths replace
+            // or drop the engine (a failover, an in-player engine switch, an
+            // episode advance) without going through teardown, and each of
+            // them left the old remux playing its audio under the new session
+            // — and, still set, blocked the new engine's own passthrough.
+            guard dvDirectEngine !== oldValue else { return }
+            stopAtmosPassthrough()
+            atmosEntry = nil
+            atmosFailures = 0
+        }
+    }
 
     /// Experimental Atmos passthrough (see `AtmosHLS.swift`). Set only for an
     /// E-AC-3/AC-3 track on an HDMI route with the setting on.
     private var atmosPassthrough: AtmosPassthrough?
     private var atmosSyncTask: Task<Void, Never>?
-    /// When the last seek was issued. The Atmos sync task nudges the video
-    /// clock onto the AVPlayer's audio clock; right after a seek the AVPlayer
-    /// is still catching up, so letting the sync run would drag the picture
-    /// straight back to where the audio still is. Suppress it briefly.
-    private var lastSeekIssuedAt = Date.distantPast
+    /// The link the direct engine is playing, kept so a fresh Atmos remux can
+    /// be started mid-session: after a seek outside the remuxed window, an
+    /// audio-track change, or a return to normal speed.
+    private var atmosEntry: StreamEntry?
+    /// Atmos sessions that failed on this engine. After `atmosMaxFailures` the
+    /// engine keeps the audio for good, rather than flapping.
+    private var atmosFailures = 0
+    private static let atmosMaxFailures = 2
+    /// The engine's own audio is muted because the AVPlayer has it.
+    private var atmosEngineMuted = false
+    /// Since when the picture has been running without the AVPlayer's sound.
+    private var atmosWaitingSince: Date?
+    /// The engine clock at the last sample, when it was taken, and whether it
+    /// had moved since the one before (see `atmosTick`).
+    private var atmosLastVideoClock = -Double.infinity
+    private var atmosClockSampledAt = Date.distantPast
+    private var atmosClockAdvancing = false
+    /// When the AVPlayer was last re-seeked for drift.
+    private var atmosLastResync = Date.distantPast
     var usingDVDirect: Bool { dvDirectEngine != nil }
     /// The UIView the active engine renders into (KSPlayer's player view,
     /// VLC's drawable, or the DV sample layer), handed to PlayerVideoView.
@@ -1456,6 +1523,7 @@ final class PlayerViewModel: ObservableObject {
         if pictureInPicture.isActive { PictureInPictureController.trail("engine play (PiP active)") }
         if let dvDirectEngine { dvDirectEngine.play() }
         else if let vlcEngine { vlcEngine.play() } else { playerLayer?.play() }
+        atmosTick()   // the Atmos audio follows now, not on the next tick
     }
     /// Stop whichever engine is live, WITHOUT setting `pauseIntent`.
     ///
@@ -1471,6 +1539,7 @@ final class PlayerViewModel: ObservableObject {
         if let dvDirectEngine { dvDirectEngine.pause() }
         else if let vlcEngine { vlcEngine.pause() }
         else { playerLayer?.pause() }
+        atmosTick()
     }
 
     private func enginePause(_ reason: String = "?") {
@@ -1485,11 +1554,11 @@ final class PlayerViewModel: ObservableObject {
         if pictureInPicture.isActive { PictureInPictureController.trail("engine pause (PiP active)") }
         if let dvDirectEngine { dvDirectEngine.pause() }
         else if let vlcEngine { vlcEngine.pause() } else { playerLayer?.pause() }
+        atmosTick()   // stop the Atmos audio with the picture, not a tick later
     }
     private func engineSeek(to seconds: Double, autoPlay: Bool) {
         let issuedAt = Date()
         let from = position
-        lastSeekIssuedAt = issuedAt
         PlayerProbe.event("seek", String(format: "ISSUE %.1f → %.1f autoPlay=%@ engine=%@",
                                          from, seconds, autoPlay.probe, engineLabelForProbe))
         PlayerProbe.count("seek.issued")
@@ -1497,11 +1566,13 @@ final class PlayerViewModel: ObservableObject {
         // window, no offset, no re-remux. Seeks are plain.
         if let dvDirectEngine {
             dvDirectEngine.seek(to: seconds)
-            // The Atmos AVPlayer owns the audio for this session, so it has to
-            // be seeked too. Skip this and the 1s sync task (which follows the
-            // audio clock) pulls the picture straight back to the audio's old
-            // position — the seek appears to do nothing.
-            atmosPassthrough?.seek(to: seconds)
+            // The Atmos AVPlayer owns the audio for this session. Stop it now;
+            // once the engine is running again at the new position, the sync
+            // tick resumes it THERE — or starts a fresh remux when the target is
+            // outside what this one holds. (A direct seek of the AVPlayer could
+            // not reach outside the remuxed window, and the sync then pulled
+            // the picture back onto wherever the audio had stuck.)
+            atmosPassthrough?.pause()
             if autoPlay { dvDirectEngine.play() }
             return
         }
@@ -2964,6 +3035,11 @@ final class PlayerViewModel: ObservableObject {
         // own. See ImageCache.dropDecoded().
         ImageCache.shared.dropDecoded()
         self.allowUnairedNextUp = allowUnairedNextUp
+        self.shuffleMode = request.shuffle
+        // `didSet` does not run for the initializer's own assignment below.
+        self.shufflePlayed = request.shuffle
+            ? Set(request.video.map { [PlayerViewModel.shuffleKey($0)] } ?? [])
+            : []
         self.directEpisodeResolver = request.directEpisodeResolver
         self.meta = request.meta
         self.currentVideo = request.video
@@ -5145,6 +5221,7 @@ final class PlayerViewModel: ObservableObject {
         // the track in PlaybackMemory, and an automatic pick must never
         // overwrite a choice the viewer made by hand.
         engine.selectAudio(index: pick.index)
+        atmosAudioTrackChanged()
         selectedAudioID = "dvda-\(pick.index)"
         decisionLog.record("Audio Track", pick.label,
                            because: "remembered for this title — this file carries nothing in your preferred audio language")
@@ -5661,15 +5738,21 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Experimental Atmos passthrough
 
     /// Start the AVPlayer audio path when the track is E-AC-3/AC-3, the setting
-    /// is on, and the route is HDMI. The sample engine's own audio is muted so
-    /// only the AVPlayer is heard; the video clock is nudged onto the audio
-    /// clock. Any failure leaves the normal engine untouched.
+    /// is on, and the route is HDMI. The engine keeps its own audio until the
+    /// AVPlayer is actually producing sound, then mutes; every failure hands
+    /// the sound back. Any failure leaves the normal engine untouched.
     private func startAtmosPassthroughIfEligible(
         engine: DVSampleEngine, entry: StreamEntry, resume: Double
     ) {
+        guard dvDirectEngine === engine else { return }
+        // Kept even when this track is ineligible, so a later switch to an
+        // Atmos track can still start one.
+        atmosEntry = entry
         // Only for a track the container actually declares Atmos, so an
         // ordinary DD+ 5.1 title doesn't pay for a second read of the source.
-        guard settings.atmosPassthrough, atmosPassthrough == nil,
+        guard settings.atmosPassthrough, atmosPassthrough == nil, !isExiting,
+              atmosFailures < Self.atmosMaxFailures,
+              playbackSpeed == 1,
               let urlString = entry.stream.url,
               engine.audioPath.passthrough,
               engine.audioPath.sourceSaysAtmos,
@@ -5677,60 +5760,200 @@ final class PlayerViewModel: ObservableObject {
               AudioOutputCapability.routeDescription.lowercased().contains("hdmi")
         else { return }
         let passthrough = AtmosPassthrough()
-        passthrough.onError = { [weak self] message in
-            PlayerProbe.event("atmos", "passthrough failed: \(message) — restoring engine audio")
-            self?.dvDirectEngine?.setMuted(false)
-            self?.stopAtmosPassthrough()
+        passthrough.onError = { [weak self, weak passthrough] message in
+            guard let self, let passthrough, self.atmosPassthrough === passthrough else { return }
+            self.atmosFailed("passthrough failed: \(message)")
         }
-        passthrough.onReady = { [weak self, weak engine] in
-            guard let self, let engine, self.dvDirectEngine === engine, !self.isExiting else { return }
-            // The AVPlayer owns the audio now; silence the sample renderer so
-            // the two don't play over each other.
+        passthrough.onAudibleChange = { [weak self, weak passthrough] audible in
+            guard let self, let passthrough, self.atmosPassthrough === passthrough,
+                  audible, !self.atmosEngineMuted, let engine = self.dvDirectEngine else { return }
+            // The AVPlayer has the sound now; silence the sample renderer so
+            // the two don't play over each other. Once per session — see
+            // `atmosTick` for why it is not re-toggled on every gap.
             engine.setMuted(true)
-            passthrough.play()
-            self.startAtmosSync(engine: engine, passthrough: passthrough)
-            PlayerProbe.event("atmos", "passthrough READY — AVPlayer owns the \(engine.audioPath.codec) audio")
+            self.atmosEngineMuted = true
+            PlayerProbe.event("atmos", "passthrough AUDIBLE — AVPlayer owns the \(engine.audioPath.codec) audio")
         }
+        // Set BEFORE start: a synchronous failure inside it reports through
+        // `onError`, which only acts on the session that is current.
+        atmosPassthrough = passthrough
+        atmosWaitingSince = nil
+        atmosLastVideoClock = engine.currentClockSeconds
+        atmosClockSampledAt = Date()
+        atmosClockAdvancing = false
         passthrough.start(
             inputURL: urlString,
             headers: entry.stream.behaviorHints?.proxyHeaders?.requestHeaders,
             startAt: resume,
             trackIndex: engine.currentAudioIndex
         )
-        atmosPassthrough = passthrough
-        PlayerProbe.event("atmos", "passthrough starting for \(engine.audioPath.codec)")
+        startAtmosSync()
+        PlayerProbe.event("atmos", String(format: "passthrough starting for %@ at %.1fs",
+                                          engine.audioPath.codec, resume))
     }
 
-    /// Keep the picture on the audio clock. A 0.2s threshold means only a real
-    /// drift is corrected, so the synchronizer isn't re-timed every second.
-    private func startAtmosSync(engine: DVSampleEngine, passthrough: AtmosPassthrough) {
+    /// Runs the sync tick while a passthrough exists.
+    private func startAtmosSync() {
         atmosSyncTask?.cancel()
-        atmosSyncTask = Task { @MainActor [weak self, weak engine] in
+        atmosSyncTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard let self, let engine, !self.isExiting,
-                      self.dvDirectEngine === engine, self.atmosPassthrough === passthrough
-                else { return }
-                // A seek was just issued and the AVPlayer audio is still
-                // catching up: nudging now would undo the seek. Give it a beat
-                // to land (both were seeked in `engineSeek`).
-                if Date().timeIntervalSince(self.lastSeekIssuedAt) < 2 { continue }
-                let want = passthrough.currentTime
-                let have = engine.currentClockSeconds
-                if abs(want - have) > 0.2 {
-                    engine.alignClock(to: want)
-                    PlayerProbe.event("atmos", String(format: "sync nudge %+.2fs (video %.2f → audio %.2f)",
-                                                      want - have, have, want))
-                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard let self, !Task.isCancelled, self.atmosPassthrough != nil else { return }
+                self.atmosTick()
             }
         }
     }
 
-    private func stopAtmosPassthrough() {
+    /// Audio follows the picture. One rule for every state, so pause, play,
+    /// buffering and seeks need no forwarding of their own:
+    ///
+    /// * picture stopped (paused, seeking, rebuffering, or a clock that has
+    ///   stopped advancing) → pause the AVPlayer;
+    /// * picture running, AVPlayer silent → `resume(at:)` the picture's
+    ///   position — or a fresh remux there when it is out of range;
+    /// * both running and drifted apart → re-seek the AVPlayer to the picture.
+    ///
+    /// The AVPlayer used to be told nothing but seeks: pause left the sound
+    /// playing and the drift nudge dragged the paused picture along with it.
+    ///
+    /// The AUDIO is what moves, never the picture. The engine's clock is timed
+    /// off its own (muted) audio renderer, so `alignClock` nudges do not hold —
+    /// measured on the simulator, each one was undone within 0.3 s, and on a
+    /// starved engine (clock stopped, rate still 1) they stepped the frozen
+    /// picture forward in visible jumps. The AVPlayer can be seeked exactly.
+    ///
+    /// Also called straight from `enginePlay`/`enginePause` so a pause is
+    /// followed at once rather than on the next tick.
+    private func atmosTick() {
+        guard let passthrough = atmosPassthrough, let engine = dvDirectEngine else { return }
+        // Exiting pauses the engine and then waits for the teardown; the
+        // AVPlayer must go quiet with it, not play on until the teardown.
+        guard !isExiting else {
+            passthrough.pause()
+            return
+        }
+        // The engine owns the audio at any speed but 1x (see `setSpeed`); this
+        // also catches a remembered speed the load applied straight to the
+        // engine.
+        guard playbackSpeed == 1 else {
+            PlayerProbe.event("atmos", "speed \(playbackSpeed)x — engine has the audio")
+            stopAtmosPassthrough(restoreEngineAudio: true)
+            return
+        }
+        // Every audio-track change — the picker, and the automatic second-turn
+        // pick that goes straight to the engine — re-demuxes the ENGINE only;
+        // the remux would go on playing the old track.
+        guard engine.currentAudioIndex == passthrough.trackIndex else {
+            restartAtmos(at: engine.currentClockSeconds, reason: "audio track changed")
+            return
+        }
+        // The audio instant that belongs with the frame on screen. The lip-sync
+        // offset is POSITIVE for voices later, so the picture leads the sound
+        // by it — the same meaning `setAudioDelay` gives it on the engine.
+        let offset = audioSyncOffset
+        let video = engine.currentClockSeconds
+        let target = video - offset
+        passthrough.noteVideoPlayhead(target)
+
+        // "Running" means the clock is MOVING, not just a non-zero rate: a
+        // starved engine keeps rate 1 while its clock stands still. Sampled
+        // at most every 0.2 s, so a direct call right after a tick reuses the
+        // last verdict instead of reading "no movement" off a 5 ms interval.
+        let now = Date()
+        if now.timeIntervalSince(atmosClockSampledAt) >= 0.2 {
+            atmosClockAdvancing = video > atmosLastVideoClock + 0.05
+            atmosLastVideoClock = video
+            atmosClockSampledAt = now
+        }
+        guard engine.isPlaying, atmosClockAdvancing else {
+            passthrough.pause()
+            atmosWaitingSince = nil
+            return
+        }
+        if passthrough.isAudible {
+            atmosWaitingSince = nil
+            // Give a just-started AVPlayer time to settle before judging drift
+            // (it starts a beat behind the position it was seeked to), and
+            // rate-limit the correction: each one is a short audio gap.
+            if let since = passthrough.audibleSince, now.timeIntervalSince(since) >= 1.5,
+               now.timeIntervalSince(atmosLastResync) >= 5,
+               let audio = passthrough.currentTime, abs(audio - target) > 0.25 {
+                atmosLastResync = now
+                PlayerProbe.event("atmos", String(format: "resync: audio %.2f vs picture %.2f (%+.2fs)",
+                                                  audio, target, audio - target))
+                passthrough.pause()   // the next tick resumes it at the picture
+            }
+            return
+        }
+        switch passthrough.resume(at: target) {
+        case .outOfRange:
+            // A session that never made a sound and is already out of range is
+            // a remux that can't keep up with the picture (or a seek during its
+            // warm-up). Counted, so a slow link can't restart forever.
+            if !passthrough.hasPlayed { atmosFailures += 1 }
+            restartAtmos(at: video, reason: String(format: "%.1fs is outside the remuxed audio", target))
+            return
+        case .finished:
+            // Past the last of the file's audio: nothing left to wait for.
+            atmosWaitingSince = nil
+            return
+        case .pending:
+            break
+        }
+        // The picture is running without the AVPlayer's sound. Short once it
+        // has played (the engine is muted, so this is silence); long while a
+        // fresh remux warms up (the engine is still audible then).
+        let since = atmosWaitingSince ?? Date()
+        atmosWaitingSince = since
+        let limit: TimeInterval = passthrough.hasPlayed ? 4 : 20
+        if Date().timeIntervalSince(since) > limit {
+            atmosFailed(passthrough.hasPlayed ? "AVPlayer stalled for \(Int(limit))s"
+                                               : "AVPlayer never started in \(Int(limit))s")
+        }
+    }
+
+    /// After an audio-track change on the direct engine. A running passthrough
+    /// is handled by the tick (it restarts on the new track, or hands the
+    /// sound back when that track can't pass through); this covers the other
+    /// direction — from a track that couldn't, to one that can.
+    private func atmosAudioTrackChanged() {
+        guard atmosPassthrough == nil, let engine = dvDirectEngine, let entry = atmosEntry else { return }
+        startAtmosPassthroughIfEligible(engine: engine, entry: entry,
+                                        resume: engine.currentClockSeconds)
+    }
+
+    /// A fresh remux at `seconds` (source time). Not a failure: the old one
+    /// simply doesn't hold that position or that track.
+    private func restartAtmos(at seconds: Double, reason: String) {
+        PlayerProbe.event("atmos", String(format: "restarting at %.1fs — %@", seconds, reason))
+        stopAtmosPassthrough(restoreEngineAudio: true)
+        guard let engine = dvDirectEngine, let entry = atmosEntry else { return }
+        startAtmosPassthroughIfEligible(engine: engine, entry: entry, resume: seconds)
+    }
+
+    /// Give the sound back to the engine and count it. After
+    /// `atmosMaxFailures` the engine keeps it for the rest of this session.
+    private func atmosFailed(_ reason: String) {
+        atmosFailures += 1
+        PlayerProbe.event("atmos", "\(reason) — restoring engine audio"
+                          + " (failure \(atmosFailures)/\(Self.atmosMaxFailures))")
+        stopAtmosPassthrough(restoreEngineAudio: true)
+    }
+
+    /// `restoreEngineAudio` un-mutes the engine: for every case where playback
+    /// goes on without the passthrough. Not on teardown or an engine swap,
+    /// where un-muting a renderer that still holds queued audio would play a
+    /// blip of it as it stops.
+    private func stopAtmosPassthrough(restoreEngineAudio: Bool = false) {
         atmosSyncTask?.cancel()
         atmosSyncTask = nil
         atmosPassthrough?.stop()
         atmosPassthrough = nil
+        atmosWaitingSince = nil
+        if atmosEngineMuted {
+            if restoreEngineAudio { dvDirectEngine?.setMuted(false) }
+            atmosEngineMuted = false
+        }
     }
 
     /// Best-effort display criteria for the manual re-sync when the session
@@ -7067,6 +7290,7 @@ final class PlayerViewModel: ObservableObject {
             vlcAudioAutoApplied = true
         case .dvDirectAudio(let index):
             dvDirectEngine?.selectAudio(index: index)
+            atmosAudioTrackChanged()
             // Remember BOTH: the exact label (distinguishes AC3-6ch from the
             // TrueHD default on an all-English remux) and the language (which
             // carries across episodes/releases where labels differ).
@@ -7228,6 +7452,15 @@ final class PlayerViewModel: ObservableObject {
         if let dvDirectEngine { dvDirectEngine.rate = speed }
         else if let vlcEngine { vlcEngine.rate = speed }
         else { playerLayer?.player.playbackRate = speed }
+        // Atmos passthrough is 1x only (a bitstream can't be time-stretched):
+        // the engine has the audio at any other speed, and a return to normal
+        // speed hands it back to a fresh remux from here.
+        if speed != 1 {
+            stopAtmosPassthrough(restoreEngineAudio: true)
+        } else if atmosPassthrough == nil, let engine = dvDirectEngine, let entry = atmosEntry {
+            startAtmosPassthroughIfEligible(engine: engine, entry: entry,
+                                            resume: engine.currentClockSeconds)
+        }
         showToast("Speed \(speed == 1 ? "Normal" : String(format: "%gx", speed))")
     }
 
@@ -8948,6 +9181,12 @@ final class PlayerViewModel: ObservableObject {
     /// Order candidates to match the original link as closely as possible.
     private func rankedCandidates(_ viable: [StreamEntry]) -> [StreamEntry] {
         func rank(_ e: StreamEntry) -> Int {
+            // A link its add-on marks as NOT on the debrid service yet plays a
+            // "still downloading" notice, never the title — so it goes after
+            // everything else, whatever it matches. Matching the original
+            // addon + resolution is exactly what used to put a 4K
+            // "[TB download]" first in line behind a failed 4K link.
+            if e.stream.isMarkedUncached { return 5 }
             // An addon that has served two notice clips this session is not a
             // preference any more — "request this from the same IP" is a
             // condition of its whole debrid session, not of one link, so its
@@ -9045,6 +9284,7 @@ final class PlayerViewModel: ObservableObject {
     var nextEpisode: MetaVideo? {
         // displayMeta: CW-resumed sessions only get their episode list from
         // the enriched fetch — without it auto-next never fired for them.
+        if shuffleMode { return shuffleNextEpisode }
         guard let current = currentVideo, let videos = displayMeta.videos else { return nil }
         let ordered = videos
             .filter { ($0.season ?? 0) > 0 }
@@ -9135,8 +9375,14 @@ final class PlayerViewModel: ObservableObject {
 
         // Countdown (and the auto-advance it drives) only with auto-play on;
         // otherwise the card just offers Play Next / Cancel and waits.
-        let timeout = settings.autoPlayTimeoutSeconds
-        guard settings.autoPlayNextEpisode, timeout != PlayerSettings.timeoutUnlimited else {
+        var timeout = settings.autoPlayTimeoutSeconds
+        // Shuffle always continues on its own — that is what the dice asked
+        // for — so with auto-play off or "unlimited" it counts down the
+        // default instead of waiting at the card.
+        if shuffleMode, !settings.autoPlayNextEpisode || timeout == PlayerSettings.timeoutUnlimited {
+            timeout = PlayerSettings.default.autoPlayTimeoutSeconds
+        }
+        guard settings.autoPlayNextEpisode || shuffleMode, timeout != PlayerSettings.timeoutUnlimited else {
             upNextCountdown = nil   // wait for the user to confirm
             return
         }
@@ -9176,7 +9422,8 @@ final class PlayerViewModel: ObservableObject {
         upNextCountdown = nil
         guard let episode = upNextEpisode else { return }
 
-        if !userInitiated, settings.stillWatchingEnabled,
+        // Not in shuffle: it runs until the show runs out or the viewer leaves.
+        if !userInitiated, !shuffleMode, settings.stillWatchingEnabled,
            consecutiveAutoAdvances + 1 >= settings.stillWatchingEpisodeThreshold {
             // Engine-agnostic: pausing only `playerLayer` left VLC and DV
             // sessions playing underneath the gate, and skipping the pause

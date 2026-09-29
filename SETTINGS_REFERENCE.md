@@ -156,7 +156,7 @@ The episode browser on a series is deliberately NOT toggleable — it is how an 
 | Sort order | Dropdown | How the resume row is ordered | Wired |
 | Episode thumbnails | Switch | Episode still on CW cards instead of the show poster | Wired |
 | Next up from furthest episode | Switch | Resume after the furthest episode watched, not the most recently played | Wired |
-| Show unaired next up | Switch | Allows an unaired episode to be the next-up target | Wired |
+| Show unaired next up | Switch | Allows an unaired episode to be the next-up target; off, a show whose next episode has not aired leaves Continue Watching until it does | Wired |
 | Blur unwatched episodes | Switch | Spoiler-blurs unwatched episode thumbnails (focus reveals) | Wired |
 | Blur Continue Watching next up | Switch | Spoiler-blurs art for barely-started next-up episodes on the home row | Wired |
 

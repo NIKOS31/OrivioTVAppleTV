@@ -42,6 +42,48 @@ final class LiveTVSettingsStore: ObservableObject {
         !customPlaylistURL.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    /// The playlist URL for an IPTV provider's login (the Xtream Codes API
+    /// nearly every paid provider hands out as server + username + password).
+    /// Their `get.php` endpoint serves the subscriber's whole channel list as
+    /// an ordinary M3U, so the result is stored and loaded exactly like a
+    /// pasted playlist URL. HLS output (`m3u8`) so channels open in the
+    /// native player. nil when the server isn't a usable URL.
+    static func providerPlaylistURL(server: String, username: String, password: String) -> String? {
+        var base = server.trimmingCharacters(in: .whitespaces)
+        guard !base.isEmpty else { return nil }
+        // Providers give the address bare ("line.example.com:8080"), and
+        // almost always as plain HTTP.
+        if !base.contains("://") { base = "http://" + base }
+        while base.hasSuffix("/") { base.removeLast() }
+        guard var components = URLComponents(string: base + "/get.php"),
+              components.host?.isEmpty == false else { return nil }
+        components.queryItems = [
+            URLQueryItem(name: "username", value: username.trimmingCharacters(in: .whitespaces)),
+            URLQueryItem(name: "password", value: password.trimmingCharacters(in: .whitespaces)),
+            URLQueryItem(name: "type", value: "m3u_plus"),
+            URLQueryItem(name: "output", value: "m3u8"),
+        ]
+        // URLComponents leaves `+` bare, and servers decode a bare `+` in a
+        // query as a space — a password containing one would never match.
+        components.percentEncodedQuery = components.percentEncodedQuery?
+            .replacingOccurrences(of: "+", with: "%2B")
+        return components.url?.absoluteString
+    }
+
+    /// The custom playlist URL as it is safe to show on screen: a provider
+    /// login's password is masked.
+    var customPlaylistDisplayURL: String {
+        guard var components = URLComponents(string: customPlaylistURL),
+              let items = components.queryItems,
+              items.contains(where: { $0.name.lowercased() == "password" }) else { return customPlaylistURL }
+        components.queryItems = items.map {
+            $0.name.lowercased() == "password" ? URLQueryItem(name: $0.name, value: "••••") : $0
+        }
+        // Decoded for display only: the mask (and any username) would
+        // otherwise show percent-escaped.
+        return components.string?.removingPercentEncoding ?? customPlaylistURL
+    }
+
     /// Playlist to load. A CUSTOM playlist wins over everything — that's its
     /// contract: adding one takes over from the built-in list entirely.
     /// Otherwise LANGUAGE wins over location: a preferred language means

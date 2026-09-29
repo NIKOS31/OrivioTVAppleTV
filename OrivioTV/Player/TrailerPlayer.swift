@@ -263,7 +263,17 @@ enum TrailerResolver {
             async let audioTracks = audioAsset.loadTracks(withMediaType: .audio)
 
             guard let vTrack = try await videoTracks.first else { return nil }
-            let range = try await CMTimeRange(start: .zero, duration: videoDuration)
+            // YouTube's adaptive (DASH) files load at TWICE their real length:
+            // measured on itag 137/140, `dur=146.145` in the URL against an
+            // asset duration of 292.29, every key tried. The trailer played to
+            // its real end and the composition then ran on over nothing for
+            // the same time again — a frozen picture and a spinner half way
+            // through the timeline. The URL's own `dur` is the real length.
+            var duration = try await videoDuration
+            if let declared = declaredDuration(of: video), declared < duration {
+                duration = declared
+            }
+            let range = CMTimeRange(start: .zero, duration: duration)
             let vComp = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
             try vComp?.insertTimeRange(range, of: vTrack, at: .zero)
             if let aTrack = try await audioTracks.first {
@@ -281,6 +291,15 @@ enum TrailerResolver {
             NSLog("[OrivioTrailer] merge failed: %@", String(describing: error))
             return nil
         }
+    }
+
+    /// The length a googlevideo URL declares in its `dur` query item
+    /// (seconds), or nil when it has none.
+    private static func declaredDuration(of url: URL) -> CMTime? {
+        guard let raw = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "dur" })?.value,
+              let seconds = Double(raw), seconds > 0 else { return nil }
+        return CMTime(seconds: seconds, preferredTimescale: 1000)
     }
 
     /// The backdrop trailer behind Home's hero and the Detail page.

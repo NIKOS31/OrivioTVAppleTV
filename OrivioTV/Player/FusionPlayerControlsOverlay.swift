@@ -368,7 +368,12 @@ struct FusionPlayerControlsOverlay: View {
                 if let first = glyphOrder.first { focusedControl = first }
                 else { viewModel.restartHideTimer() }
             case .down:
-                viewModel.restartHideTimer()
+                // A Down CLICK on the bar opens the info sheet — the click
+                // twin of the swipe down, and the only way into the sheet on
+                // a remote set to Clickpad → Click Only, which sends no swipes
+                // at all. (A swipe's own move command never gets here:
+                // `moveSuppressed` above.)
+                viewModel.showInfoPanel()
             @unknown default: break
             }
         }

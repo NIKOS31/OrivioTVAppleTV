@@ -905,6 +905,11 @@ struct ContentDiscoveryDetail: View {
     @State private var iptvImporting = false
     @State private var iptvStatus: String?
     @State private var showIPTVPhoneAdd = false
+    @State private var providerServer = ""
+    @State private var providerUsername = ""
+    @State private var providerPassword = ""
+    @State private var providerStatus: String?
+    @State private var providerImporting = false
 
     var body: some View {
         DetailScaffold(title: SettingsCategory.contentDiscovery.title, subtitle: SettingsCategory.contentDiscovery.subtitle) {
@@ -997,7 +1002,7 @@ struct ContentDiscoveryDetail: View {
                     Text("Custom playlist active")
                         .font(.system(size: 24, weight: .medium))
                         .foregroundStyle(theme.palette.textPrimary)
-                    Text(liveTV.customPlaylistURL)
+                    Text(liveTV.customPlaylistDisplayURL)
                         .font(.system(size: 17))
                         .foregroundStyle(theme.palette.textTertiary)
                         .lineLimit(1)
@@ -1068,7 +1073,75 @@ struct ContentDiscoveryDetail: View {
             Text("Paste the URL of your own IPTV playlist (M3U/M3U8) to use it instead of the built-in channel list. The location and language filters below apply only to the built-in list.")
                 .font(.system(size: 18))
                 .foregroundStyle(theme.palette.textTertiary)
+
+            iptvProviderLogin
         }
+    }
+
+    /// Sign in with an IPTV provider's own login — the server address,
+    /// username and password (Xtream Codes) most services hand out instead of
+    /// a playlist link. Turned into that provider's playlist URL and checked
+    /// exactly like a pasted one, so nothing downstream changes.
+    @ViewBuilder
+    private var iptvProviderLogin: some View {
+        Text("Or sign in with your IPTV provider")
+            .font(.system(size: 24, weight: .medium))
+            .foregroundStyle(theme.palette.textPrimary)
+            .padding(.top, OrivioSpacing.sm)
+        TextField("Server URL (e.g. http://provider.tv:8080)", text: $providerServer)
+            .font(.system(size: 22))
+            .textContentType(.URL)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+        TextField("Username", text: $providerUsername)
+            .font(.system(size: 22))
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+        HStack(spacing: OrivioSpacing.md) {
+            SecureField("Password", text: $providerPassword)
+                .font(.system(size: 22))
+            Button {
+                guard !providerImporting else { return }
+                guard !providerUsername.trimmingCharacters(in: .whitespaces).isEmpty,
+                      !providerPassword.trimmingCharacters(in: .whitespaces).isEmpty,
+                      let url = LiveTVSettingsStore.providerPlaylistURL(
+                          server: providerServer, username: providerUsername,
+                          password: providerPassword) else {
+                    providerStatus = "Enter the server address, username and password your provider gave you."
+                    return
+                }
+                providerImporting = true
+                providerStatus = nil
+                Task {
+                    let channels = await M3UService.channels(from: url)
+                    if channels.isEmpty {
+                        providerStatus = "Couldn't load channels with that login — check the server address, username and password."
+                    } else {
+                        liveTV.customPlaylistURL = url
+                        providerStatus = nil
+                        providerServer = ""
+                        providerUsername = ""
+                        providerPassword = ""
+                    }
+                    providerImporting = false
+                }
+            } label: {
+                if providerImporting {
+                    ProgressView()
+                } else {
+                    Text("Sign In")
+                        .font(.system(size: 22, weight: .semibold))
+                }
+            }
+        }
+        if let providerStatus {
+            Text(providerStatus)
+                .font(.system(size: 19))
+                .foregroundStyle(theme.palette.textSecondary)
+        }
+        Text("For services that give you a server, username and password (Xtream Codes) rather than a playlist link. Your channels replace the built-in list, the same as a pasted playlist.")
+            .font(.system(size: 18))
+            .foregroundStyle(theme.palette.textTertiary)
     }
 
     /// Badger badge-pack import: paste a config URL (from the Badger editor's

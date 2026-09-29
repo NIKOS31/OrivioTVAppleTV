@@ -243,7 +243,7 @@ struct LayoutSettingsDetail: View {
 
                 SettingsToggleCard(
                     title: "Show unaired next up",
-                    subtitle: "Allow an episode that hasn't aired yet to be the next-up target",
+                    subtitle: "Keep a show in Continue Watching with its next episode before it airs. Off hides the show until that episode is out",
                     isOn: $settings.showUnairedNextUp
                 )
 

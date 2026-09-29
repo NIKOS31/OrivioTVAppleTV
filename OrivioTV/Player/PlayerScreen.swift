@@ -569,7 +569,8 @@ struct PlayerScreen: View {
             }
             // Bare video — directional CLICKS: left/right skip by the
             // configured amount, up/down open the controls. (The info panel is
-            // swipe-down only, handled by the pan recognizer.)
+            // a swipe down, handled by the pan recognizer, or a second Down
+            // press from the bar.)
             switch direction {
             case .left: viewModel.nudgeSeek(-Double(viewModel.settings.skipSeconds))
             case .right: viewModel.nudgeSeek(Double(viewModel.settings.skipSeconds))

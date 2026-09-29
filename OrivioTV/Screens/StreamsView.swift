@@ -818,6 +818,10 @@ struct StreamsView: View {
     /// of replaying a possibly-expired remembered link. Bypasses reuse-last-link.
     let resumeAutoPlay: Bool
     let resumeSignature: StreamSignature?
+    /// Shuffle: ALWAYS pick automatically, even with both auto-select settings
+    /// off — the viewer asked not to be shown a source list. The configured
+    /// pickers still get the first say; this only adds a last one after them.
+    let forceAutoPick: Bool
     /// Called when the Auto Link Selector auto-plays, so the caller can pop this
     /// page off the stack — backing out of the player returns to the title, not
     /// the source list.
@@ -878,7 +882,7 @@ struct StreamsView: View {
     /// decision takes.
     private var autoLinkArmed: Bool {
         guard !forceManual else { return false }
-        if profiles.activeAutoLink.enabled { return true }
+        if forceAutoPick || profiles.activeAutoLink.enabled { return true }
         return playerSettings.settings.autoPlaySourceEnabled
     }
 
@@ -918,12 +922,14 @@ struct StreamsView: View {
 
     init(meta: MetaItem, video: MetaVideo?, forceManual: Bool = false,
          resumeAutoPlay: Bool = false, resumeSignature: StreamSignature? = nil,
+         forceAutoPick: Bool = false,
          onAutoDismiss: @escaping () -> Void = {},
          onSelect: @escaping (StreamEntry, [StreamEntry]) -> Void) {
         _viewModel = StateObject(wrappedValue: StreamsViewModel(meta: meta, video: video))
         self.forceManual = forceManual
         self.resumeAutoPlay = resumeAutoPlay
         self.resumeSignature = resumeSignature
+        self.forceAutoPick = forceAutoPick
         self.onAutoDismiss = onAutoDismiss
         self.onSelect = onSelect
     }
@@ -1042,7 +1048,7 @@ struct StreamsView: View {
             // Watching row opened onto "Finding the best source…" and then
             // played something the viewer never picked, with both auto-select
             // settings off.
-            let autoSelects = profiles.activeAutoLink.enabled || s.autoPlaySourceEnabled
+            let autoSelects = forceAutoPick || profiles.activeAutoLink.enabled || s.autoPlaySourceEnabled
             // Fresh visit: hand the loading screen back to `autoLinkArmed`.
             // AFTER a pick has fired, force the list instead: this task re-runs
             // when the player cover comes down (`onDisappear`/`onAppear` on the
@@ -1206,9 +1212,10 @@ struct StreamsView: View {
                     // out lands on the title page, not the source list — popping
                     // here would tear this view down mid-resolve and crash.
                     autoDismiss()
-                } else {
+                } else if !forceAutoPick {
                     // No source matched the prefs — reveal the list as a manual
                     // fallback instead of leaving the loading screen up.
+                    // (Shuffle falls through to its own pick below instead.)
                     autoLinkResolvingLatch = false
                 }
             }
@@ -1224,6 +1231,16 @@ struct StreamsView: View {
                let best = viewModel.autoPlayPick(
                    cachedOnly: s.autoPlaySourceCachedOnly, regex: s.autoPlaySourceRegex
                ) {
+                didAutoAct = true
+                handleSelection(best, viewModel.allEntries)
+                autoDismiss()
+            }
+
+            // Shuffle: nothing above picked (both settings off, or their
+            // filters matched nothing) — take the best-ranked link, with none
+            // of the auto-play filters, as the player does between episodes.
+            if !didAutoAct, !forceManual, forceAutoPick,
+               let best = viewModel.autoPlayPick(cachedOnly: false, regex: "") {
                 didAutoAct = true
                 handleSelection(best, viewModel.allEntries)
                 autoDismiss()
@@ -1400,6 +1417,10 @@ struct StreamsView: View {
                 regex: playerSettings.settings.autoPlaySourceRegex,
                 excluding: autoTriedKeys
             )
+            // Shuffle's own unfiltered pick (see `forceAutoPick`), when the
+            // configured one has nothing left.
+            ?? (forceAutoPick ? viewModel.autoPlayPick(cachedOnly: false, regex: "",
+                                                       excluding: autoTriedKeys) : nil)
         guard let next else { return false }
         // Name the addon AND the attempt: walking 15 links of one addon looks
         // identical to a hang from the sofa otherwise.

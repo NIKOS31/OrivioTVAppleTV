@@ -99,8 +99,8 @@ enum NavigationPosition: String, CaseIterable, Identifiable, Codable {
 
     var summary: String {
         switch self {
-        case .left: return "A vertical rail down the left edge. The default."
-        case .top:  return "A horizontal bar across the top of the screen."
+        case .left: return "A vertical rail down the left edge."
+        case .top:  return "A horizontal bar across the top of the screen. The nTV default."
         }
     }
 
@@ -197,9 +197,8 @@ struct HomePresentationSnapshot: Codable, Equatable {
     var pinnedHero = false
     var heroLayout: HeroLayout = .hybrid
     var autoHideSidebar = false
-    /// Where the navigation rail sits. `.left` is the shipped layout and stays
-    /// the default, so an existing install sees no change.
-    var navigationPosition: NavigationPosition = .left
+    /// nTV starts with a top bar; stored per-profile choices still take priority.
+    var navigationPosition: NavigationPosition = .top
     var fullStreamTitles = false
     var heroTrailersEnabled = true
     var heroTrailerSound = false
@@ -383,7 +382,7 @@ final class HomeCatalogSettingsStore: ObservableObject {
         didSet { guard autoHideSidebar != oldValue else { return }; save(); notifyPresentationChange() }
     }
     /// Settings → Layout → Navigation Position.
-    @Published var navigationPosition: NavigationPosition = .left {
+    @Published var navigationPosition: NavigationPosition = .top {
         didSet { guard navigationPosition != oldValue else { return }; save(); notifyPresentationChange() }
     }
     /// Sources page: let every link's release name wrap in full instead of
@@ -971,7 +970,7 @@ final class HomeCatalogSettingsStore: ObservableObject {
         // app has only the boolean.
         heroLayout = decoded.heroLayout ?? (pinnedHero ? .pinnedFocus : .hybrid)
         autoHideSidebar = decoded.autoHideSidebar ?? false
-        navigationPosition = decoded.navigationPosition ?? .left
+        navigationPosition = decoded.navigationPosition ?? .top
         fullStreamTitles = decoded.fullStreamTitles ?? false
         heroTrailersEnabled = decoded.heroTrailersEnabled ?? true
         heroTrailerSound = decoded.heroTrailerSound ?? false

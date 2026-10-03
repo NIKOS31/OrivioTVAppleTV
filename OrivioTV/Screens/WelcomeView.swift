@@ -76,7 +76,7 @@ struct WelcomeView: View {
 
     private var chooser: some View {
         VStack(spacing: OrivioSpacing.lg) {
-            Text("Welcome to Orivio")
+            Text("Bienvenue sur \(NTVBrand.name)")
                 .font(FusionType.pageTitle(theme.font))
                 .foregroundStyle(theme.palette.textPrimary)
 
@@ -108,7 +108,7 @@ struct WelcomeView: View {
             } else {
                 // No backend configured in this build — say so instead of
                 // showing a QR that can never complete.
-                Text("Accounts aren't configured in this build. You can still use Orivio without one.")
+                Text("Accounts aren't configured in this build. You can still use \(NTVBrand.name) without one.")
                     .font(FusionType.bodyText(theme.font))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -136,6 +136,7 @@ struct WelcomeView: View {
                     account.cancelQRLogin()
                     step = .offerAddons
                 }
+                .buttonStyle(NTVActionButtonStyle())
             }
             .padding(.top, OrivioSpacing.sm)
         }
@@ -148,7 +149,7 @@ struct WelcomeView: View {
             Text("Add add-ons?")
                 .font(FusionType.pageTitle(theme.font))
                 .foregroundStyle(theme.palette.textPrimary)
-            Text("Add-ons are where Orivio gets its catalogs, artwork and streams. Cinemeta and OpenSubtitles are already installed. You can add more from your phone now — no typing on the remote — or any time from Settings → Add-ons.")
+            Text("Les addons fournissent les catalogues, les affiches et les sources de lecture de \(NTVBrand.name). Cinemeta et OpenSubtitles sont déjà installés. Vous pouvez ajouter vos addons depuis votre téléphone, maintenant ou plus tard dans Réglages → Addons.")
                 .font(FusionType.bodyText(theme.font))
                 .foregroundStyle(theme.palette.textSecondary)
                 .multilineTextAlignment(.center)

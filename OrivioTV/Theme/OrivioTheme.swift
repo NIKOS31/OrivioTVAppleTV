@@ -90,7 +90,12 @@ struct ThemePalette: Identifiable, Equatable {
     /// Ink for a translucent accent TINT — the "selected" chip fill
     /// (`secondary.opacity(~0.28)`), NOT the solid accent focus fill (which
     /// uses `onSecondary` directly).
-    var onAccentTint: Color { hasLightAccent ? onSecondary : textPrimary }
+    var onAccentTint: Color {
+        // nTV's pale blue needs dark ink on its SOLID fill, but a translucent
+        // tint over navy stays dark and needs the regular light foreground.
+        if id == NTVDesign.palette.id { return textPrimary }
+        return hasLightAccent ? onSecondary : textPrimary
+    }
 }
 
 enum OrivioThemes {
@@ -195,7 +200,7 @@ enum OrivioThemes {
     )
 
     // Picker order matches the APK's Color Theme row: White first.
-    static let all: [ThemePalette] = [white, crimson, ocean, violet, orivioPurple, lavender, emerald, mint, amber, rose]
+    static let all: [ThemePalette] = [NTVDesign.palette, white, crimson, ocean, violet, orivioPurple, lavender, emerald, mint, amber, rose]
 
     static func palette(id: String) -> ThemePalette {
         all.first { $0.id == id } ?? crimson
@@ -479,7 +484,7 @@ final class ThemeManager: ObservableObject {
         let pid = ProfileScopedDefaults.activeProfileID
         profileID = pid
         let feature = Self.feature
-        let saved = ProfileScopedDefaults.string(Self.key, feature: feature, pid) ?? "violet"
+        let saved = ProfileScopedDefaults.string(Self.key, feature: feature, pid) ?? NTVDesign.palette.id
         basePalette = OrivioThemes.palette(id: saved)
         amoled = ProfileScopedDefaults.bool(Self.amoledKey, feature: feature, pid)
         font = AppFont(rawValue: ProfileScopedDefaults.string(Self.fontKey, feature: feature, pid) ?? "") ?? .system
@@ -501,7 +506,7 @@ final class ThemeManager: ObservableObject {
         defer { applyingRemote = false }
         let feature = Self.feature
         let id = profileID
-        basePalette = OrivioThemes.palette(id: ProfileScopedDefaults.string(Self.key, feature: feature, id) ?? "violet")
+        basePalette = OrivioThemes.palette(id: ProfileScopedDefaults.string(Self.key, feature: feature, id) ?? NTVDesign.palette.id)
         amoled = ProfileScopedDefaults.bool(Self.amoledKey, feature: feature, id)
         font = AppFont(rawValue: ProfileScopedDefaults.string(Self.fontKey, feature: feature, id) ?? "") ?? .system
         experienceMode = ExperienceMode(rawValue: ProfileScopedDefaults.string(Self.experienceKey, feature: feature, id) ?? "") ?? .advanced
@@ -566,7 +571,10 @@ final class ThemeManager: ObservableObject {
     /// mode. It was 0x08080A — near-black, which matched a stage that still
     /// had an accent bloom over it. The stage is flat 0x000000 now, so
     /// anything but the same black leaves a seam where the hero band ends.
-    var stageBlend: Color { amoled ? OrivioPrimitives.black : ATVStage.blend }
+    var stageBlend: Color {
+        if amoled { return OrivioPrimitives.black }
+        return palette.id == NTVDesign.palette.id ? palette.background : ATVStage.blend
+    }
 
     // NOTE: `effectiveFocusGlow` and `ThemePalette.focusGlow` were removed.
     // `focusGlow` was only ever written by the never-called `ATVPalettes.adapt`,

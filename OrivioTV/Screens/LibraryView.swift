@@ -168,7 +168,8 @@ struct LibraryView: View {
 
     private func header(countLine: String?) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("Library")
+            Text("Bibliothèque")
+                .accessibilityIdentifier("ntv.library.heading")
                 .font(FusionType.pageTitle(theme.font))
                 .foregroundStyle(theme.palette.textPrimary)
             if let countLine {
@@ -178,11 +179,7 @@ struct LibraryView: View {
                     .padding(.leading, OrivioSpacing.sm)
             }
             Spacer()
-            Image("OrivioLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(height: 40)
-                .accessibilityLabel("Orivio")
+            NTVWordmark(size: 40)
         }
         .padding(.horizontal, OrivioSpacing.huge)
     }

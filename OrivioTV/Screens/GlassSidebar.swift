@@ -115,6 +115,8 @@ struct GlassSidebar: View {
     /// nothing here, so there is no widening lurch when you step into it.
     private var horizontalBody: some View {
         HStack(alignment: .center, spacing: 0) {
+            NTVWordmark(size: 34)
+                .padding(.trailing, OrivioSpacing.lg)
             Button(action: onProfileTap) {
                 GlassProfileHeader(profile: profiles.active, compact: true)
             }
@@ -128,11 +130,17 @@ struct GlassSidebar: View {
                         onTabSelected(tab.rawValue)
                         selected = tab.rawValue
                     } label: {
-                        GlassItemLabel(tab: tab, selected: selected == tab.rawValue,
-                                       expanded: true, horizontal: true)
+                        if theme.palette.id == NTVDesign.palette.id {
+                            NTVNavigationLabel(title: NTVBrand.navigationTitle(for: tab),
+                                               symbol: tab.icon, selected: selected == tab.rawValue)
+                        } else {
+                            GlassItemLabel(tab: tab, selected: selected == tab.rawValue,
+                                           expanded: true, horizontal: true)
+                        }
                     }
                     .buttonStyle(PlainCardButtonStyle())
                     .focused(focusBinding, equals: tab.rawValue)
+                    .accessibilityIdentifier("ntv.navigation.\(tab.rawValue)")
                 }
             }
             .padding(.vertical, 12)
@@ -140,7 +148,13 @@ struct GlassSidebar: View {
         }
         .padding(.horizontal, OrivioSpacing.md)
         .fixedSize(horizontal: true, vertical: true)
-        .background(Color.clear.liquidGlass(in: panelShape))
+        .background {
+            if theme.palette.id == NTVDesign.palette.id {
+                panelShape.fill(NTVDesign.surface)
+            } else {
+                Color.clear.liquidGlass(in: panelShape)
+            }
+        }
         .padding(.top, 28)
         .frame(maxWidth: .infinity, alignment: .center)
         // Hug the top edge the way the vertical rail hugs the left one.

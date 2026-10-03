@@ -71,7 +71,7 @@ struct ATVBackground: View {
             // black in name but still carried a corner of accent colour, which
             // is the one thing a black background is chosen to avoid. Nothing
             // is layered over `palette.background` (0x000000) now.
-            if !theme.amoled {
+            if !theme.amoled && theme.palette.id != NTVDesign.palette.id {
                 // Gentle grey depth wash — a touch lighter at top, slightly
                 // deeper at the bottom, but staying a medium GREY (not sinking
                 // to black).

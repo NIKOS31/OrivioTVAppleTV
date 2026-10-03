@@ -862,6 +862,20 @@ struct PosterCard: View {
     }
 
     var body: some View {
+        if theme.palette.id == NTVDesign.palette.id {
+            NTVPosterArtwork(
+                imageURL: item.poster, title: item.name,
+                width: cardWidth, height: cardHeight,
+                focused: isFocused, watched: watched.isWatched(item),
+                progress: effectiveProgress, shadowsEnabled: perf.settings.cardShadows,
+                placeholderSymbol: item.isSeries ? "tv" : "film"
+            )
+        } else {
+            upstreamArtwork
+        }
+    }
+
+    private var upstreamArtwork: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.sm) {
             ZStack(alignment: .bottom) {
                 RemoteImage(url: item.poster, maxDimension: cardHeight)

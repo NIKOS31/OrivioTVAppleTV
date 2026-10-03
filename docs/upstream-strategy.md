@@ -60,8 +60,9 @@ devront être définies et vérifiées avant une distribution signée.
 
 Le premier run doit être réellement exécuté avant d'annoncer un build validé.
 Les logs et bundles `.xcresult` sont conservés sept jours, même en cas d'échec.
-Le workflow ne publie pas d'IPA ni de release. Il ne lance pas encore les tours UI
-existants et ne certifie pas lecture, HDR, audio, PiP, Top Shelf ou focus matériel.
+Le workflow ne publie pas d'IPA ni de release. Il lance le smoke test nTV sur le
+simulateur, mais pas l'ensemble des tours UI existants. Il ne certifie pas lecture,
+HDR, audio, PiP, Top Shelf ou focus matériel.
 
 Sur un Mac équipé des versions indiquées :
 

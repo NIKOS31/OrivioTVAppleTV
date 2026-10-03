@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+task_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+cd "$task_root"
+output="$task_root/build/ci"
+results="$output/results/ntv-ui-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+mkdir -p "$output/logs" "$results"
+xcrun simctl list devices available --json > "$output/simulators.json"
+simulator=$(python3 - "$output/simulators.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    devices = json.load(handle)["devices"]
+for runtime, entries in sorted(devices.items(), reverse=True):
+    if ".tvOS-" in runtime:
+        for device in entries:
+            if device.get("isAvailable"):
+                print(device["udid"])
+                raise SystemExit(0)
+raise SystemExit("No available tvOS simulator on this runner.")
+PY
+)
+
+xcrun simctl boot "$simulator" || true
+xcrun simctl bootstatus "$simulator" -b
+xcodebuild test \
+  -project OrivioTV.xcodeproj -scheme OrivioTV \
+  -configuration Debug -sdk appletvsimulator \
+  -destination "platform=tvOS Simulator,id=$simulator" \
+  -derivedDataPath "$output/DerivedData" \
+  -resultBundlePath "$results/navigation.xcresult" \
+  -only-testing:OrivioTVUITests/NTVDesignSmoke \
+  -parallel-testing-enabled NO \
+  -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
+  2>&1 | tee "$output/logs/ntv-ui.log"
+
+xcrun xcresulttool export attachments \
+  --path "$results/navigation.xcresult" \
+  --output-path "$output/screenshots" \
+  2>&1 | tee "$output/logs/screenshots.log"
+
+python3 - "$output/build-info.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+data["ui_tests_executed"] = True
+data["ui_test_scope"] = "nTV brand and top-navigation Library round trip"
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2)
+    handle.write("\n")
+PY
+
+if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
+  printf '\n- nTV simulator smoke test passed: branding, top navigation and Back focus restoration.\n' >> "$GITHUB_STEP_SUMMARY"
+fi

@@ -868,7 +868,7 @@ struct PosterCard: View {
                 width: cardWidth, height: cardHeight,
                 focused: isFocused, watched: watched.isWatched(item),
                 progress: effectiveProgress, shadowsEnabled: perf.settings.cardShadows,
-                placeholderSymbol: item.isSeries ? "tv" : "film"
+                placeholderSymbol: item.isSeries ? "tv" : "film", cornerRadius: cornerRadius
             )
         } else {
             upstreamArtwork

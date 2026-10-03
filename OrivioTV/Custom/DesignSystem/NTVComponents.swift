@@ -24,9 +24,10 @@ struct NTVPosterArtwork: View {
     let progress: Double?
     let shadowsEnabled: Bool
     var placeholderSymbol = "film"
+    var cornerRadius: CGFloat = NTVDesign.cardRadius
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: NTVDesign.cardRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
     }
 
     var body: some View {

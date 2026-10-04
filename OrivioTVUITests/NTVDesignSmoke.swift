@@ -12,7 +12,7 @@ final class NTVDesignSmoke: XCTestCase {
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["ntv.brand"].firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.images["ntv.brand"].firstMatch.waitForExistence(timeout: 20))
         let settings = app.buttons["ntv.navigation.3"]
         let library = app.buttons["ntv.navigation.2"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))

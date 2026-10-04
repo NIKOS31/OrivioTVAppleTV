@@ -17,7 +17,7 @@ struct AddonPhoneAddView: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.lg) {
-                Text(localizedForNTV ? "Ajouter un addon" : "Add Add-ons")
+                Text(localizedForNTV ? "Ajouter un addon" : "Ajouter un addon")
                     .font(FusionType.pageTitle(theme.font))
                     .foregroundStyle(theme.palette.textPrimary)
                     .accessibilityIdentifier("ntv.addons.phone.heading")
@@ -25,14 +25,14 @@ struct AddonPhoneAddView: View {
                 if let address = server.address {
                     Text(localizedForNTV
                          ? "Scannez le QR avec votre téléphone, puis collez le lien de votre addon. Le téléphone et l’Apple TV doivent être sur le même réseau."
-                         : "Scan with your phone, or open \(address) in its browser. Both devices have to be on the same network.")
+                         : "Scannez le QR avec votre téléphone, ou ouvrez \(address) dans son navigateur. Les deux appareils doivent être sur le même réseau.")
                         .font(FusionType.bodyText(theme.font))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 900)
                         .fixedSize(horizontal: false, vertical: true)
                     QRCodeView(string: address, side: 360)
-                        .accessibilityLabel("QR code")
+                        .accessibilityLabel("Code QR")
                         .accessibilityIdentifier("ntv.addons.phone.qr")
                     Text(address)
                         .font(.system(size: 24, weight: .medium, design: .monospaced))
@@ -47,7 +47,7 @@ struct AddonPhoneAddView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("ntv.addons.phone.error")
                 } else {
-                    OrivioLoadingView(label: localizedForNTV ? "Préparation du QR" : "Starting")
+                    OrivioLoadingView(label: localizedForNTV ? "Préparation du QR" : "Préparation du QR")
                         .frame(height: 360)
                 }
 
@@ -80,7 +80,7 @@ struct AddonPhoneAddView: View {
                         .buttonStyle(NTVActionButtonStyle())
                         .padding(.top, OrivioSpacing.sm)
                 } else {
-                    Button("Done", action: onDone)
+                    Button("Terminer", action: onDone)
                         .padding(.top, OrivioSpacing.sm)
                 }
             }
@@ -132,7 +132,7 @@ struct IPTVPhoneAddView: View {
 
     private struct PlaylistImportError: LocalizedError {
         var errorDescription: String? {
-            "no channels found at that URL — check it points to an M3U/M3U8 playlist"
+            "Aucune chaîne trouvée. Vérifiez que le lien correspond à une liste M3U ou M3U8."
         }
     }
 
@@ -140,12 +140,12 @@ struct IPTVPhoneAddView: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.lg) {
-                Text("Add IPTV Playlist")
+                Text("Ajouter une liste de chaînes")
                     .font(FusionType.pageTitle(theme.font))
                     .foregroundStyle(theme.palette.textPrimary)
 
                 if let address = server.address {
-                    Text("Scan with your phone, or open \(address) in its browser, and paste your playlist URL there. Both devices have to be on the same network.")
+                    Text("Scannez le QR avec votre téléphone, ou ouvrez \(address) dans son navigateur, puis collez le lien de votre liste. Les deux appareils doivent être sur le même réseau.")
                         .font(FusionType.bodyText(theme.font))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.center)
@@ -163,7 +163,7 @@ struct IPTVPhoneAddView: View {
                         .frame(maxWidth: 900)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    OrivioLoadingView(label: "Starting")
+                    OrivioLoadingView(label: "Préparation du QR")
                         .frame(height: 360)
                 }
 
@@ -178,18 +178,18 @@ struct IPTVPhoneAddView: View {
                     }
                 }
 
-                Button("Done", action: onDone)
+                Button("Terminer", action: onDone)
                     .padding(.top, OrivioSpacing.sm)
             }
             .padding(OrivioSpacing.huge)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
-            server.pageTitle = "Add IPTV playlist"
-            server.pagePrompt = "Paste your M3U/M3U8 playlist URL. It replaces the built-in channel list in Live TV on the Apple TV."
+            server.pageTitle = "Ajouter une liste de chaînes"
+            server.pagePrompt = "Collez le lien d’une liste de chaînes M3U ou M3U8."
             server.pagePlaceholder = "https://…/playlist.m3u"
-            server.pageButton = "Use this playlist"
-            server.pageEmptyMessage = "Enter a playlist URL."
+            server.pageButton = "Utiliser cette liste"
+            server.pageEmptyMessage = "Entrez le lien de votre liste de chaînes."
             server.onInstall = { url in
                 var normalized = url.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !normalized.contains("://") { normalized = "https://" + normalized }
@@ -199,7 +199,7 @@ struct IPTVPhoneAddView: View {
                 guard !channels.isEmpty else { return .failure(PlaylistImportError()) }
                 LiveTVSettingsStore.shared.customPlaylistURL = normalized
                 return .success(.init(manifestURL: normalized,
-                                      name: "Playlist active — \(channels.count) channels",
+                                      name: "Liste active : \(channels.count) chaînes",
                                       logo: nil, description: normalized))
             }
             server.start()

@@ -487,9 +487,9 @@ final class AddonManager: ObservableObject {
             var label: String {
                 switch self {
                 case .ok: return "OK"
-                case .slow: return "Slow"
-                case .disabled: return "Off"
-                case .failed: return "Failed"
+                case .slow: return "Lent"
+                case .disabled: return "Désactivé"
+                case .failed: return "Indisponible"
                 }
             }
         }
@@ -540,11 +540,11 @@ final class AddonManager: ObservableObject {
 
     nonisolated private static func capabilitySummary(for manifest: AddonManifest) -> String {
         var parts: [String] = []
-        if manifest.providesCatalogs { parts.append("Catalogs") }
-        if manifest.providesStreams { parts.append("Streams") }
-        if manifest.providesMeta { parts.append("Meta") }
-        if manifest.providesSubtitles { parts.append("Subtitles") }
-        return parts.isEmpty ? "No active resources" : parts.joined(separator: " · ")
+        if manifest.providesCatalogs { parts.append("Catalogues") }
+        if manifest.providesStreams { parts.append("Sources") }
+        if manifest.providesMeta { parts.append("Métadonnées") }
+        if manifest.providesSubtitles { parts.append("Sous-titres") }
+        return parts.isEmpty ? "Aucune ressource active" : parts.joined(separator: " · ")
     }
 
     /// Re-fetch every installed addon's manifest (the APK's "Refresh Add-ons")
@@ -565,16 +565,16 @@ final class AddonManager: ObservableObject {
         var message: String {
             switch self {
             case .notSignedIn:
-                return "Manifests refreshed — sign in to sync add-ons with your account"
+                return "Addons actualisés. Connectez-vous pour les synchroniser avec votre compte."
             case .changed(let added, let removed):
                 var parts: [String] = []
-                if added > 0 { parts.append("added \(added)") }
-                if removed > 0 { parts.append("removed \(removed)") }
-                return "Synced with your account — " + parts.joined(separator: ", ")
+                if added > 0 { parts.append("\(added) ajoutés") }
+                if removed > 0 { parts.append("\(removed) supprimés") }
+                return "Synchronisés avec votre compte : " + parts.joined(separator: ", ")
             case .alreadyUpToDate:
-                return "Add-ons synced — already up to date"
+                return "Addons synchronisés et à jour"
             case .failed(let why):
-                return "Couldn't sync with your account: \(why)"
+                return "Synchronisation impossible : \(why)"
             }
         }
     }
@@ -611,9 +611,9 @@ final class AddonManager: ObservableObject {
 
     nonisolated private static func shortReason(_ error: Error) -> String {
         if let urlError = error as? URLError {
-            return urlError.code == .notConnectedToInternet ? "no internet" : "network error"
+            return urlError.code == .notConnectedToInternet ? "pas de connexion Internet" : "erreur réseau"
         }
-        if error is DecodingError { return "unexpected response from the server" }
+        if error is DecodingError { return "réponse du serveur illisible" }
         let text = "\(error)"
         return text.count > 90 ? String(text.prefix(90)) + "…" : text
     }

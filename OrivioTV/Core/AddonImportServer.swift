@@ -17,7 +17,8 @@ import Network
 ///   a URL typed on the TV, so the same validation applies.
 /// * http, not https: a self-signed certificate on a LAN address would make
 ///   every phone show a security warning, which trains exactly the wrong
-///   instinct. Nothing secret crosses it.
+///   instinct. Configured manifest links can carry private tokens; they
+    ///   travel only over this local connection and are never echoed in HTML.
 @MainActor
 final class AddonImportServer: ObservableObject {
     /// What the QR encodes, e.g. "http://192.168.1.20:8090". nil until the
@@ -47,11 +48,11 @@ final class AddonImportServer: ObservableObject {
     /// is deliberately generic — anything pasted goes through `onInstall` —
     /// so other paste-from-phone flows (the custom IPTV playlist) reuse it by
     /// swapping these before `start()`.
-    var pageTitle = "Add add-ons"
-    var pagePrompt = "Paste one manifest URL, or a whole Add-on Setup export — one URL per line. Scanning the Export Add-on Setup QR from another Orivio gives you exactly that list."
+    var pageTitle = "Ajouter un addon à nTV"
+    var pagePrompt = "Collez un lien de manifest, ou plusieurs liens séparés par des retours à la ligne."
     var pagePlaceholder = "https://…/manifest.json"
-    var pageButton = "Add to Orivio"
-    var pageEmptyMessage = "Enter a manifest URL."
+    var pageButton = "Ajouter à nTV"
+    var pageEmptyMessage = "Entrez le lien de votre addon."
 
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
@@ -77,7 +78,7 @@ final class AddonImportServer: ObservableObject {
                     case .ready:
                         self?.address = Self.lanAddress().map { "http://\($0):\(Self.port)" }
                         if self?.address == nil {
-                            self?.lastError = "This Apple TV isn't on a network."
+                            self?.lastError = "L’Apple TV n’est pas connectée au réseau."
                         }
                     case .failed(let error):
                         self?.lastError = error.localizedDescription
@@ -155,9 +156,9 @@ final class AddonImportServer: ObservableObject {
                     // add-on succeeds, and a duplicate row would suggest two.
                     accepted.removeAll { $0.manifestURL == addon.manifestURL }
                     accepted.insert(addon, at: 0)
-                    results.append("Added \(addon.name)")
+                    results.append("Ajouté : \(addon.name)")
                 case .failure(let error):
-                    results.append("Couldn't add: \(error.localizedDescription)")
+                    results.append("Ajout impossible : \(error.localizedDescription)")
                 }
             }
             body = page(accepted: accepted,
@@ -243,12 +244,12 @@ final class AddonImportServer: ObservableObject {
             return "<li>\(art)<div><strong>\(escape(addon.name))</strong>\(blurb)</div></li>"
         }
         let list = accepted.isEmpty ? ""
-            : "<h2>Added</h2><ul class=addons>" + rows.joined() + "</ul>"
+            : "<h2>Ajoutés</h2><ul class=addons>" + rows.joined() + "</ul>"
         let note = message.map { "<p class=note>\(escape($0))</p>" } ?? ""
         return """
-        <!doctype html><html><head><meta charset=utf-8>
+        <!doctype html><html lang="fr"><head><meta charset=utf-8>
         <meta name=viewport content="width=device-width,initial-scale=1">
-        <title>\(escape(title)) · Orivio</title><style>
+        <title>\(escape(title)) · nTV</title><style>
         :root{color-scheme:dark}
         body{margin:0;padding:24px;background:#0d0f14;color:#f2f2f7;
              font:16px/1.5 -apple-system,system-ui,sans-serif}

@@ -1269,13 +1269,13 @@ struct AddonsManagementView: View {
     @State private var showHealth = false
     @State private var pendingRemoval: InstalledAddon?
 
-    private static let refreshIdle = "Two-way sync with your account — uploads your changes, pulls others' and removes add-ons deleted elsewhere"
+    private static let refreshIdle = "Synchronise les addons avec votre compte et vos autres appareils"
     @State private var refreshSubtitle = AddonsManagementView.refreshIdle
 
     var body: some View {
-        DetailScaffold(title: "Add-ons", subtitle: "Manage add-ons, catalog order, and collections") {
+        DetailScaffold(title: "Addons", subtitle: "Gérer les addons, l’ordre des catalogues et les collections") {
             // Install Add-on
-            SettingsGroupCard(title: "Install Add-on", subtitle: "Install add-ons by manifest URL") {
+            SettingsGroupCard(title: "Installer un addon", subtitle: "Ajouter un addon avec son lien d’installation") {
                 HStack(spacing: OrivioSpacing.md) {
                     TextField("https://.../manifest.json", text: $newAddonURL)
                         .font(.system(size: 23))
@@ -1287,7 +1287,7 @@ struct AddonsManagementView: View {
                         if installing {
                             ProgressView().tint(theme.palette.onSecondary)
                         } else {
-                            Text("Install").font(.system(size: 23, weight: .semibold))
+                            Text("Installer").font(.system(size: 23, weight: .semibold))
                         }
                     }
                     // Not disabled while installing: that disables the button
@@ -1299,15 +1299,15 @@ struct AddonsManagementView: View {
                 if let installMessage {
                     Text(installMessage)
                         .font(.system(size: 20))
-                        .foregroundStyle(installMessage.hasPrefix("Installed") ? OrivioPrimitives.success : OrivioPrimitives.error)
+                        .foregroundStyle(installMessage.hasPrefix("Installé") ? OrivioPrimitives.success : OrivioPrimitives.error)
                 }
             }
 
             // Discover: curated one-tap-install directory.
             Button { showDiscover = true } label: {
                 SettingsActionRow(
-                    title: "Discover Add-ons",
-                    subtitle: "Browse and install popular add-ons — streams, catalogs, metadata and subtitles",
+                    title: "Découvrir des addons",
+                    subtitle: "Parcourir les addons de sources, catalogues, métadonnées et sous-titres",
                     leadingIcon: "sparkle.magnifyingglass"
                 )
             }
@@ -1317,7 +1317,7 @@ struct AddonsManagementView: View {
             Button { showCollections = true } label: {
                 SettingsActionRow(
                     title: "Collections",
-                    subtitle: "Group catalogs into custom home rows",
+                    subtitle: "Regrouper les catalogues dans des lignes sur l’accueil",
                     value: collections.collections.isEmpty ? nil : "\(collections.collections.count)",
                     leadingIcon: "rectangle.stack.fill"
                 )
@@ -1328,8 +1328,8 @@ struct AddonsManagementView: View {
             // (major streaming services / studios) that need zero setup.
             Button { showCommunityCollections = true } label: {
                 SettingsActionRow(
-                    title: "Community Collections",
-                    subtitle: "One-tap streaming-service and studio collections — install and go",
+                    title: "Collections de la communauté",
+                    subtitle: "Installer des collections de plateformes et de studios",
                     leadingIcon: "square.stack.3d.up.fill"
                 )
             }
@@ -1338,7 +1338,7 @@ struct AddonsManagementView: View {
             // Sync Add-ons (two-way)
             Button { refresh() } label: {
                 SettingsActionRow(
-                    title: "Sync Add-ons",
+                    title: "Synchroniser les addons",
                     subtitle: refreshSubtitle,
                     value: refreshing ? "…" : nil,
                     leadingIcon: "arrow.clockwise"
@@ -1349,8 +1349,8 @@ struct AddonsManagementView: View {
 
             Button { showHealth = true } label: {
                 SettingsActionRow(
-                    title: "Add-on Health",
-                    subtitle: "Measure manifest response time and find slow or dead providers",
+                    title: "État des addons",
+                    subtitle: "Repérer les addons lents ou indisponibles",
                     leadingIcon: "waveform.path.ecg"
                 )
             }
@@ -1360,8 +1360,8 @@ struct AddonsManagementView: View {
             // phone to keep your addon list for a fresh install.
             Button { showPhoneAdd = true } label: {
                 SettingsActionRow(
-                    title: "Add Add-ons",
-                    subtitle: "Show a QR code that opens a page on your phone — paste manifest URLs there and they install here",
+                    title: "Ajouter avec mon téléphone",
+                    subtitle: "Scanner le QR puis coller les liens d’installation sur votre téléphone",
                     leadingIcon: "qrcode"
                 )
             }
@@ -1369,8 +1369,8 @@ struct AddonsManagementView: View {
 
             Button { showExport = true } label: {
                 SettingsActionRow(
-                    title: "Export Add-on Setup",
-                    subtitle: "Show a QR code containing every installed manifest URL",
+                    title: "Exporter mes addons",
+                    subtitle: "Afficher un QR contenant les liens des addons installés",
                     leadingIcon: "qrcode"
                 )
             }
@@ -1378,17 +1378,17 @@ struct AddonsManagementView: View {
 
             Button { showImport = true } label: {
                 SettingsActionRow(
-                    title: "Import Add-on Setup",
-                    subtitle: "Paste exported manifest URLs to restore a setup",
+                    title: "Importer mes addons",
+                    subtitle: "Restaurer vos addons avec une liste de liens exportés",
                     leadingIcon: "square.and.arrow.down"
                 )
             }
             .buttonStyle(PlainCardButtonStyle())
 
             // Installed Add-ons
-            SettingsGroupCard(title: "Installed Add-ons") {
+            SettingsGroupCard(title: "Addons installés") {
                 if addonManager.addons.isEmpty {
-                    Text("No add-ons installed yet.")
+                    Text("Aucun addon installé pour le moment.")
                         .font(.system(size: 21))
                         .foregroundStyle(theme.palette.textSecondary)
                 } else {
@@ -1422,17 +1422,17 @@ struct AddonsManagementView: View {
                 .environmentObject(theme)
                 .environmentObject(addonManager)
         }
-        .alert("Remove Add-on?",
+        .alert("Supprimer cet addon ?",
                isPresented: Binding(get: { pendingRemoval != nil },
                                     set: { if !$0 { pendingRemoval = nil } }),
                presenting: pendingRemoval) { addon in
-            Button("Remove", role: .destructive) {
+            Button("Supprimer", role: .destructive) {
                 addonManager.remove(addon)
                 pendingRemoval = nil
             }
-            Button("Cancel", role: .cancel) { pendingRemoval = nil }
+            Button("Annuler", role: .cancel) { pendingRemoval = nil }
         } message: { addon in
-            Text("\"\(addon.manifest.name)\" will be removed from this device and your account. You can add it back later with its manifest URL.")
+            Text("\(addon.manifest.name) sera supprimé de cet appareil et de votre compte. Vous pourrez le réinstaller avec son lien.")
         }
         .fullScreenCover(isPresented: $showPhoneAdd) {
             AddonPhoneAddView(addonManager: addonManager) { showPhoneAdd = false }
@@ -1465,10 +1465,10 @@ struct AddonsManagementView: View {
         Task {
             do {
                 try await addonManager.install(manifestURL: url)
-                installMessage = "Installed successfully"
+                installMessage = "Installé avec succès"
                 newAddonURL = ""
             } catch {
-                installMessage = "Install failed: \(error.localizedDescription)"
+                installMessage = "Installation impossible : \(error.localizedDescription)"
             }
             installing = false
         }
@@ -1542,9 +1542,9 @@ private struct AddonRowView: View {
                     if let version = addon.manifest.version {
                         Text("v\(version)").font(.system(size: 18)).foregroundStyle(theme.palette.textTertiary)
                     }
-                    if addon.manifest.providesCatalogs { capability("Catalogs") }
-                    if addon.manifest.providesStreams { capability("Streams") }
-                    if addon.manifest.providesMeta { capability("Meta") }
+                    if addon.manifest.providesCatalogs { capability("Catalogues") }
+                    if addon.manifest.providesStreams { capability("Sources") }
+                    if addon.manifest.providesMeta { capability("Métadonnées") }
                 }
             }
             // Dim the info when the addon is off.
@@ -1783,8 +1783,8 @@ private struct AddonImportView: View {
     var body: some View {
         ZStack {
             ATVBackground()
-            DetailScaffold(title: "Import Add-ons", subtitle: "Paste manifest URLs from an exported setup") {
-                SettingsGroupCard(title: "Manifest URLs", subtitle: "One URL per line, or paste the full text from an export") {
+            DetailScaffold(title: "Importer mes addons", subtitle: "Restaurer une configuration avec ses liens d’installation") {
+                SettingsGroupCard(title: "Liens d’installation", subtitle: "Un lien par ligne, ou le texte complet d’un export") {
                     TextField("https://.../manifest.json", text: $input, axis: .vertical)
                         .font(.system(size: 22))
                         .lineLimit(5...10)
@@ -1798,21 +1798,21 @@ private struct AddonImportView: View {
                             if importing {
                                 ProgressView().tint(theme.palette.onSecondary)
                             } else {
-                                Text("Import").font(.system(size: 23, weight: .semibold))
+                                Text("Importer").font(.system(size: 23, weight: .semibold))
                             }
                         }
                         // Stays enabled while importing (disabling the focused
                         // button drops focus); importAddons() guards re-entry.
                         .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                        Button("Done", action: onDone)
+                        Button("Terminer", action: onDone)
                             .font(.system(size: 23, weight: .semibold))
                     }
 
                     if let message {
                         Text(message)
                             .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(message.hasPrefix("Imported") ? OrivioPrimitives.success : OrivioPrimitives.error)
+                            .foregroundStyle(message.hasPrefix("Importés") ? OrivioPrimitives.success : OrivioPrimitives.error)
                     }
                 }
             }
@@ -1828,9 +1828,9 @@ private struct AddonImportView: View {
             let result = await addonManager.importManifestURLs(from: input)
             importing = false
             if result.installed == 0 && result.failed == 0 {
-                message = "No manifest URLs found."
+                message = "Aucun lien d’installation trouvé."
             } else {
-                message = "Imported \(result.installed), failed \(result.failed)."
+                message = "Importés : \(result.installed). Échecs : \(result.failed)."
                 if result.installed > 0 { input = "" }
             }
         }
@@ -1848,12 +1848,12 @@ private struct AddonHealthView: View {
     var body: some View {
         ZStack {
             ATVBackground()
-            DetailScaffold(title: "Add-on Health", subtitle: "Manifest response times for installed providers") {
-                SettingsGroupCard(title: "Scan", subtitle: summary) {
+            DetailScaffold(title: "État des addons", subtitle: "Temps de réponse des addons installés") {
+                SettingsGroupCard(title: "Vérification", subtitle: summary) {
                     Button { scan() } label: {
                         SettingsActionRow(
-                            title: scanning ? "Scanning..." : "Run Health Check",
-                            subtitle: "Checks installed manifest URLs without changing your setup",
+                            title: scanning ? "Vérification…" : "Vérifier les addons",
+                            subtitle: "Vérifier les liens installés sans modifier votre configuration",
                             value: scanning ? "..." : nil,
                             leadingIcon: "waveform.path.ecg"
                         )
@@ -1863,7 +1863,7 @@ private struct AddonHealthView: View {
                 }
 
                 if !results.isEmpty {
-                    SettingsGroupCard(title: "Results") {
+                    SettingsGroupCard(title: "Résultats") {
                         ForEach(results) { result in
                             AddonHealthRow(
                                 result: result,
@@ -1882,7 +1882,7 @@ private struct AddonHealthView: View {
 
     private var summary: String {
         guard !results.isEmpty else {
-            return scanning ? "Checking installed add-ons..." : "No scan has run yet"
+            return scanning ? "Vérification des addons installés…" : "Aucune vérification effectuée"
         }
         let failed = results.filter {
             if case .failed = $0.status { return true }
@@ -1890,9 +1890,9 @@ private struct AddonHealthView: View {
         }.count
         let slow = results.filter { $0.status == .slow }.count
         if failed > 0 || slow > 0 {
-            return "\(failed) failed, \(slow) slow, \(results.count) checked"
+            return "\(failed) indisponibles, \(slow) lents, \(results.count) vérifiés"
         }
-        return "All \(results.count) installed add-ons responded normally"
+        return "Les \(results.count) addons ont répondu normalement"
     }
 
     private func scan() {
@@ -1961,7 +1961,7 @@ private struct AddonHealthRow: View {
             Spacer()
 
             if canDisable {
-                Button("Disable", action: onDisable)
+                Button("Désactiver", action: onDisable)
                     .font(.system(size: 21, weight: .semibold))
             }
         }
@@ -1971,7 +1971,7 @@ private struct AddonHealthRow: View {
     }
 
     private var detail: String {
-        let timing = result.elapsedMS.map { "\($0) ms" } ?? "not checked"
+        let timing = result.elapsedMS.map { "\($0) ms" } ?? "non vérifié"
         switch result.status {
         case .failed(let reason):
             return "\(result.capabilities) · \(timing) · \(reason)"
@@ -2018,20 +2018,20 @@ private struct AddonExportView: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.xl) {
-                Text("Add-on Setup")
+                Text("Exporter mes addons")
                     .font(FusionType.pageTitle(theme.font))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("Scan with your phone — one manifest URL per line. Paste them into any Orivio install to restore your add-ons.")
+                Text("Scannez le QR avec votre téléphone. Collez les liens dans nTV pour restaurer vos addons.")
                     .font(FusionType.bodyText(theme.font))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 900)
                 QRCodeView(string: urls.joined(separator: "\n"))
                     .frame(width: 460, height: 460)
-                Text("\(urls.count) add-on\(urls.count == 1 ? "" : "s")")
+                Text("\(urls.count) addon\(urls.count == 1 ? "" : "s")")
                     .font(.system(size: 21, weight: .medium))
                     .foregroundStyle(theme.palette.textTertiary)
-                Button("Done", action: onDone)
+                Button("Terminer", action: onDone)
             }
             .padding(OrivioSpacing.huge)
         }

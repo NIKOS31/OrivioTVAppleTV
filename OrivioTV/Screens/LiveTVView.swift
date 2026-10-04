@@ -53,10 +53,9 @@ struct LiveChannel: Identifiable, Hashable {
     }
 }
 
-/// Live TV / IPTV tab. Merges two sources: `tv`-type catalogs from installed
-/// add-ons AND an embedded iptv-org playlist, so there are channels out of the
-/// box. Direct (M3U) channels play immediately; add-on channels go through the
-/// normal source picker.
+/// Live TV from installed `tv`-type add-on catalogs. A playlist is loaded only
+/// when the viewer explicitly configures one; nTV never fetches a default
+/// channel directory. Add-on channels use the normal source picker.
 @MainActor
 final class LiveTVViewModel: ObservableObject {
     struct Section: Identifiable {
@@ -99,26 +98,15 @@ final class LiveTVViewModel: ObservableObject {
         sections = addonSections
         if !addonSections.isEmpty { isLoading = false }
 
-        // 2) The IPTV list — the viewer's own playlist when one is set in
-        // Settings → Live TV (it replaces the built-in source entirely),
-        // otherwise the language/country iptv-org playlist chosen there.
-        loadingIPTV = true
+        // Optional explicit playlist. Installed TV add-ons stand on their own.
         let settings = LiveTVSettingsStore.shared
-        var m3u = await M3UService.channels(from: settings.primaryPlaylistURL)
-
-        // Safety net: if a language is chosen but its iptv-org playlist came
-        // back empty (unsupported/unavailable), pull the global list and keep
-        // only channels whose country is one where that language is spoken, so
-        // non-matching-language channels are still hidden. Never for a custom
-        // playlist: falling back to the global list would resurrect the very
-        // built-in source the custom URL is meant to replace.
-        if !settings.usesCustomPlaylist && !settings.languageCode.isEmpty && m3u.isEmpty {
-            let allowed = settings.countriesForLanguage(settings.languageCode)
-            if !allowed.isEmpty {
-                let global = await M3UService.channels(from: M3UService.iptvOrgURL)
-                m3u = global.filter { ch in ch.country.map { allowed.contains($0) } ?? false }
-            }
+        guard settings.usesCustomPlaylist else {
+            loadingIPTV = false
+            isLoading = false
+            return
         }
+        loadingIPTV = true
+        let m3u = await M3UService.channels(from: settings.primaryPlaylistURL)
 
         guard generation == loadGeneration else { return }
         sections = addonSections + m3uSections(m3u)
@@ -173,7 +161,7 @@ final class LiveTVViewModel: ObservableObject {
 }
 
 enum ChannelSort: String, CaseIterable, Identifiable {
-    case defaultOrder = "Default"
+    case defaultOrder = "Par défaut"
     case nameAsc = "A → Z"
     case nameDesc = "Z → A"
     var id: String { rawValue }
@@ -210,16 +198,19 @@ struct LiveTVView: View {
         "\(liveSettings.countryCode)|\(liveSettings.languageCode)|\(liveSettings.customPlaylistURL)"
     }
 
+    private var addonKey: String {
+        addonManager.addons.map { "\($0.id)|\($0.enabled)|\($0.manifest.version ?? "")" }
+            .joined(separator: ";")
+    }
+
     var body: some View {
         ZStack {
             ATVBackground()
             content
         }
-        .task { await viewModel.loadIfNeeded(addonManager: addonManager) }
-        // Reload the IPTV list when the location/language changes in Settings.
-        .onChange(of: settingsKey) { _, _ in
+        .task(id: settingsKey + "|" + addonKey) {
             selectedGroupID = ""
-            Task { await viewModel.load(addonManager: addonManager) }
+            await viewModel.load(addonManager: addonManager)
         }
     }
 
@@ -256,12 +247,12 @@ struct LiveTVView: View {
     @ViewBuilder
     private var content: some View {
         if viewModel.isLoading && viewModel.sections.isEmpty {
-            OrivioLoadingView(label: "Loading channels…")
+            OrivioLoadingView(label: "Chargement des chaînes…")
         } else if viewModel.sections.isEmpty {
             OrivioEmptyState(
                 icon: "tv",
-                title: "No channels",
-                message: "Couldn't load channels. Check your connection, or install a Live TV / IPTV add-on from Add-ons → Discover."
+                title: "Aucune chaîne disponible",
+                message: "Ajoutez un addon de chaînes TV dans Addons. Ses catalogues apparaîtront ici lorsqu’ils seront disponibles."
             )
         } else {
             ScrollView(.vertical) {
@@ -292,7 +283,7 @@ struct LiveTVView: View {
     private var gridContext: some View {
         if !selectedGroupID.isEmpty {
             HStack(spacing: OrivioSpacing.md) {
-                Button { selectedGroupID = "" } label: { SeeAllLabel(text: "‹ All Channels") }
+                Button { selectedGroupID = "" } label: { SeeAllLabel(text: "‹ Toutes les chaînes") }
                     .buttonStyle(PlainCardButtonStyle())
                 Text(selectedSection?.title ?? "")
                     .font(.system(size: 30, weight: .bold))
@@ -305,12 +296,12 @@ struct LiveTVView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Live TV")
+            Text("TV en direct")
                 .font(.system(size: 40, weight: .heavy))
                 .foregroundStyle(theme.palette.textPrimary)
             Text(viewModel.loadingIPTV
-                 ? "Loading the IPTV channel list…"
-                 : "Channels from your add-ons and the built-in IPTV list")
+                 ? "Chargement de votre liste de chaînes…"
+                 : "Les chaînes de vos addons")
                 .font(.system(size: 21))
                 .foregroundStyle(theme.palette.textSecondary)
         }
@@ -323,7 +314,7 @@ struct LiveTVView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textSecondary)
-                TextField("Search channels", text: $searchText)
+                TextField("Rechercher une chaîne", text: $searchText)
                     .font(.system(size: 23))
             }
             .padding(.horizontal, OrivioSpacing.lg)
@@ -332,7 +323,7 @@ struct LiveTVView: View {
             .frame(maxWidth: 560)
 
             OrivioDropdown(
-                title: "Sort",
+                title: "Trier",
                 selection: sortMode.rawValue,
                 options: ChannelSort.allCases.map { OrivioDropdownOption($0.rawValue) },
                 triggerWidth: 240
@@ -360,7 +351,7 @@ struct LiveTVView: View {
         let capped = shown.count > Self.gridDisplayCap ? Array(shown.prefix(Self.gridDisplayCap)) : shown
         return Group {
             if shown.isEmpty {
-                Text(searchText.isEmpty ? "No channels in this group." : "No channels match “\(searchText)”.")
+                Text(searchText.isEmpty ? "Aucune chaîne dans cette catégorie." : "Aucune chaîne pour « \(searchText) ».")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textSecondary)
                     .padding(.horizontal, OrivioSpacing.huge)
@@ -383,7 +374,7 @@ struct LiveTVView: View {
                 }
                 .padding(.horizontal, OrivioSpacing.huge)
                 if shown.count > capped.count {
-                    Text("Showing the first \(capped.count) of \(shown.count) channels — keep typing to narrow the search.")
+                    Text("\(capped.count) chaînes affichées sur \(shown.count). Précisez votre recherche pour voir les autres.")
                         .font(.system(size: 22))
                         .foregroundStyle(theme.palette.textSecondary)
                         .padding(.horizontal, OrivioSpacing.huge)
@@ -401,7 +392,7 @@ struct LiveTVView: View {
         if !favorites.channels.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
                 HStack(alignment: .firstTextBaseline) {
-                    RowHeader(title: "Favorites")
+                    RowHeader(title: "Favoris")
                     Spacer()
                 }
                 ScrollView(.horizontal) {
@@ -431,7 +422,7 @@ struct LiveTVView: View {
                 Spacer()
                 // Every row can open its full channel list.
                 Button { selectedGroupID = section.id } label: {
-                    SeeAllLabel(text: "Show All")
+                    SeeAllLabel(text: "Tout voir")
                 }
                 .buttonStyle(PlainCardButtonStyle())
                 .padding(.trailing, OrivioSpacing.huge)

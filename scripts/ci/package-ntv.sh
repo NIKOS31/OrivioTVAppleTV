@@ -24,7 +24,7 @@ with open(sys.argv[1], "rb") as handle:
 with open(sys.argv[2], encoding="utf-8") as handle:
     build = json.load(handle)
 head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-if info.get("CFBundleDisplayName") != "nTV":
+if info.get("CFBundleDisplayName") != "nTV" or info.get("CFBundleName") != "nTV":
     raise SystemExit("Unexpected app display name.")
 if info.get("CFBundleSupportedPlatforms") != ["AppleTVOS"] or 3 not in info.get("UIDeviceFamily", []):
     raise SystemExit("Expected a device tvOS app, never simulator output.")

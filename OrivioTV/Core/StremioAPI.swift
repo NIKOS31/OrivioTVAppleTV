@@ -8,9 +8,9 @@ enum StremioAPIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .badURL(let url): return "Invalid addon URL: \(url)"
-        case .badResponse(let code): return "Addon returned HTTP \(code)"
-        case .emptyBody: return "Addon returned an empty response"
+        case .badURL: return "Le lien d’installation de l’addon est invalide."
+        case .badResponse(let code): return "L’addon a répondu avec une erreur HTTP \(code)."
+        case .emptyBody: return "L’addon a envoyé une réponse vide."
         }
     }
 }

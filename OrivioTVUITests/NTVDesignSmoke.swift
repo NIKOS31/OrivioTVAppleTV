@@ -71,21 +71,30 @@ final class NTVDesignSmoke: XCTestCase {
         let firstMovie = app.buttons.matching(NSPredicate(
             format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
         XCTAssertTrue(firstMovie.waitForExistence(timeout: 80), "Films should load real movie metadata.")
+        let focusedMovie = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.poster.movie.")).firstMatch
         for _ in 0..<4 {
-            if firstMovie.hasFocus { break }
+            if focusedMovie.exists { break }
             remote.press(.down)
-            if focused(firstMovie, timeout: 2) { break }
+            if focusedMovie.waitForExistence(timeout: 2) { break }
         }
-        XCTAssertTrue(firstMovie.hasFocus)
+        XCTAssertTrue(focusedMovie.exists, "Down should move focus from the selectors into the movie grid.")
+        let selectedPoster = app.buttons[focusedMovie.identifier]
         capture("ntv-films-real-catalog")
         remote.press(.select)
-        XCTAssertTrue(app.otherElements["ntv.detail.screen"].waitForExistence(timeout: 30),
+        XCTAssertTrue(app.descendants(matching: .any)["ntv.detail.screen"].firstMatch.waitForExistence(timeout: 30),
                       "Selecting a poster must open the existing detail screen.")
         capture("ntv-film-detail")
         remote.press(.menu)
         XCTAssertTrue(app.staticTexts["ntv.catalog.movie.heading"].waitForExistence(timeout: 15))
-        XCTAssertTrue(firstMovie.exists, "Returning from details should retain the movie catalog.")
-        remote.press(.menu)
+        XCTAssertTrue(selectedPoster.exists, "Returning from details should retain the selected movie.")
+        // Back from a later poster first returns to the grid's start; Back
+        // from that start then opens the rail, matching the upstream behavior.
+        for _ in 0..<3 {
+            if movies.hasFocus { break }
+            remote.press(.menu)
+            if focused(movies, timeout: 2) { break }
+        }
         XCTAssertTrue(focused(movies, timeout: 8))
         remote.press(.down)
         let series = app.buttons["ntv.navigation.6"]
@@ -99,7 +108,11 @@ final class NTVDesignSmoke: XCTestCase {
             format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch.exists,
                        "The Séries page must not contain movie posters.")
         capture("ntv-series-real-catalog")
-        remote.press(.menu)
+        for _ in 0..<3 {
+            if series.hasFocus { break }
+            remote.press(.menu)
+            if focused(series, timeout: 2) { break }
+        }
         XCTAssertTrue(focused(series, timeout: 8))
         app.terminate()
     }

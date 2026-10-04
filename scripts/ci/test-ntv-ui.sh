@@ -68,12 +68,12 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     data = json.load(handle)
 data["ui_tests_executed"] = True
-data["ui_test_scope"] = "nTV brand and left-sidebar Library round trip"
+data["ui_test_scope"] = "nTV sidebar/Library and real-addon Home/Movies/Detail/Series journeys"
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=2)
     handle.write("\n")
 PY
 
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
-  printf '\n- nTV simulator smoke test passed: branding, left sidebar and Back focus restoration.\n' >> "$GITHUB_STEP_SUMMARY"
+  printf '\n- nTV simulator tests passed: sidebar/Library and real-addon Home/Movies/Detail/Series journeys.\n' >> "$GITHUB_STEP_SUMMARY"
 fi

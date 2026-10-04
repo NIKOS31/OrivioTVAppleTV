@@ -1578,7 +1578,7 @@ struct HomeView: View {
                         .accessibilityIdentifier("ntv.home.heading")
                     if perf.settings.heroBackdrop {
                         NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
-                                         onSelect: onSelect, onBack: onHomeBack)
+                                         onSelect: heroSelect, onBack: onHomeBack)
                             .focusSection()
                     }
                     if viewModel.entries.isEmpty && !viewModel.isLoading {

@@ -1298,7 +1298,7 @@ struct HomeView: View {
         layoutContent
         .onAppear {
             isVisible = true
-            hero.layout = homeCatalogSettings.heroLayout
+            hero.layout = usesNTVLayout ? .pinnedFocus : homeCatalogSettings.heroLayout
             hero.onBrowseStateChange = { browsing in
                 AppProbe.focus("home handoff browsedIntoContent=\(browsing)")
                 // DEFERRED BY ONE TURN, and that is the whole fix for "the
@@ -1336,7 +1336,7 @@ struct HomeView: View {
         // on the roll instead of inheriting a browse that already happened.
         .onChange(of: homeCatalogSettings.heroLayout) { _, mode in
             AppProbe.focus("home heroLayout=\(mode)")
-            hero.layout = mode
+            hero.layout = usesNTVLayout ? .pinnedFocus : mode
             hero.resetBrowseHandoff()
         }
         // HYBRID, going back UP. The pinned hero's return strip binds the same
@@ -1569,7 +1569,7 @@ struct HomeView: View {
     /// remain owned by HomeView and its persistent model.
     private var ntvLayout: some View {
         ZStack {
-            ATVBackground()
+            NTVFocusBackdrop(hero: hero, identifier: "ntv.home.backdrop")
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 32) {
                     Text("Accueil")
@@ -2681,6 +2681,7 @@ private struct HomePosterCell: View, Equatable {
             .holdProbe("poster \(item.name)", enabled: PerformanceSettingsStore.shared.settings.showHoldProbe)
             .posterHoldMenu(item) { onSelect(item) }
             .onPlayPauseCommand { onPlayManually(item, nil) }
+            .accessibilityIdentifier("ntv.home.poster.\(item.type).\(item.id)")
 
             if showLabel {
                 ATVCardCaption(

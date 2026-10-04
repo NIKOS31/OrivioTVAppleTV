@@ -65,7 +65,22 @@ final class NTVDesignSmoke: XCTestCase {
 
         let remote = XCUIRemote.shared
         let home = app.buttons["ntv.navigation.0"]
-        remote.press(.menu)
+        let homePoster = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.home.poster.")).firstMatch
+        for _ in 0..<4 {
+            if homePoster.exists { break }
+            remote.press(.down)
+            if homePoster.waitForExistence(timeout: 2) { break }
+        }
+        XCTAssertTrue(homePoster.exists, "Home posters must be reachable from the spotlight.")
+        let homeID = homePoster.identifier.components(separatedBy: ".").dropFirst(4).joined(separator: ".")
+        XCTAssertTrue(backdropMatches(app, identifier: "ntv.home.backdrop", contentID: homeID))
+        capture("ntv-home-focus-backdrop")
+        for _ in 0..<3 {
+            if home.hasFocus { break }
+            remote.press(.menu)
+            if focused(home, timeout: 2) { break }
+        }
         XCTAssertTrue(focused(home, timeout: 8))
         remote.press(.down)
         let movies = app.buttons["ntv.navigation.5"]
@@ -83,6 +98,19 @@ final class NTVDesignSmoke: XCTestCase {
             if focusedMovie.waitForExistence(timeout: 2) { break }
         }
         XCTAssertTrue(focusedMovie.exists, "Down should move focus from the selectors into the movie grid.")
+        let initialMovieID = focusedMovie.identifier
+        XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.movie.backdrop",
+                                      contentID: String(initialMovieID.dropFirst("ntv.poster.movie.".count))))
+        remote.press(.right)
+        XCTAssertTrue(focusedMovie.waitForExistence(timeout: 5))
+        XCTAssertNotEqual(focusedMovie.identifier, initialMovieID, "Right must select another movie without opening details.")
+        XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.movie.backdrop",
+                                      contentID: String(focusedMovie.identifier.dropFirst("ntv.poster.movie.".count))))
+        remote.press(.left)
+        XCTAssertTrue(focused(app.buttons[initialMovieID], timeout: 5))
+        XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.movie.backdrop",
+                                      contentID: String(initialMovieID.dropFirst("ntv.poster.movie.".count))),
+                      "Returning left must restore this movie's backdrop, never a stale pending title.")
         let selectedPoster = app.buttons[focusedMovie.identifier]
         capture("ntv-films-real-catalog")
         remote.press(.select)
@@ -146,6 +174,17 @@ final class NTVDesignSmoke: XCTestCase {
             format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch.exists,
                        "The Séries page must not contain movie posters.")
         capture("ntv-series-real-catalog")
+        let focusedSeries = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.poster.series.")).firstMatch
+        for _ in 0..<4 {
+            if focusedSeries.exists { break }
+            remote.press(.down)
+            if focusedSeries.waitForExistence(timeout: 2) { break }
+        }
+        XCTAssertTrue(focusedSeries.exists)
+        XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.series.backdrop",
+                                      contentID: String(focusedSeries.identifier.dropFirst("ntv.poster.series.".count))))
+        capture("ntv-series-focus-backdrop")
         for _ in 0..<3 {
             if series.hasFocus { break }
             remote.press(.menu)
@@ -247,6 +286,14 @@ final class NTVDesignSmoke: XCTestCase {
             predicate: NSPredicate(format: "hasFocus == true"), object: element
         )
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func backdropMatches(_ app: XCUIApplication, identifier: String, contentID: String) -> Bool {
+        let backdrop = app.descendants(matching: .any)[identifier].firstMatch
+        guard !contentID.isEmpty, backdrop.waitForExistence(timeout: 8) else { return false }
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", contentID), object: backdrop
+        )], timeout: 8) == .completed
     }
 
     private func capture(_ name: String) {

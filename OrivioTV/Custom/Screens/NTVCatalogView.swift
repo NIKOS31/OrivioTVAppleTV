@@ -16,6 +16,7 @@ struct NTVCatalogView: View {
 
     @State private var catalogID = ""
     @State private var genre = ""
+    @State private var hero = HeroFocus()
     @FocusState private var focusedID: String?
 
     private struct Catalog: Identifiable {
@@ -39,7 +40,7 @@ struct NTVCatalogView: View {
         let genres = selected?.manifest.genreOptions ?? []
         let activeGenre = genres.contains(genre) ? genre : ""
         ZStack {
-            ATVBackground()
+            NTVFocusBackdrop(hero: hero, identifier: "ntv.catalog.\(mediaType).backdrop")
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 30) {
@@ -47,6 +48,8 @@ struct NTVCatalogView: View {
                             .font(.system(size: 38, weight: .semibold))
                             .foregroundStyle(theme.palette.textPrimary)
                             .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
+
+                        NTVCatalogSpotlight(hero: hero)
 
                         HStack(spacing: 24) {
                             if catalogs.count > 1 {
@@ -116,10 +119,21 @@ struct NTVCatalogView: View {
             }
         }
         .task(id: "\(selected?.id ?? "")#\(activeGenre)") {
+            hero.layout = .pinnedFocus
             if let selected {
                 await viewModel.reset(addon: selected.addon, catalog: selected.manifest,
                                       genre: activeGenre.isEmpty ? nil : activeGenre)
+                guard !Task.isCancelled else { return }
+                if let item = viewModel.items.first(where: { $0.id == focusedID }) ?? viewModel.items.first {
+                    hero.focus(item)
+                }
+            } else {
+                hero.item = nil
             }
+        }
+        .onChange(of: focusedID) { _, id in
+            guard let item = viewModel.items.first(where: { $0.id == id }) else { return }
+            hero.focus(item)
         }
     }
 

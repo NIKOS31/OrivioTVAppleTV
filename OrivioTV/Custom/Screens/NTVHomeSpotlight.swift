@@ -1,10 +1,70 @@
 import SwiftUI
 
+/// Only this layer observes the selection. Catalog rows keep their own focus
+/// and never rebuild when a settled selection changes the artwork.
+struct NTVFocusBackdrop: View {
+    @ObservedObject var hero: HeroFocus
+    @ObservedObject private var performance = PerformanceSettingsStore.shared
+    let identifier: String
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                NTVDesign.background
+                if performance.settings.heroBackdrop,
+                   let url = hero.item?.background ?? hero.item?.poster {
+                    RemoteImage(url: url, maxDimension: geometry.size.width,
+                                maxPixels: PerformanceProfile.backdropPixelCap)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                    LinearGradient(colors: [NTVDesign.background.opacity(0.82),
+                                             NTVDesign.background.opacity(0.25)],
+                                   startPoint: .leading, endPoint: .trailing)
+                    LinearGradient(colors: [.clear, NTVDesign.background.opacity(0.94)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Fond du titre sélectionné")
+        .accessibilityValue(hero.item?.id ?? "")
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+struct NTVCatalogSpotlight: View {
+    @ObservedObject var hero: HeroFocus
+
+    var body: some View {
+        if let item = hero.item {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(item.name)
+                    .font(.system(size: 40, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text([item.year, item.genres?.prefix(2).joined(separator: " · ")]
+                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.system(size: 20))
+                    .foregroundStyle(NTVDesign.textSecondary)
+                if let description = item.description, !description.isEmpty {
+                    Text(description)
+                        .font(.system(size: 20))
+                        .foregroundStyle(NTVDesign.textSecondary)
+                        .lineLimit(2)
+                }
+            }
+            .foregroundStyle(NTVDesign.textPrimary)
+            .frame(maxWidth: 820, minHeight: 160, alignment: .leading)
+        }
+    }
+}
+
 /// Compact, real metadata spotlight. Observing HeroFocus here avoids rebuilding
 /// the catalog rows whenever the viewer moves between posters.
 struct NTVHomeSpotlight: View {
     @ObservedObject var hero: HeroFocus
-    @ObservedObject private var performance = PerformanceSettingsStore.shared
     var playFocus: FocusState<Bool>.Binding
     let onSelect: (MetaItem) -> Void
     let onBack: () -> Void
@@ -12,20 +72,6 @@ struct NTVHomeSpotlight: View {
     var body: some View {
         if let item = hero.item {
             ZStack(alignment: .leading) {
-                if performance.settings.heroBackdrop {
-                    GeometryReader { geometry in
-                        RemoteImage(url: item.background ?? item.poster,
-                                    maxDimension: geometry.size.width,
-                                    maxPixels: PerformanceProfile.backdropPixelCap)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .clipped()
-                    }
-                } else {
-                    NTVDesign.surface
-                }
-                LinearGradient(colors: [NTVDesign.background.opacity(0.98), NTVDesign.background.opacity(0.8),
-                                         NTVDesign.background.opacity(0.08)],
-                               startPoint: .leading, endPoint: .trailing)
                 VStack(alignment: .leading, spacing: 12) {
                     Text("À découvrir")
                         .font(.system(size: 16, weight: .medium))

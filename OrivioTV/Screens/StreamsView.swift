@@ -1032,7 +1032,6 @@ struct StreamsView: View {
             }
             }
         }
-        .accessibilityIdentifier("ntv.sources.screen")
         .animation(perf.buttonMotion(.easeOut(duration: 0.2)), value: autoLinkResolving)
         .task {
             // Waiting on the deferred pop: this task re-runs when the player

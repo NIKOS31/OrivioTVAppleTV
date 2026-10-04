@@ -221,7 +221,7 @@ struct GlassSidebar: View {
             }
         }
         .padding(.vertical, 56)
-        .frame(width: expanded ? Self.expandedWidth : 84, alignment: .leading)
+        .frame(width: expanded ? NTVDesign.sidebarExpandedWidth : 84, alignment: .leading)
         .clipped()
         .frame(maxHeight: .infinity)
         .background(NTVDesign.background)

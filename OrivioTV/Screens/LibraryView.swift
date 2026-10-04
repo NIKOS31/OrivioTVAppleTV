@@ -179,7 +179,9 @@ struct LibraryView: View {
                     .padding(.leading, OrivioSpacing.sm)
             }
             Spacer()
-            NTVWordmark(size: 40)
+            if theme.palette.id != NTVDesign.palette.id {
+                NTVWordmark(size: 40)
+            }
         }
         .padding(.horizontal, OrivioSpacing.huge)
     }

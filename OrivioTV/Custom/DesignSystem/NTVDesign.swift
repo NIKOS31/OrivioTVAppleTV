@@ -27,6 +27,7 @@ enum NTVDesign {
     static let cardRadius: CGFloat = 18
     static let controlRadius: CGFloat = 14
     static let controlFocusScale: CGFloat = 1.025
+    static let sidebarExpandedWidth: CGFloat = 280
 
     static let palette = ThemePalette(
         id: "ntv-night", displayName: "nTV — Bleu nuit",

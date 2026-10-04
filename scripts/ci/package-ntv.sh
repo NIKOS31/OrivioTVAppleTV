@@ -33,7 +33,7 @@ if build.get("commit") != head or build.get("ui_tests_executed") is not True:
 PY
 
 executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")
-xcrun lipo -verify_arch arm64 "$app/$executable"
+xcrun lipo "$app/$executable" -verify_arch arm64
 mkdir -p "$package_dir"
 stage=$(mktemp -d "$output/ipa-stage.XXXXXX")
 mkdir -p "$stage/Payload"

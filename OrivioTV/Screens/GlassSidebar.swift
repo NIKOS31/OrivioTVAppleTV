@@ -2,17 +2,18 @@ import SwiftUI
 
 /// Append destinations to preserve the existing tab IDs and saved focus state.
 enum AppTab: Int, CaseIterable, Identifiable {
-    case home, search, library, settings, liveTV, movies, series
+    case home, search, library, settings, liveTV, movies, series, addons
     var id: Int { rawValue }
 
     /// Order the rail renders in (Live TV above Settings, despite raw value).
-    static let sidebarOrder: [AppTab] = [.home, .movies, .series, .search, .library, .liveTV, .settings]
+    static let sidebarOrder: [AppTab] = [.home, .movies, .series, .search, .library, .liveTV, .addons, .settings]
 
     var label: String {
         switch self {
         case .home: return "Home"
         case .movies: return "Movies"
         case .series: return "Series"
+        case .addons: return "Add-ons"
         case .search: return "Search"
         case .library: return "Library"
         case .liveTV: return "Live TV"
@@ -25,6 +26,7 @@ enum AppTab: Int, CaseIterable, Identifiable {
         case .home: return "house.fill"
         case .movies: return "film.fill"
         case .series: return "play.rectangle.on.rectangle.fill"
+        case .addons: return "puzzlepiece.extension.fill"
         case .search: return "magnifyingglass"
         case .library: return "bookmark.fill"
         case .liveTV: return "tv.fill"

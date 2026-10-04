@@ -1441,7 +1441,7 @@ struct RootView: View {
                     onSelect: { moviesPath.append(Route.detail($0)) },
                     onPlayManually: { moviesPath.append(Route.streamsManual($0, $1)) },
                     onBackAtRoot: { focusSidebar(5) },
-                    onOpenSettings: { selectTab(3) })
+                    onOpenSettings: { selectTab(7) })
                     .probeScreen("Movies")
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $moviesPath) }
             }
@@ -1451,9 +1451,14 @@ struct RootView: View {
                     onSelect: { seriesPath.append(Route.detail($0)) },
                     onPlayManually: { seriesPath.append(Route.streamsManual($0, $1)) },
                     onBackAtRoot: { focusSidebar(6) },
-                    onOpenSettings: { selectTab(3) })
+                    onOpenSettings: { selectTab(7) })
                     .probeScreen("Series")
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $seriesPath) }
+            }
+        case 7:
+            NavigationStack {
+                NTVAddonsView(onBackAtRoot: { focusSidebar(7) })
+                    .probeScreen("Addons")
             }
         default:
             NavigationStack(path: $homePath) {
@@ -1489,6 +1494,7 @@ struct RootView: View {
         case 4: return "Live TV"
         case 5: return "Movies"
         case 6: return "Series"
+        case 7: return "Addons"
         default: return "Home"
         }
     }
@@ -1674,7 +1680,7 @@ struct RootView: View {
                 if let popped = lastHomePopAt, Date().timeIntervalSince(popped) < 1.0 { return }
                 focusSidebar(0)
             },
-            onOpenSettings: { selectTab(3) }
+            onOpenSettings: { selectTab(7) }
         )
         .probeScreen("Home")
     }

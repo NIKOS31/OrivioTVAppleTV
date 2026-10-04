@@ -10,27 +10,34 @@ struct AddonPhoneAddView: View {
     @EnvironmentObject private var theme: ThemeManager
     @ObservedObject var addonManager: AddonManager
     @StateObject private var server = AddonImportServer()
+    var localizedForNTV = false
     let onDone: () -> Void
 
     var body: some View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.lg) {
-                Text("Add Add-ons")
+                Text(localizedForNTV ? "Ajouter un addon" : "Add Add-ons")
                     .font(FusionType.pageTitle(theme.font))
                     .foregroundStyle(theme.palette.textPrimary)
+                    .accessibilityIdentifier("ntv.addons.phone.heading")
 
                 if let address = server.address {
-                    Text("Scan with your phone, or open \(address) in its browser. Both devices have to be on the same network.")
+                    Text(localizedForNTV
+                         ? "Scannez le QR avec votre téléphone, puis collez le lien de votre addon. Le téléphone et l’Apple TV doivent être sur le même réseau."
+                         : "Scan with your phone, or open \(address) in its browser. Both devices have to be on the same network.")
                         .font(FusionType.bodyText(theme.font))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 900)
                         .fixedSize(horizontal: false, vertical: true)
                     QRCodeView(string: address, side: 360)
+                        .accessibilityLabel("QR code")
+                        .accessibilityIdentifier("ntv.addons.phone.qr")
                     Text(address)
                         .font(.system(size: 24, weight: .medium, design: .monospaced))
                         .foregroundStyle(theme.palette.secondary)
+                        .accessibilityIdentifier("ntv.addons.phone.address")
                 } else if let error = server.lastError {
                     Text(error)
                         .font(FusionType.bodyText(theme.font))
@@ -38,8 +45,9 @@ struct AddonPhoneAddView: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 900)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("ntv.addons.phone.error")
                 } else {
-                    OrivioLoadingView(label: "Starting")
+                    OrivioLoadingView(label: localizedForNTV ? "Préparation du QR" : "Starting")
                         .frame(height: 360)
                 }
 
@@ -67,13 +75,25 @@ struct AddonPhoneAddView: View {
                     }
                 }
 
-                Button("Done", action: onDone)
-                    .padding(.top, OrivioSpacing.sm)
+                if localizedForNTV {
+                    Button("Terminer", action: onDone)
+                        .buttonStyle(NTVActionButtonStyle())
+                        .padding(.top, OrivioSpacing.sm)
+                } else {
+                    Button("Done", action: onDone)
+                        .padding(.top, OrivioSpacing.sm)
+                }
             }
             .padding(OrivioSpacing.huge)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
+            if localizedForNTV {
+                server.pageTitle = "Ajouter un addon à nTV"
+                server.pagePrompt = "Collez un lien de manifest, ou plusieurs liens séparés par des retours à la ligne."
+                server.pageButton = "Ajouter à nTV"
+                server.pageEmptyMessage = "Entrez le lien de votre addon."
+            }
             server.onInstall = { url in
                 do {
                     try await addonManager.install(manifestURL: url)

@@ -99,8 +99,8 @@ enum NavigationPosition: String, CaseIterable, Identifiable, Codable {
 
     var summary: String {
         switch self {
-        case .left: return "A vertical rail down the left edge."
-        case .top:  return "A horizontal bar across the top of the screen. The nTV default."
+        case .left: return "A vertical rail down the left edge. The nTV default."
+        case .top:  return "A horizontal bar across the top of the screen."
         }
     }
 
@@ -198,7 +198,7 @@ struct HomePresentationSnapshot: Codable, Equatable {
     var heroLayout: HeroLayout = .hybrid
     var autoHideSidebar = false
     /// nTV starts with a top bar; stored per-profile choices still take priority.
-    var navigationPosition: NavigationPosition = .top
+    var navigationPosition: NavigationPosition = .left
     var fullStreamTitles = false
     var heroTrailersEnabled = true
     var heroTrailerSound = false
@@ -382,7 +382,7 @@ final class HomeCatalogSettingsStore: ObservableObject {
         didSet { guard autoHideSidebar != oldValue else { return }; save(); notifyPresentationChange() }
     }
     /// Settings → Layout → Navigation Position.
-    @Published var navigationPosition: NavigationPosition = .top {
+    @Published var navigationPosition: NavigationPosition = .left {
         didSet { guard navigationPosition != oldValue else { return }; save(); notifyPresentationChange() }
     }
     /// Sources page: let every link's release name wrap in full instead of
@@ -970,7 +970,7 @@ final class HomeCatalogSettingsStore: ObservableObject {
         // app has only the boolean.
         heroLayout = decoded.heroLayout ?? (pinnedHero ? .pinnedFocus : .hybrid)
         autoHideSidebar = decoded.autoHideSidebar ?? false
-        navigationPosition = decoded.navigationPosition ?? .top
+        navigationPosition = decoded.navigationPosition ?? .left
         fullStreamTitles = decoded.fullStreamTitles ?? false
         heroTrailersEnabled = decoded.heroTrailersEnabled ?? true
         heroTrailerSound = decoded.heroTrailerSound ?? false

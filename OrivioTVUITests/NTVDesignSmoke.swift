@@ -3,7 +3,7 @@ import XCTest
 /// Exercises the actual tvOS remote and the existing navigation callbacks.
 /// Does not depend on network artwork or on a configured third-party addon.
 final class NTVDesignSmoke: XCTestCase {
-    func testBrandAndTopNavigationRoundTrip() {
+    func testBrandAndSidebarRoundTrip() {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-settingsTabDemo"]
@@ -23,11 +23,18 @@ final class NTVDesignSmoke: XCTestCase {
             remote.press(.menu)
             if focused(settings, timeout: 3) { break }
         }
-        XCTAssertTrue(settings.hasFocus, "Back should restore focus to the active top destination.")
-        capture("ntv-top-navigation")
+        XCTAssertTrue(settings.hasFocus, "Back should restore focus to the active sidebar destination.")
+        capture("ntv-sidebar-navigation")
 
-        remote.press(.left)
-        XCTAssertTrue(focused(library, timeout: 5), "Left from Settings should focus Library.")
+        // Live TV is enabled by default and sits between Library and Settings.
+        // Verify its focus when present rather than hiding an existing feature.
+        let liveTV = app.buttons["ntv.navigation.4"]
+        if liveTV.exists {
+            remote.press(.up)
+            XCTAssertTrue(focused(liveTV, timeout: 5), "Up from Settings should focus Live TV.")
+        }
+        remote.press(.up)
+        XCTAssertTrue(focused(library, timeout: 5), "Up should reach Library in the left sidebar.")
         remote.press(.select)
         XCTAssertTrue(app.staticTexts["ntv.library.heading"].waitForExistence(timeout: 15))
         capture("ntv-library")

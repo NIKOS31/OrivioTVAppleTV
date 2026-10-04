@@ -9,9 +9,12 @@ texte clair, accent bleu, arrondis et contrôles avec focus visible. La nouvelle
 palette est proposée par le sélecteur existant et devient le défaut d’une nouvelle
 installation. Les préférences déjà enregistrées par profil restent prioritaires.
 
-La navigation haute correspond à la direction « Bibliothèque ». Elle conserve
-les destinations et callbacks existants ; Films, Séries, Addons et Twitch seront
-raccordés lors des étapes suivantes. Le focus actif reçoit une bordure bleue,
+La navigation par défaut est un rail latéral à gauche : compact dans le contenu,
+avec des libellés quand le focus entre dans le menu. Ce choix reprend la qualité
+de disposition appréciée dans SWIPTV, avec une identité nTV propre. Le rail est
+opaque et sobre ; il conserve les destinations et callbacks existants. Films,
+Séries, Addons et Twitch seront raccordés lors des étapes suivantes. Les
+préférences de navigation déjà enregistrées restent prioritaires. Le focus actif reçoit une bordure bleue,
 y compris lorsque les animations/parallaxes sont désactivées. Les nouveaux boutons
 réutilisent les garde-fous de mouvement et de performance upstream.
 

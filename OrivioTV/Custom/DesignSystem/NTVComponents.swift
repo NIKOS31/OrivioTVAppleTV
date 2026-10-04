@@ -94,6 +94,44 @@ struct NTVNavigationLabel: View {
     }
 }
 
+/// A compact rail expands its labels only while the remote is in the menu.
+struct NTVSidebarLabel: View {
+    @Environment(\.isFocused) private var focused
+    let tab: AppTab
+    let selected: Bool
+    let expanded: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: tab.icon)
+                .font(.system(size: 26, weight: .medium))
+                .frame(width: expanded ? 36 : 60)
+            if expanded {
+                Text(NTVBrand.navigationTitle(for: tab))
+                    .font(.system(size: 24, weight: .medium))
+                    .lineLimit(1)
+                    .transition(.opacity)
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, expanded ? 14 : 0)
+        .frame(height: 64)
+        .frame(maxWidth: expanded ? .infinity : nil, alignment: .leading)
+        .foregroundStyle(focused ? NTVDesign.background
+                         : selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+        .background {
+            RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
+                .fill(focused ? NTVDesign.textPrimary
+                      : selected ? NTVDesign.accentMuted : .clear)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
+                .strokeBorder(focused ? NTVDesign.accent : .clear, lineWidth: 2)
+        }
+        .accessibilityLabel(NTVBrand.navigationTitle(for: tab))
+    }
+}
+
 struct NTVActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         Chrome(configuration: configuration)

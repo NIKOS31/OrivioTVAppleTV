@@ -8,6 +8,8 @@ enum NTVBrand {
     static func navigationTitle(for tab: AppTab) -> String {
         switch tab {
         case .home: return "Accueil"
+        case .movies: return "Films"
+        case .series: return "Séries"
         case .search: return "Recherche"
         case .library: return "Bibliothèque"
         case .settings: return "Réglages"

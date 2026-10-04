@@ -1,7 +1,8 @@
 import XCTest
 
 /// Exercises the actual tvOS remote and the existing navigation callbacks.
-/// Does not depend on network artwork or on a configured third-party addon.
+/// Navigation remains covered offline. The catalog journey additionally uses
+/// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
     func testBrandAndSidebarRoundTrip() {
         continueAfterFailure = false
@@ -43,6 +44,63 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(library, timeout: 5), "Back from Library should restore its own tab.")
         XCTAssertTrue(app.staticTexts["ntv.library.heading"].exists)
         capture("ntv-library-focus-restored")
+        app.terminate()
+    }
+
+    func testHomeMoviesAndSeriesJourney() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["ntv.home.spotlight"].waitForExistence(timeout: 80),
+                      "Home should display a title supplied by the default addon.")
+        capture("ntv-home-real-catalogs")
+
+        let remote = XCUIRemote.shared
+        let home = app.buttons["ntv.navigation.0"]
+        remote.press(.menu)
+        XCTAssertTrue(focused(home, timeout: 8))
+        remote.press(.down)
+        let movies = app.buttons["ntv.navigation.5"]
+        XCTAssertTrue(focused(movies, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.catalog.movie.heading"].waitForExistence(timeout: 15))
+        let firstMovie = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(firstMovie.waitForExistence(timeout: 80), "Films should load real movie metadata.")
+        for _ in 0..<4 {
+            if firstMovie.hasFocus { break }
+            remote.press(.down)
+            if focused(firstMovie, timeout: 2) { break }
+        }
+        XCTAssertTrue(firstMovie.hasFocus)
+        capture("ntv-films-real-catalog")
+        remote.press(.select)
+        XCTAssertTrue(app.otherElements["ntv.detail.screen"].waitForExistence(timeout: 30),
+                      "Selecting a poster must open the existing detail screen.")
+        capture("ntv-film-detail")
+        remote.press(.menu)
+        XCTAssertTrue(app.staticTexts["ntv.catalog.movie.heading"].waitForExistence(timeout: 15))
+        XCTAssertTrue(firstMovie.exists, "Returning from details should retain the movie catalog.")
+        remote.press(.menu)
+        XCTAssertTrue(focused(movies, timeout: 8))
+        remote.press(.down)
+        let series = app.buttons["ntv.navigation.6"]
+        XCTAssertTrue(focused(series, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.catalog.series.heading"].waitForExistence(timeout: 15))
+        let firstSeries = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "ntv.poster.series.")).firstMatch
+        XCTAssertTrue(firstSeries.waitForExistence(timeout: 80), "Séries should load real series metadata.")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch.exists,
+                       "The Séries page must not contain movie posters.")
+        capture("ntv-series-real-catalog")
+        remote.press(.menu)
+        XCTAssertTrue(focused(series, timeout: 8))
         app.terminate()
     }
 

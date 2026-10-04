@@ -1,19 +1,18 @@
 import SwiftUI
 
-/// The primary sidebar destinations. `liveTV` is declared LAST so its raw
-/// value (4) is stable and doesn't renumber `settings` (3) — the app keys tab
-/// state off these ints in many places. For display it sits ABOVE Settings via
-/// `sidebarOrder`.
+/// Append destinations to preserve the existing tab IDs and saved focus state.
 enum AppTab: Int, CaseIterable, Identifiable {
-    case home, search, library, settings, liveTV
+    case home, search, library, settings, liveTV, movies, series
     var id: Int { rawValue }
 
     /// Order the rail renders in (Live TV above Settings, despite raw value).
-    static let sidebarOrder: [AppTab] = [.home, .search, .library, .liveTV, .settings]
+    static let sidebarOrder: [AppTab] = [.home, .movies, .series, .search, .library, .liveTV, .settings]
 
     var label: String {
         switch self {
         case .home: return "Home"
+        case .movies: return "Movies"
+        case .series: return "Series"
         case .search: return "Search"
         case .library: return "Library"
         case .liveTV: return "Live TV"
@@ -24,6 +23,8 @@ enum AppTab: Int, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .home: return "house.fill"
+        case .movies: return "film.fill"
+        case .series: return "play.rectangle.on.rectangle.fill"
         case .search: return "magnifyingglass"
         case .library: return "bookmark.fill"
         case .liveTV: return "tv.fill"

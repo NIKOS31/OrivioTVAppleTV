@@ -1366,6 +1366,8 @@ struct GridPosterCell: View {
         .mediaCardButtonStyle()
         .posterHoldMenu(item) { onSelect(item) }
         .onPlayPauseCommand { onPlayManually(item, nil) }
+        .accessibilityLabel(item.name)
+        .accessibilityIdentifier("ntv.poster.\(item.type).\(item.id)")
 
         if let gridFocus {
             base.focused(gridFocus, equals: item.id)

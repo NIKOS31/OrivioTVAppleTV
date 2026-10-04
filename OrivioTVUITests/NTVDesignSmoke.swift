@@ -27,12 +27,16 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(settings.hasFocus, "Back should restore focus to the active sidebar destination.")
         capture("ntv-sidebar-navigation")
 
-        // Live TV is enabled by default and sits between Library and Settings.
+        let addons = app.buttons["ntv.navigation.7"]
+        remote.press(.up)
+        XCTAssertTrue(focused(addons, timeout: 5), "Up from Settings should focus Addons.")
+
+        // Live TV is enabled by default and sits above Addons.
         // Verify its focus when present rather than hiding an existing feature.
         let liveTV = app.buttons["ntv.navigation.4"]
         if liveTV.exists {
             remote.press(.up)
-            XCTAssertTrue(focused(liveTV, timeout: 5), "Up from Settings should focus Live TV.")
+            XCTAssertTrue(focused(liveTV, timeout: 5), "Up from Addons should focus Live TV.")
         }
         remote.press(.up)
         XCTAssertTrue(focused(library, timeout: 5), "Up should reach Library in the left sidebar.")
@@ -115,6 +119,93 @@ final class NTVDesignSmoke: XCTestCase {
         }
         XCTAssertTrue(focused(series, timeout: 8))
         app.terminate()
+    }
+
+    func testAddonsQRAndEnabledStatePersistence() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-settingsTabDemo"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        openAddonsFromSettings(app)
+
+        let remote = XCUIRemote.shared
+        let phone = app.buttons["ntv.addons.phone"]
+        XCTAssertTrue(focused(phone, timeout: 8))
+        remote.press(.select)
+        let address = app.staticTexts["ntv.addons.phone.address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 20), "The real LAN server must provide an address for the QR.")
+        XCTAssertTrue(address.label.hasPrefix("http://"))
+        XCTAssertTrue(app.descendants(matching: .any)["ntv.addons.phone.qr"].firstMatch.exists)
+        capture("ntv-addons-phone-qr")
+        remote.press(.menu)
+        XCTAssertTrue(app.staticTexts["ntv.addons.heading"].waitForExistence(timeout: 8))
+        XCTAssertTrue(focused(phone, timeout: 5), "Closing QR must restore its button.")
+
+        // Reopening exercises listener cleanup and restart, rather than a mock QR.
+        remote.press(.select)
+        XCTAssertTrue(address.waitForExistence(timeout: 20))
+        remote.press(.menu)
+        XCTAssertTrue(focused(phone, timeout: 5))
+        let management = app.buttons["ntv.addons.manage"]
+        remote.press(.right)
+        XCTAssertTrue(focused(management, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.descendants(matching: .any)["ntv.addons.manage.screen"].firstMatch.waitForExistence(timeout: 10))
+        remote.press(.menu)
+        XCTAssertTrue(app.staticTexts["ntv.addons.heading"].waitForExistence(timeout: 8))
+        XCTAssertTrue(focused(management, timeout: 5))
+
+        let focusedRow = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.addon.row.")).firstMatch
+        for _ in 0..<4 {
+            if focusedRow.exists { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(focusedRow.exists)
+        let rowID = focusedRow.identifier
+        let row = app.buttons[rowID]
+        let originalState = row.value as? String
+        XCTAssertTrue(originalState == "Activé" || originalState == "Désactivé")
+        remote.press(.select)
+        let changedState = originalState == "Activé" ? "Désactivé" : "Activé"
+        XCTAssertEqual(row.value as? String, changedState)
+        app.terminate()
+
+        app.launch()
+        openAddonsFromSettings(app)
+        let restoredRow = app.buttons[rowID]
+        XCTAssertTrue(restoredRow.waitForExistence(timeout: 8))
+        XCTAssertEqual(restoredRow.value as? String, changedState, "Addon state must survive relaunch through the original store.")
+        for _ in 0..<4 {
+            if restoredRow.hasFocus { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(restoredRow.hasFocus)
+        remote.press(.select)
+        XCTAssertEqual(restoredRow.value as? String, originalState)
+        capture("ntv-addons-installed")
+        remote.press(.menu)
+        XCTAssertTrue(focused(app.buttons["ntv.navigation.7"], timeout: 5))
+        capture("ntv-addons-sidebar-restored")
+        app.terminate()
+    }
+
+    private func openAddonsFromSettings(_ app: XCUIApplication) {
+        let settings = app.buttons["ntv.navigation.3"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 20))
+        let remote = XCUIRemote.shared
+        for _ in 0..<3 {
+            if settings.hasFocus { break }
+            remote.press(.menu)
+            if focused(settings, timeout: 3) { break }
+        }
+        XCTAssertTrue(settings.hasFocus)
+        remote.press(.up)
+        XCTAssertTrue(focused(app.buttons["ntv.navigation.7"], timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.addons.heading"].waitForExistence(timeout: 10))
     }
 
     private func focused(_ element: XCUIElement, timeout: TimeInterval) -> Bool {

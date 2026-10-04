@@ -4,6 +4,7 @@ import SwiftUI
 /// the catalog rows whenever the viewer moves between posters.
 struct NTVHomeSpotlight: View {
     @ObservedObject var hero: HeroFocus
+    @ObservedObject private var performance = PerformanceSettingsStore.shared
     var playFocus: FocusState<Bool>.Binding
     let onSelect: (MetaItem) -> Void
     let onBack: () -> Void
@@ -11,11 +12,16 @@ struct NTVHomeSpotlight: View {
     var body: some View {
         if let item = hero.item {
             ZStack(alignment: .leading) {
-                GeometryReader { geometry in
-                    RemoteImage(url: item.background ?? item.poster,
-                                maxDimension: geometry.size.width)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .clipped()
+                if performance.settings.heroBackdrop {
+                    GeometryReader { geometry in
+                        RemoteImage(url: item.background ?? item.poster,
+                                    maxDimension: geometry.size.width,
+                                    maxPixels: PerformanceProfile.backdropPixelCap)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
+                    }
+                } else {
+                    NTVDesign.surface
                 }
                 LinearGradient(colors: [NTVDesign.surface, NTVDesign.surface.opacity(0.94),
                                          NTVDesign.surface.opacity(0.15)],

@@ -1247,7 +1247,7 @@ struct ContentDiscoveryDetail: View {
 /// Full add-ons management screen, opened from Content & Discovery. Structured
 /// to mirror the APK's Add-ons screen: Install card → Catalog Order → Collections
 /// → Refresh → Installed Add-ons list (with per-addon on/off, reorder, remove).
-private struct AddonsManagementView: View {
+struct AddonsManagementView: View {
     @State private var showPhoneAdd = false
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var addonManager: AddonManager

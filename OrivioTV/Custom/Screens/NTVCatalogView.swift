@@ -128,7 +128,9 @@ struct NTVCatalogView: View {
             onBackAtRoot()
             return
         }
-        withAnimation(FusionMotion.focusMove) { proxy.scrollTo(first, anchor: .top) }
+        withAnimation(PerformanceSettingsStore.shared.buttonMotion(FusionMotion.focusMove)) {
+            proxy.scrollTo(first, anchor: .top)
+        }
         DispatchQueue.main.async { focusedID = first }
     }
 }

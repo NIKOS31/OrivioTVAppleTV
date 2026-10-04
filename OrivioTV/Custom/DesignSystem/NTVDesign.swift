@@ -10,6 +10,7 @@ enum NTVBrand {
         case .home: return "Accueil"
         case .movies: return "Films"
         case .series: return "Séries"
+        case .addons: return "Addons"
         case .search: return "Recherche"
         case .library: return "Bibliothèque"
         case .settings: return "Réglages"

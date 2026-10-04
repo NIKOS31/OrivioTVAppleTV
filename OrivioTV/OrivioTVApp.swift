@@ -1764,7 +1764,8 @@ struct RootView: View {
                 // Auto Link Selector auto-played: flag a deferred pop; the real
                 // pop happens when the player closes (see the player cover),
                 // never while this view's resolve Task is still running.
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 let key = ProgressStore.key(metaID: meta.id, video: video)
                 startPlayback(PlaybackRequest(
@@ -1781,7 +1782,8 @@ struct RootView: View {
             // but the finished link is handed off rather than played here.
             StreamsView(
                 meta: meta, video: video,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, _ in
                 guard let url = entry.stream.url else { return }
                 // Like the external branch of `startPlayback`: no in-app cover
@@ -1791,7 +1793,8 @@ struct RootView: View {
                 ExternalPlayers.openInInfuse(urlString: url)
             }
         case .streamsManual(let meta, let video):
-            StreamsView(meta: meta, video: video, forceManual: true) { entry, all in
+            StreamsView(meta: meta, video: video, forceManual: true,
+                        onOpenAddons: { selectTab(7) }) { entry, all in
                 let key = ProgressStore.key(metaID: meta.id, video: video)
                 startPlayback(PlaybackRequest(
                     meta: meta,
@@ -1808,7 +1811,8 @@ struct RootView: View {
             // list uncovered itself behind the player and Back landed on it.
             StreamsView(
                 meta: meta, video: video,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 startPlayback(PlaybackRequest(
                     meta: meta,
@@ -1824,7 +1828,8 @@ struct RootView: View {
             StreamsView(
                 meta: meta, video: video,
                 forceAutoPick: true,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 let key = ProgressStore.key(metaID: meta.id, video: video)
                 startPlayback(PlaybackRequest(
@@ -1846,7 +1851,8 @@ struct RootView: View {
                 meta: meta, video: video,
                 resumeAutoPlay: true,
                 resumeSignature: progress?.streamSignature,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 startPlayback(PlaybackRequest(
                     meta: meta,

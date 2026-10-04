@@ -89,6 +89,40 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["ntv.detail.screen"].firstMatch.waitForExistence(timeout: 30),
                       "Selecting a poster must open the existing detail screen.")
         capture("ntv-film-detail")
+        let play = app.buttons["ntv.detail.play"]
+        XCTAssertTrue(focused(play, timeout: 8), "The existing Play control must keep opening focus.")
+        XCTAssertEqual(play.label, "Regarder")
+        let sources = app.buttons["ntv.detail.sources"]
+        remote.press(.right)
+        XCTAssertTrue(focused(sources, timeout: 5), "Sources must be directly reachable beside Play.")
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.sources.heading"].waitForExistence(timeout: 15))
+        let openAddons = app.buttons["ntv.sources.addons"]
+        XCTAssertTrue(openAddons.waitForExistence(timeout: 60), "With no stream addon installed, offer a real route to Addons.")
+        XCTAssertTrue(app.descendants(matching: .any)["ntv.sources.empty"].firstMatch.exists)
+        capture("ntv-sources-empty-recovery")
+        for _ in 0..<4 {
+            if openAddons.hasFocus { break }
+            remote.press(.down)
+            if focused(openAddons, timeout: 2) { break }
+        }
+        XCTAssertTrue(openAddons.hasFocus)
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.addons.heading"].waitForExistence(timeout: 15))
+        remote.press(.menu)
+        XCTAssertTrue(focused(app.buttons["ntv.navigation.7"], timeout: 8))
+        // Addons are another tab: the Films stack must retain its source page.
+        for _ in 0..<8 {
+            if movies.hasFocus { break }
+            remote.press(.up)
+            if focused(movies, timeout: 1) { break }
+        }
+        XCTAssertTrue(movies.hasFocus)
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.sources.heading"].waitForExistence(timeout: 15))
+        remote.press(.menu)
+        XCTAssertTrue(app.buttons["ntv.detail.sources"].waitForExistence(timeout: 15))
+        capture("ntv-detail-return-from-sources")
         remote.press(.menu)
         XCTAssertTrue(app.staticTexts["ntv.catalog.movie.heading"].waitForExistence(timeout: 15))
         XCTAssertTrue(selectedPoster.exists, "Returning from details should retain the selected movie.")

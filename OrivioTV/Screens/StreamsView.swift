@@ -808,6 +808,7 @@ struct StreamsView: View {
     @EnvironmentObject private var plugins: PluginStore
     @EnvironmentObject private var torrent: TorrentSettingsStore
     @EnvironmentObject private var profiles: ProfileStore
+    @ObservedObject private var perf = PerformanceSettingsStore.shared
     @StateObject private var viewModel: StreamsViewModel
 
     /// Manual mode (hold-Play / "Play Manually"): skip every auto-action so the
@@ -826,6 +827,9 @@ struct StreamsView: View {
     /// page off the stack — backing out of the player returns to the title, not
     /// the source list.
     var onAutoDismiss: () -> Void = {}
+    /// UI navigation only; source querying and selection stay in the original model.
+    var onOpenAddons: (() -> Void)?
+    private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
 
     /// Whether an automatic flow has taken the page over and the source list
     /// should stay hidden behind the loading screen.
@@ -924,6 +928,7 @@ struct StreamsView: View {
          resumeAutoPlay: Bool = false, resumeSignature: StreamSignature? = nil,
          forceAutoPick: Bool = false,
          onAutoDismiss: @escaping () -> Void = {},
+         onOpenAddons: (() -> Void)? = nil,
          onSelect: @escaping (StreamEntry, [StreamEntry]) -> Void) {
         _viewModel = StateObject(wrappedValue: StreamsViewModel(meta: meta, video: video))
         self.forceManual = forceManual
@@ -931,6 +936,7 @@ struct StreamsView: View {
         self.resumeSignature = resumeSignature
         self.forceAutoPick = forceAutoPick
         self.onAutoDismiss = onAutoDismiss
+        self.onOpenAddons = onOpenAddons
         self.onSelect = onSelect
     }
 
@@ -957,7 +963,7 @@ struct StreamsView: View {
                     meta: viewModel.meta,
                     status: resolving
                         ? "Resolving via \(debrid.resolverProvider?.displayName ?? (torrent.settings.isConfigured ? "TorrServer" : "debrid"))"
-                        : "Finding the best source"
+                        : (isNTV ? "Recherche de la meilleure source" : "Finding the best source")
                 )
                 .transition(.opacity)
                 // Back during a slow sweep/resolve = "let me pick myself":
@@ -1014,7 +1020,7 @@ struct StreamsView: View {
                             holdsFocus: true
                         )
                         .frame(maxHeight: 220)
-                        Text("Press Back to cancel and pick another source")
+                        Text(isNTV ? "Retour pour annuler et choisir une autre source" : "Press Back to cancel and pick another source")
                             .font(.system(size: 21))
                             .foregroundStyle(theme.palette.textTertiary)
                     }
@@ -1026,7 +1032,8 @@ struct StreamsView: View {
             }
             }
         }
-        .animation(.easeOut(duration: 0.2), value: autoLinkResolving)
+        .accessibilityIdentifier("ntv.sources.screen")
+        .animation(perf.buttonMotion(.easeOut(duration: 0.2)), value: autoLinkResolving)
         .task {
             // Waiting on the deferred pop: this task re-runs when the player
             // cover comes down, and a page one runloop turn from being removed
@@ -1263,7 +1270,7 @@ struct StreamsView: View {
             for task in sweepTasks { task.cancel() }
             sweepTasks = []
         }
-        .alert("Couldn't resolve stream", isPresented: Binding(
+        .alert(isNTV ? "Impossible d’ouvrir cette source" : "Couldn't resolve stream", isPresented: Binding(
             get: { resolveError != nil },
             set: { if !$0 { resolveError = nil; autoLinkResolvingLatch = false } }
         )) {
@@ -1289,7 +1296,7 @@ struct StreamsView: View {
     @ViewBuilder
     private var sourcesPanel: some View {
         if autoLinkResolving {
-            OrivioLoadingView(label: "Finding the best source…", holdsFocus: true)
+            OrivioLoadingView(label: isNTV ? "Recherche de la meilleure source…" : "Finding the best source…", holdsFocus: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.groups.isEmpty {
             if viewModel.isLoading {
@@ -1299,9 +1306,10 @@ struct StreamsView: View {
                 VStack(spacing: OrivioSpacing.lg) {
                     OrivioEmptyState(
                         icon: "play.slash",
-                        title: "No sources found",
-                        message: "None of your installed addons returned a playable link for this title. Install a stream addon in Settings."
+                        title: isNTV ? "Aucune source disponible" : "No sources found",
+                        message: isNTV ? "Aucun addon n’a fourni de lien lisible pour ce titre. Ajoute un addon de sources ou vérifie sa configuration." : "None of your installed addons returned a playable link for this title. Install a stream addon in Settings."
                     )
+                    .accessibilityIdentifier("ntv.sources.empty")
                     // Explain any addon that wasn't even queried, so an addon
                     // that silently failed to install isn't a mystery here.
                     ForEach(viewModel.skippedAddons, id: \.id) { skip in
@@ -1312,6 +1320,7 @@ struct StreamsView: View {
                             .padding(.horizontal, OrivioSpacing.huge)
                     }
                     retryButton
+                    openAddonsButton
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -1347,9 +1356,29 @@ struct StreamsView: View {
                 )
             }
         } label: {
-            RetryLabel()
+            if isNTV {
+                Label("Réessayer", systemImage: "arrow.clockwise")
+                    .font(.system(size: 24, weight: .semibold))
+                    .padding(.horizontal, 26)
+                    .frame(height: 60)
+                    .foregroundStyle(theme.palette.textPrimary)
+            } else {
+                RetryLabel()
+            }
         }
         .buttonStyle(PlainCardButtonStyle())
+        .accessibilityIdentifier("ntv.sources.retry")
+    }
+
+    @ViewBuilder
+    private var openAddonsButton: some View {
+        if isNTV, let onOpenAddons {
+            Button(action: onOpenAddons) {
+                Label("Ouvrir les addons", systemImage: "puzzlepiece.extension")
+            }
+            .buttonStyle(NTVActionButtonStyle())
+            .accessibilityIdentifier("ntv.sources.addons")
+        }
     }
 
     /// Stremio-style addon filter: "All" plus one chip per addon that returned
@@ -1358,7 +1387,7 @@ struct StreamsView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: OrivioSpacing.sm) {
                 AddonFilterChip(
-                    title: "All",
+                    title: isNTV ? "Tous" : "All",
                     selected: viewModel.selectedAddon == nil
                 ) { viewModel.selectAddon(nil) }
 
@@ -1630,6 +1659,10 @@ struct StreamsView: View {
     }
 
     private var streamCountLabel: String {
+        if isNTV {
+            guard viewModel.totalAddons > 0 else { return "Recherche dans les addons" }
+            return "Recherche dans les addons \(viewModel.finishedAddons)/\(viewModel.totalAddons)"
+        }
         guard viewModel.totalAddons > 0 else { return "Searching addons" }
         return "Searching addons \(viewModel.finishedAddons)/\(viewModel.totalAddons)"
     }
@@ -1637,10 +1670,12 @@ struct StreamsView: View {
     private var backdrop: some View {
         GeometryReader { geo in
             ZStack {
-                RemoteImage(url: viewModel.meta.background ?? viewModel.meta.poster,
+                if !isNTV || perf.settings.heroBackdrop {
+                    RemoteImage(url: viewModel.meta.background ?? viewModel.meta.poster,
                             maxPixels: PerformanceProfile.backdropPixelCap)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .opacity(0.5)
+                }
                 HeroGradient(background: theme.palette.background, fullBleed: true)
             }
         }
@@ -1649,10 +1684,23 @@ struct StreamsView: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.xs) {
+            if isNTV {
+                Text("Sources")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(NTVDesign.accent)
+                    .accessibilityIdentifier("ntv.sources.heading")
+                    .padding(.bottom, 12)
+                NTVPosterArtwork(
+                    imageURL: viewModel.meta.poster, title: viewModel.meta.name,
+                    width: 180, height: 270, focused: false, watched: false,
+                    progress: nil, shadowsEnabled: false
+                )
+                .padding(.bottom, 20)
+            }
             Text(viewModel.meta.name)
                 .font(FusionType.pageTitle(theme.font))
                 .foregroundStyle(theme.palette.textPrimary)
-                .lineLimit(1)
+                .lineLimit(isNTV ? 3 : 1)
             if let video = viewModel.video {
                 Text("\(video.seasonEpisodeCode)\(video.title.map { " • \($0)" } ?? "")")
                     .font(.system(size: 27, weight: .medium))
@@ -1663,6 +1711,12 @@ struct StreamsView: View {
                 Text(streamCountLabel)
                     .font(.system(size: 21))
                     .foregroundStyle(theme.palette.textTertiary)
+            }
+            if isNTV {
+                Text(viewModel.isLoading ? "Choisis un lien proposé par tes addons." : "\(viewModel.allEntries.count) source\(viewModel.allEntries.count > 1 ? "s" : "") proposée\(viewModel.allEntries.count > 1 ? "s" : "") par tes addons.")
+                    .font(.system(size: 23))
+                    .foregroundStyle(NTVDesign.textSecondary)
+                    .padding(.top, 20)
             }
         }
     }
@@ -1734,6 +1788,10 @@ struct StreamsView: View {
                     retryButton
                         .frame(maxWidth: .infinity)
                         .padding(.top, OrivioSpacing.md)
+                    if !viewModel.isLoading {
+                        openAddonsButton
+                            .frame(maxWidth: .infinity)
+                    }
                 }
             }
             .padding(.vertical, OrivioSpacing.lg)

@@ -159,7 +159,7 @@ struct GlassSidebar: View {
         .fixedSize(horizontal: true, vertical: true)
         .background {
             if theme.palette.id == NTVDesign.palette.id {
-                panelShape.fill(NTVDesign.surface)
+                NTVGlassSurface(shape: panelShape)
             } else {
                 Color.clear.liquidGlass(in: panelShape)
             }
@@ -177,8 +177,8 @@ struct GlassSidebar: View {
         }
     }
 
-    /// nTV uses a flat edge rail, rather than a floating glass panel. The
-    /// root's existing focus routing, Back and Right hand-off remain in charge.
+    /// One glass surface carries the rail; item highlights use lightweight fills.
+    /// The root's existing focus routing, Back and Right hand-off remain in charge.
     private var ntvVerticalBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             NTVWordmark(size: 22)
@@ -223,11 +223,15 @@ struct GlassSidebar: View {
                 Color.clear.frame(height: 64)
             }
         }
-        .padding(.vertical, 56)
+        .padding(.vertical, 24)
         .frame(width: expanded ? NTVDesign.sidebarExpandedWidth : 84, alignment: .leading)
         .clipped()
         .frame(maxHeight: .infinity)
-        .background(NTVDesign.background)
+        .background {
+            NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        }
+        .padding(.leading, 18)
+        .padding(.vertical, 24)
         .ignoresSafeArea()
         .animation(PerformanceSettingsStore.shared.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: expanded)

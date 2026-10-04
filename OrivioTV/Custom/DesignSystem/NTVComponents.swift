@@ -1,5 +1,24 @@
 import SwiftUI
 
+/// Background-only glass keeps custom controls in the tvOS focus engine.
+/// Older hardware and Reduce Transparency use an opaque surface instead.
+struct NTVGlassSurface<S: Shape>: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let shape: S
+    var emphasized = false
+
+    var body: some View {
+        if reduceTransparency || PerformanceProfile.isLowPower || PerformanceProfile.isMidPower {
+            shape.fill(emphasized ? NTVDesign.raised : NTVDesign.surface)
+        } else if #available(tvOS 26.0, *) {
+            Color.clear.glassEffect(
+                .regular.tint(NTVDesign.surface.opacity(emphasized ? 0.3 : 0.15)), in: shape)
+        } else {
+            shape.fill(.regularMaterial)
+        }
+    }
+}
+
 /// The supplied nTV logo, preserving its original artwork and transparency.
 struct NTVWordmark: View {
     var size: CGFloat = 36
@@ -119,11 +138,10 @@ struct NTVSidebarLabel: View {
         .padding(.horizontal, expanded ? 14 : 0)
         .frame(height: 64)
         .frame(maxWidth: expanded ? .infinity : nil, alignment: .leading)
-        .foregroundStyle(focused ? NTVDesign.background
-                         : selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+        .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .background {
             RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                .fill(focused ? NTVDesign.textPrimary
+                .fill(focused ? NTVDesign.textPrimary.opacity(0.22)
                       : selected ? NTVDesign.accentMuted : .clear)
         }
         .overlay {
@@ -146,12 +164,17 @@ struct NTVActionButtonStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
+                .foregroundStyle(NTVDesign.textPrimary)
                 .padding(.horizontal, 26)
                 .frame(minHeight: 60)
                 .background {
-                    RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                        .fill(focused ? NTVDesign.accent : NTVDesign.raised)
+                    if focused {
+                        NTVGlassSurface(shape: RoundedRectangle(
+                            cornerRadius: NTVDesign.controlRadius, style: .continuous), emphasized: true)
+                    } else {
+                        RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
+                            .fill(NTVDesign.raised)
+                    }
                 }
                 .overlay {
                     RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)

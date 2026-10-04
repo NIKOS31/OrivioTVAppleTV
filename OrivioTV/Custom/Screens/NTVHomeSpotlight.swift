@@ -23,13 +23,18 @@ struct NTVHomeSpotlight: View {
                 } else {
                     NTVDesign.surface
                 }
-                LinearGradient(colors: [NTVDesign.surface, NTVDesign.surface.opacity(0.94),
-                                         NTVDesign.surface.opacity(0.15)],
+                LinearGradient(colors: [NTVDesign.background.opacity(0.98), NTVDesign.background.opacity(0.8),
+                                         NTVDesign.background.opacity(0.08)],
                                startPoint: .leading, endPoint: .trailing)
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("À découvrir")
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(1.5)
+                        .foregroundStyle(NTVDesign.textSecondary)
                     Text(item.name)
-                        .font(.system(size: 36, weight: .semibold))
+                        .font(.system(size: 44, weight: .semibold))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Text([item.year, item.genres?.prefix(2).joined(separator: " · ")]
                         .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.system(size: 20))
@@ -52,7 +57,7 @@ struct NTVHomeSpotlight: View {
                     }
                 }
                 .foregroundStyle(NTVDesign.textPrimary)
-                .frame(maxWidth: 850, alignment: .leading)
+                .frame(maxWidth: 760, alignment: .leading)
                 .padding(28)
             }
             .frame(height: 310)

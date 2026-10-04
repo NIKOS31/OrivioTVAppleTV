@@ -103,7 +103,13 @@ struct GlassSidebar: View {
         // chip ahead of the items on the same line, exactly as the vertical
         // panel keeps it above them.
         Group {
-            if horizontal { horizontalBody } else { verticalBody }
+            if horizontal {
+                horizontalBody
+            } else if theme.palette.id == NTVDesign.palette.id {
+                ntvVerticalBody
+            } else {
+                verticalBody
+            }
         }
     }
 
@@ -115,6 +121,8 @@ struct GlassSidebar: View {
     /// nothing here, so there is no widening lurch when you step into it.
     private var horizontalBody: some View {
         HStack(alignment: .center, spacing: 0) {
+            NTVWordmark(size: 34)
+                .padding(.trailing, OrivioSpacing.lg)
             Button(action: onProfileTap) {
                 GlassProfileHeader(profile: profiles.active, compact: true)
             }
@@ -128,11 +136,17 @@ struct GlassSidebar: View {
                         onTabSelected(tab.rawValue)
                         selected = tab.rawValue
                     } label: {
-                        GlassItemLabel(tab: tab, selected: selected == tab.rawValue,
-                                       expanded: true, horizontal: true)
+                        if theme.palette.id == NTVDesign.palette.id {
+                            NTVNavigationLabel(title: NTVBrand.navigationTitle(for: tab),
+                                               symbol: tab.icon, selected: selected == tab.rawValue)
+                        } else {
+                            GlassItemLabel(tab: tab, selected: selected == tab.rawValue,
+                                           expanded: true, horizontal: true)
+                        }
                     }
                     .buttonStyle(PlainCardButtonStyle())
                     .focused(focusBinding, equals: tab.rawValue)
+                    .accessibilityIdentifier("ntv.navigation.\(tab.rawValue)")
                 }
             }
             .padding(.vertical, 12)
@@ -140,11 +154,78 @@ struct GlassSidebar: View {
         }
         .padding(.horizontal, OrivioSpacing.md)
         .fixedSize(horizontal: true, vertical: true)
-        .background(Color.clear.liquidGlass(in: panelShape))
+        .background {
+            if theme.palette.id == NTVDesign.palette.id {
+                panelShape.fill(NTVDesign.surface)
+            } else {
+                Color.clear.liquidGlass(in: panelShape)
+            }
+        }
         .padding(.top, 28)
         .frame(maxWidth: .infinity, alignment: .center)
         // Hug the top edge the way the vertical rail hugs the left one.
         .ignoresSafeArea(edges: .vertical)
+        .animation(PerformanceSettingsStore.shared.sidebarAnimationEffective
+                   ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: expanded)
+        .onChange(of: expanded) { _, isExpanded in
+            if isExpanded && focusBinding.wrappedValue != selected {
+                focusBinding.wrappedValue = selected
+            }
+        }
+    }
+
+    /// nTV uses a flat edge rail, rather than a floating glass panel. The
+    /// root's existing focus routing, Back and Right hand-off remain in charge.
+    private var ntvVerticalBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            NTVWordmark(size: 32)
+                .frame(maxWidth: .infinity, alignment: expanded ? .leading : .center)
+                .padding(.horizontal, expanded ? OrivioSpacing.md : 0)
+                .frame(height: 64)
+
+            Spacer(minLength: 24)
+
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(AppTab.sidebarOrder.filter { $0 != .liveTV || liveTV.enabled }) { tab in
+                    Button {
+                        onTabSelected(tab.rawValue)
+                        selected = tab.rawValue
+                    } label: {
+                        NTVSidebarLabel(tab: tab, selected: selected == tab.rawValue,
+                                        expanded: expanded)
+                            .padding(.leading, Self.focusGuard)
+                    }
+                    .buttonStyle(PlainCardButtonStyle())
+                    .focused(focusBinding, equals: tab.rawValue)
+                    .accessibilityIdentifier("ntv.navigation.\(tab.rawValue)")
+                    .disabled(!expanded && tab.rawValue != selected)
+                }
+            }
+            .padding(.leading, (expanded ? OrivioSpacing.sm : 12) - Self.focusGuard)
+            .padding(.trailing, expanded ? OrivioSpacing.sm : 12)
+            .defaultFocus(focusBinding, selected)
+
+            Spacer(minLength: 24)
+
+            if expanded {
+                Button(action: onProfileTap) {
+                    GlassProfileHeader(profile: profiles.active)
+                        .padding(.leading, Self.focusGuard)
+                }
+                .buttonStyle(PlainCardButtonStyle())
+                .focused(focusBinding, equals: -1)
+                .padding(.leading, OrivioSpacing.sm - Self.focusGuard)
+                .padding(.trailing, OrivioSpacing.sm)
+            } else {
+                Color.clear.frame(height: 64)
+            }
+        }
+        .padding(.vertical, 56)
+        .frame(width: expanded ? NTVDesign.sidebarExpandedWidth : 84, alignment: .leading)
+        .clipped()
+        .frame(maxHeight: .infinity)
+        .background(NTVDesign.background)
+        .ignoresSafeArea()
         .animation(PerformanceSettingsStore.shared.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: expanded)
         .onChange(of: expanded) { _, isExpanded in

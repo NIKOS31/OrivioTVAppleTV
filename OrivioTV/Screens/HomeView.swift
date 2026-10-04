@@ -2888,11 +2888,10 @@ private struct HomeLoadingBackdrop: View {
         .padding(OrivioSpacing.huge)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .background {
-            // Branded Orivio backdrop (logo mark on the gradient), cropped to
-            // the strip.
-            Image("OrivioBackdropLogo")
-                .resizable()
-                .scaledToFill()
+            NTVDesign.background
+                .overlay(alignment: .topTrailing) {
+                    NTVWordmark(size: 48).padding(OrivioSpacing.huge)
+                }
         }
         .clipped()
     }

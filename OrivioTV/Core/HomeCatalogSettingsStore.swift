@@ -99,7 +99,7 @@ enum NavigationPosition: String, CaseIterable, Identifiable, Codable {
 
     var summary: String {
         switch self {
-        case .left: return "A vertical rail down the left edge. The default."
+        case .left: return "A vertical rail down the left edge. The nTV default."
         case .top:  return "A horizontal bar across the top of the screen."
         }
     }
@@ -197,8 +197,7 @@ struct HomePresentationSnapshot: Codable, Equatable {
     var pinnedHero = false
     var heroLayout: HeroLayout = .hybrid
     var autoHideSidebar = false
-    /// Where the navigation rail sits. `.left` is the shipped layout and stays
-    /// the default, so an existing install sees no change.
+    /// nTV starts with a top bar; stored per-profile choices still take priority.
     var navigationPosition: NavigationPosition = .left
     var fullStreamTitles = false
     var heroTrailersEnabled = true

@@ -104,7 +104,7 @@ if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
 - Release device and Debug simulator builds succeeded.
 - Upstream dependency pins were preserved; signing was disabled.
 - Optional integration keys were left blank in the CI checkout.
-- UI tests and physical Apple TV playback/focus tests were not executed.
+- The nTV simulator test is reported separately; physical Apple TV playback/focus tests were not executed.
 - Logs and Xcode result bundles are available in the diagnostics artifact.
 
 SUMMARY

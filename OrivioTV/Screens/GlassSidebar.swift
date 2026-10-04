@@ -124,7 +124,7 @@ struct GlassSidebar: View {
     /// nothing here, so there is no widening lurch when you step into it.
     private var horizontalBody: some View {
         HStack(alignment: .center, spacing: 0) {
-            NTVWordmark(size: 34)
+            NTVWordmark(size: 24)
                 .padding(.trailing, OrivioSpacing.lg)
             Button(action: onProfileTap) {
                 GlassProfileHeader(profile: profiles.active, compact: true)
@@ -181,7 +181,7 @@ struct GlassSidebar: View {
     /// root's existing focus routing, Back and Right hand-off remain in charge.
     private var ntvVerticalBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            NTVWordmark(size: 32)
+            NTVWordmark(size: 22)
                 .frame(maxWidth: .infinity, alignment: expanded ? .leading : .center)
                 .padding(.horizontal, expanded ? OrivioSpacing.md : 0)
                 .frame(height: 64)

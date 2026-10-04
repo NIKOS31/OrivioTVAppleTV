@@ -241,6 +241,10 @@ struct RootView: View {
     @State private var searchPath = NavigationPath()
     @State private var libraryPath = NavigationPath()
     @State private var liveTVPath = NavigationPath()
+    @State private var moviesPath = NavigationPath()
+    @State private var seriesPath = NavigationPath()
+    @StateObject private var moviesViewModel = DiscoverViewModel()
+    @StateObject private var seriesViewModel = DiscoverViewModel()
     // Persisted here (not inside HomeView) so switching tabs and coming back
     // doesn't rebuild it and re-trigger the catalog load / loading spinner.
     @StateObject private var homeViewModel = HomeViewModel()
@@ -1082,6 +1086,8 @@ struct RootView: View {
         case 1: return searchPath.isEmpty
         case 2: return libraryPath.isEmpty
         case 4: return liveTVPath.isEmpty
+        case 5: return moviesPath.isEmpty
+        case 6: return seriesPath.isEmpty
         default: return true   // Settings keeps the rail
         }
     }
@@ -1429,6 +1435,26 @@ struct RootView: View {
                     .onExitCommand { focusSidebar(4) }
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $liveTVPath) }
             }
+        case 5:
+            NavigationStack(path: $moviesPath) {
+                NTVCatalogView(viewModel: moviesViewModel, mediaType: "movie", title: "Films",
+                    onSelect: { moviesPath.append(Route.detail($0)) },
+                    onPlayManually: { moviesPath.append(Route.streamsManual($0, $1)) },
+                    onBackAtRoot: { focusSidebar(5) },
+                    onOpenSettings: { selectTab(3) })
+                    .probeScreen("Movies")
+                    .navigationDestination(for: Route.self) { destination(for: $0, path: $moviesPath) }
+            }
+        case 6:
+            NavigationStack(path: $seriesPath) {
+                NTVCatalogView(viewModel: seriesViewModel, mediaType: "series", title: "Séries",
+                    onSelect: { seriesPath.append(Route.detail($0)) },
+                    onPlayManually: { seriesPath.append(Route.streamsManual($0, $1)) },
+                    onBackAtRoot: { focusSidebar(6) },
+                    onOpenSettings: { selectTab(3) })
+                    .probeScreen("Series")
+                    .navigationDestination(for: Route.self) { destination(for: $0, path: $seriesPath) }
+            }
         default:
             NavigationStack(path: $homePath) {
                 homeRoot
@@ -1461,6 +1487,8 @@ struct RootView: View {
         case 2: return "Library"
         case 3: return "Settings"
         case 4: return "Live TV"
+        case 5: return "Movies"
+        case 6: return "Series"
         default: return "Home"
         }
     }
@@ -1645,7 +1673,8 @@ struct RootView: View {
             onHomeBack: {
                 if let popped = lastHomePopAt, Date().timeIntervalSince(popped) < 1.0 { return }
                 focusSidebar(0)
-            }
+            },
+            onOpenSettings: { selectTab(3) }
         )
         .probeScreen("Home")
     }
@@ -1703,6 +1732,7 @@ struct RootView: View {
                     onSelectPerson: { id, name in path.wrappedValue.append(Route.person(id: id, name: name)) },
                     onSelectCompany: { id, name in path.wrappedValue.append(Route.tmdbCompany(id: id, name: name)) }
             )
+            .accessibilityIdentifier("ntv.detail.screen")
         case .collection(let collection):
             CollectionView(collection: collection) { path.wrappedValue.append(Route.detail($0)) }
         case .person(let id, let name):
@@ -2060,6 +2090,8 @@ struct RootView: View {
         case 1: if !searchPath.isEmpty { searchPath.removeLast() }
         case 2: if !libraryPath.isEmpty { libraryPath.removeLast() }
         case 4: if !liveTVPath.isEmpty { liveTVPath.removeLast() }
+        case 5: if !moviesPath.isEmpty { moviesPath.removeLast() }
+        case 6: if !seriesPath.isEmpty { seriesPath.removeLast() }
         default: break
         }
     }
@@ -2373,6 +2405,8 @@ struct RootView: View {
             case 1: if !searchPath.isEmpty { searchPath.removeLast(searchPath.count) }
             case 2: if !libraryPath.isEmpty { libraryPath.removeLast(libraryPath.count) }
             case 4: if !liveTVPath.isEmpty { liveTVPath.removeLast(liveTVPath.count) }
+            case 5: if !moviesPath.isEmpty { moviesPath.removeLast(moviesPath.count) }
+            case 6: if !seriesPath.isEmpty { seriesPath.removeLast(seriesPath.count) }
             default: break
             }
             if !homePath.isEmpty { homePath.removeLast(homePath.count) }

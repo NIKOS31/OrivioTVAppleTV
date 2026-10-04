@@ -1,14 +1,16 @@
 import SwiftUI
 
-/// Temporary wordmark until the supplied logo is available.
+/// The supplied nTV logo, preserving its original artwork and transparency.
 struct NTVWordmark: View {
     var size: CGFloat = 36
 
     var body: some View {
-        Text(NTVBrand.name)
-            .font(.system(size: size, weight: .semibold))
-            .kerning(-1)
-            .foregroundStyle(NTVDesign.textPrimary)
+        Image("NTVLogo")
+            .renderingMode(.original)
+            .resizable()
+            .scaledToFit()
+            .frame(width: size * 1.8, height: size * 1.5)
+            .accessibilityLabel(NTVBrand.name)
             .accessibilityIdentifier("ntv.brand")
     }
 }

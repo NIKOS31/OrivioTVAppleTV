@@ -1162,6 +1162,9 @@ struct HomeView: View {
     /// non-row content): opens the sidebar (Classic) or focuses the tab bar
     /// (Fusion). Passed from RootView.
     var onHomeBack: () -> Void = {}
+    var onOpenSettings: () -> Void = {}
+
+    private var usesNTVLayout: Bool { theme.palette.id == NTVDesign.palette.id }
 
     private var layout: HomeLayout { homeCatalogSettings.homeLayout }
 
@@ -1517,7 +1520,7 @@ struct HomeView: View {
             // screen. Declining keeps the rail's old fallback everywhere else
             // (Pinned Focus, a pinned Hybrid, no hero art, nothing loaded yet).
             guard perf.settings.heroBackdrop,
-                  homeCatalogSettings.heroLayout != .pinnedFocus,
+                  (usesNTVLayout || homeCatalogSettings.heroLayout != .pinnedFocus),
                   !hero.browsedIntoContent,
                   hero.item != nil else { return false }
             heroPlayFocused = true
@@ -1548,7 +1551,8 @@ struct HomeView: View {
         // its title is whatever the focused card is. Seeding focus at it would
         // be a request into a view that isn't in the tree, leaving the page
         // with nothing focused at all; let the first row take it instead.
-        guard !didSeedHeroFocus, perf.settings.heroBackdrop, !heroIsPinned else { return }
+        guard !didSeedHeroFocus, perf.settings.heroBackdrop,
+              (usesNTVLayout || !heroIsPinned) else { return }
         didSeedHeroFocus = true
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 100_000_000)
@@ -1556,7 +1560,47 @@ struct HomeView: View {
         }
     }
 
-    private var layoutContent: some View { fusionModernLayout }
+    @ViewBuilder
+    private var layoutContent: some View {
+        if usesNTVLayout { ntvLayout } else { fusionModernLayout }
+    }
+
+    /// Presentation only: existing loading, history, rows and context menus
+    /// remain owned by HomeView and its persistent model.
+    private var ntvLayout: some View {
+        ZStack {
+            ATVBackground()
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 32) {
+                    Text("Accueil")
+                        .font(.system(size: 38, weight: .semibold))
+                        .foregroundStyle(NTVDesign.textPrimary)
+                        .accessibilityIdentifier("ntv.home.heading")
+                    if perf.settings.heroBackdrop {
+                        NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
+                                         onSelect: heroSelect, onBack: onHomeBack)
+                            .focusSection()
+                    }
+                    if viewModel.entries.isEmpty && !viewModel.isLoading {
+                        let continued = mergedContinueItems()
+                        if !continued.isEmpty { continueRow(continued) }
+                        NTVEmptyCatalog(
+                            message: viewModel.loadError ?? "Vos catalogues apparaîtront ici dès qu’un addon sera disponible.",
+                            onOpenSettings: onOpenSettings,
+                            onRetry: { Task { await reload() } }
+                        )
+                    } else {
+                        rowsContent
+                    }
+                }
+                .modifier(RailClearingLeading(withRail: 120, withoutRail: OrivioSpacing.huge))
+                .padding(.trailing, OrivioSpacing.huge)
+                .padding(.top, OrivioSpacing.lg)
+                .padding(.bottom, 120)
+            }
+            .scrollClipDisabled()
+        }
+    }
 
     private var fusionModernLayout: some View {
         ZStack {
@@ -1740,7 +1784,7 @@ struct HomeView: View {
         // rows, sourced from a different row than the top spotlight. Two
         // gates: the performance switch (device) and the Layout pane's
         // "Featured section" toggle (per profile).
-        if perf.settings.heroBackdrop && homeCatalogSettings.showFeaturedBar {
+        if !usesNTVLayout && perf.settings.heroBackdrop && homeCatalogSettings.showFeaturedBar {
             let barItems = viewModel.heroBarItems(max: 6)
             if barItems.count >= 2 {
                 FusionHeroBar(

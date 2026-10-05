@@ -498,6 +498,7 @@ struct ProfileEditView: View {
     @State private var confirmingDelete = false
     @State private var editingCollection: OrivioCollection?
     @FocusState private var avatarFocus: String?
+    private let characterColumns = Array(repeating: GridItem(.fixed(148), spacing: 24, alignment: .top), count: 7)
 
     private var current: UserProfile {
         profiles.profiles.first { $0.id == profile.id } ?? profile
@@ -542,7 +543,7 @@ struct ProfileEditView: View {
                     .focusSection()
 
                     sectionLabel("Personnage")
-                    HStack(alignment: .top, spacing: 24) {
+                    LazyVGrid(columns: characterColumns, alignment: .leading, spacing: 24) {
                         Button { profiles.setAvatar(id: profile.id, avatarID: nil) } label: {
                             VStack(spacing: 12) {
                                 AvatarPickLabel(selected: current.localAvatarID == nil
@@ -551,7 +552,7 @@ struct ProfileEditView: View {
                                         .overlay(Text(current.initial).font(.system(size: 30, weight: .medium)).foregroundStyle(.white))
                                         .frame(width: 96, height: 96)
                                 }
-                                Text("Initiale").font(.system(size: 20))
+                                Text("Initiale").font(.system(size: 20)).frame(height: 48, alignment: .top)
                             }
                         }
                         .buttonStyle(PlainCardButtonStyle())
@@ -567,6 +568,9 @@ struct ProfileEditView: View {
                                             .clipShape(Circle())
                                     }
                                     Text(avatar.title).font(.system(size: 20))
+                                        .multilineTextAlignment(.center)
+                                        .lineLimit(2)
+                                        .frame(height: 48, alignment: .top)
                                 }
                             }
                             .buttonStyle(PlainCardButtonStyle())

@@ -44,6 +44,37 @@ final class NTVDesignSmoke: XCTestCase {
         app.terminate()
     }
 
+    func testProfileGridSecondRowPersistsOffline() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvProfileDemo"]
+        app.launch()
+        let remote = XCUIRemote.shared
+        let initial = app.buttons["ntv.profile.avatar.initial"]
+        XCTAssertTrue(initial.waitForExistence(timeout: 20))
+        XCTAssertTrue(focused(initial, timeout: 10))
+        remote.press(.down)
+        XCTAssertTrue(focused(app.buttons["ntv.profile.avatar.ntv.cap"], timeout: 5), "Down must reach the second row of characters.")
+        for _ in 0..<5 { remote.press(.right) }
+        let last = app.buttons["ntv.profile.avatar.ntv.roundglasses"]
+        XCTAssertTrue(focused(last, timeout: 5))
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(last.frame), "The last character must be visible within the TV screen.")
+        remote.press(.select)
+        XCTAssertEqual(last.value as? String, "Sélectionné")
+        capture("ntv-profile-twelve-characters")
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(last.waitForExistence(timeout: 20))
+        XCTAssertEqual(last.value as? String, "Sélectionné")
+        XCTAssertTrue(focused(last, timeout: 10))
+        remote.press(.up)
+        XCTAssertTrue(focused(app.buttons["ntv.profile.avatar.ntv.silver"], timeout: 5))
+        for _ in 0..<5 { remote.press(.left) }
+        XCTAssertTrue(focused(initial, timeout: 5))
+        remote.press(.select)
+        app.terminate()
+    }
+
     func testTopMenuRemoteRoundTrip() {
         continueAfterFailure = false
         let app = XCUIApplication()

@@ -130,6 +130,12 @@ final class NTVDesignSmoke: XCTestCase {
         let opened = play.exists
         if !opened { capture("ntv-player-startup-failure") }
         XCTAssertTrue(opened, "The local video fixture must open nTV controls.")
+        XCTAssertTrue(focused(play, timeout: 8))
+        let quickPosition = app.staticTexts["ntv.player.position"].firstMatch
+        XCTAssertTrue(quickPosition.waitForExistence(timeout: 5))
+        let beforeQuickSeek = quickPosition.label
+        remote.press(.right)
+        XCTAssertNotEqual(quickPosition.label, beforeQuickSeek, "Right from the compact play control must perform a quick skip.")
         if play.label == "Pause" { remote.press(.playPause) }
         XCTAssertTrue(focused(play, timeout: 8))
         XCTAssertEqual(play.label, "Lecture")
@@ -147,7 +153,15 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 8))
         XCTAssertEqual(play.label, "Lecture", "Cancelling a seek must keep a paused video paused.")
         XCTAssertTrue(focused(play, timeout: 5))
+        remote.press(.down)
+        XCTAssertTrue(focused(app.buttons["ntv.player.info"], timeout: 5), "The information pill must remain reachable below the bar.")
         remote.press(.up)
+        XCTAssertTrue(focused(play, timeout: 5))
+        remote.press(.up)
+        XCTAssertTrue(focused(timeline, timeout: 5))
+        remote.press(.up)
+        XCTAssertTrue(focused(app.buttons["ntv.player.video"], timeout: 5), "The floating tools must remain reachable above the bar.")
+        remote.press(.down)
         XCTAssertTrue(focused(timeline, timeout: 5))
         remote.press(.select)
         XCTAssertTrue(position.waitForExistence(timeout: 8))
@@ -155,6 +169,10 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.select)
         XCTAssertTrue(play.waitForExistence(timeout: 8))
         XCTAssertEqual(play.label, "Pause", "Committing the seek must resume playback.")
+        let screen = app.windows.firstMatch.frame
+        for element in [play, timeline, app.staticTexts["ntv.player.heading"], app.buttons["ntv.player.info"]] {
+            XCTAssertTrue(screen.contains(element.frame), "The minimal transport must stay within the TV screen.")
+        }
         capture("ntv-player-controls")
         app.terminate()
     }

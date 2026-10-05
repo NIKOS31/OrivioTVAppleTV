@@ -106,7 +106,9 @@ struct GlassSidebar: View {
         // chip ahead of the items on the same line, exactly as the vertical
         // panel keeps it above them.
         Group {
-            if horizontal {
+            if horizontal && theme.palette.id == NTVDesign.palette.id {
+                ntvHorizontalBody
+            } else if horizontal {
                 horizontalBody
             } else if theme.palette.id == NTVDesign.palette.id {
                 ntvVerticalBody
@@ -114,6 +116,73 @@ struct GlassSidebar: View {
                 verticalBody
             }
         }
+    }
+
+    /// The top layout keeps primary destinations readable and groups tools
+    /// separately. Each group uses one clear glass surface, without per-item blur.
+    private var ntvHorizontalBody: some View {
+        HStack(spacing: 24) {
+            NTVWordmark(size: 18)
+                .padding(.trailing, 8)
+
+            HStack(spacing: 4) {
+                ForEach(AppTab.sidebarOrder.filter {
+                    [AppTab.home, .movies, .series, .library, .liveTV].contains($0)
+                        && ($0 != .liveTV || liveTV.enabled)
+                }) { tab in
+                    ntvTopButton(tab, iconOnly: false)
+                }
+            }
+            .padding(8)
+            .background { ntvTopGlass }
+
+            HStack(spacing: 4) {
+                ForEach([AppTab.search, .addons, .settings]) { tab in
+                    ntvTopButton(tab, iconOnly: true)
+                }
+                Button(action: onProfileTap) {
+                    NTVTopProfileLabel(profile: profiles.active)
+                }
+                .buttonStyle(PlainCardButtonStyle())
+                .focused(focusBinding, equals: -1)
+                .accessibilityLabel("Profil : \(profiles.active.name)")
+                .accessibilityIdentifier("ntv.navigation.profile")
+            }
+            .padding(8)
+            .background { ntvTopGlass }
+        }
+        .fixedSize(horizontal: true, vertical: true)
+        .defaultFocus(focusBinding, selected)
+        .padding(.top, 28)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .ignoresSafeArea(edges: .vertical)
+        .accessibilityIdentifier("ntv.navigation.top")
+    }
+
+    private var ntvTopGlass: some View {
+        NTVGlassSurface(shape: Capsule(style: .continuous), clear: true)
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.05),
+                                                .white.opacity(0.28)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1)
+            }
+    }
+
+    private func ntvTopButton(_ tab: AppTab, iconOnly: Bool) -> some View {
+        Button {
+            onTabSelected(tab.rawValue)
+            selected = tab.rawValue
+        } label: {
+            NTVTopNavigationLabel(tab: tab, selected: selected == tab.rawValue,
+                                  iconOnly: iconOnly)
+        }
+        .buttonStyle(PlainCardButtonStyle())
+        .focused(focusBinding, equals: tab.rawValue)
+        .accessibilityLabel(NTVBrand.navigationTitle(for: tab))
+        .accessibilityIdentifier("ntv.navigation.\(tab.rawValue)")
     }
 
     /// The top bar is ALWAYS fully drawn — every tab's word and the profile
@@ -358,6 +427,50 @@ private struct GlassProfileHeader: View {
 
 /// A single rail entry: icon (+ label when expanded). Focused/selected shows a
 /// soft translucent capsule fill — no border, no scale; the glass carries it.
+private struct NTVTopNavigationLabel: View {
+    @Environment(\.isFocused) private var focused
+    let tab: AppTab
+    let selected: Bool
+    let iconOnly: Bool
+
+    var body: some View {
+        Group {
+            if iconOnly {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 24, weight: .medium))
+                    .frame(width: 56)
+            } else {
+                Text(NTVBrand.navigationTitle(for: tab))
+                    .font(.system(size: 24, weight: .medium))
+                    .lineLimit(1)
+                    .padding(.horizontal, 24)
+            }
+        }
+        .frame(height: 56)
+        .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+        .background {
+            Capsule(style: .continuous)
+                .fill(.white.opacity(focused ? 0.26 : selected ? 0.12 : 0))
+        }
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(.white.opacity(focused ? 0.65 : selected ? 0.16 : 0), lineWidth: 1.5)
+        }
+    }
+}
+
+private struct NTVTopProfileLabel: View {
+    @Environment(\.isFocused) private var focused
+    let profile: UserProfile
+
+    var body: some View {
+        ProfileAvatarView(profile: profile, size: 44)
+            .frame(width: 56, height: 56)
+            .background(Circle().fill(.white.opacity(focused ? 0.22 : 0)))
+            .overlay(Circle().strokeBorder(.white.opacity(focused ? 0.65 : 0), lineWidth: 1.5))
+    }
+}
+
 private struct GlassItemLabel: View {
     @EnvironmentObject private var theme: ThemeManager
     @Environment(\.isFocused) private var isFocused

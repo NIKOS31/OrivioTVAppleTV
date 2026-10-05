@@ -22,11 +22,20 @@ struct ProfileAvatarView: View {
     @State private var image: UIImage?
 
     private var avatarURLString: String? { profiles.avatarURL(for: profile) }
+    private var localAvatar: NTVProfileAvatar? {
+        profile.localAvatarID.flatMap(NTVProfileAvatar.init(rawValue:))
+    }
 
     var body: some View {
         ZStack {
             Circle().fill(Color(profileHex: profile.avatarColorHex))
-            if let image {
+            if let avatar = localAvatar {
+                Image(avatar.assetName)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(Circle())
+                    .accessibilityIdentifier("ntv.profile.artwork.\(avatar.id)")
+            } else if let image {
                 // Chosen avatar fully REPLACES the initial (drawn over the
                 // colored circle, clipped to it).
                 Image(uiImage: image)
@@ -81,7 +90,7 @@ struct ProfileAvatarView: View {
     }
 }
 
-// MARK: - "Who's watching?" gate
+// MARK: - "Qui regarde ?" gate
 
 struct ProfileGateView: View {
     @EnvironmentObject private var theme: ThemeManager
@@ -104,7 +113,7 @@ struct ProfileGateView: View {
             // switches skipped the PIN.
             if let locked = pinProfile {
                 PinEntryView(
-                    title: "Enter PIN",
+                    title: "Saisir le code",
                     subtitle: locked.name,
                     onSubmit: { pin in
                         let outcome = await profiles.verifyPin(id: locked.id, pin: pin)
@@ -123,7 +132,7 @@ struct ProfileGateView: View {
                 )
             } else {
                 VStack(spacing: OrivioSpacing.huge) {
-                    Text("Who's watching?")
+                    Text("Qui regarde ?")
                         .font(.system(size: 58, weight: .heavy))
                         .foregroundStyle(theme.palette.textPrimary)
 
@@ -149,7 +158,7 @@ struct ProfileGateView: View {
                         // took that away from everyone.
                         if profiles.canAddProfile, !addWouldBypassALock {
                             Button { addProfile() } label: {
-                                GateTile(title: "Add") { DashedCircle(systemName: "plus") }
+                                GateTile(title: "Ajouter") { DashedCircle(systemName: "plus") }
                             }
                             .buttonStyle(PlainCardButtonStyle())
                         }
@@ -191,7 +200,7 @@ struct ProfileGateView: View {
         } else {
             // Every free slot has a deletion still syncing — say so instead
             // of a button that visibly does nothing.
-            ToastCenter.shared.show("Can't add a profile just yet — try again in a moment",
+            ToastCenter.shared.show("Impossible d’ajouter un profil pour le moment. Réessayez dans quelques instants.",
                                     icon: "person.crop.circle.badge.exclamationmark")
         }
     }
@@ -429,7 +438,7 @@ struct ProfileManageView: View {
                 // No Done button: Menu/Back already dismisses this screen
                 // (`onExitCommand` below), and having it here put a focusable
                 // control above the tiles that the viewer had to step past.
-                Text("Manage Profiles")
+                Text("Gérer les profils")
                     .font(.system(size: 44, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -447,11 +456,11 @@ struct ProfileManageView: View {
                     if profiles.canAddProfile {
                         Button {
                             if profiles.addProfile(name: "") == nil {
-                                ToastCenter.shared.show("Can't add a profile just yet — try again in a moment",
+                                ToastCenter.shared.show("Impossible d’ajouter un profil pour le moment. Réessayez dans quelques instants.",
                                                         icon: "person.crop.circle.badge.exclamationmark")
                             }
                         } label: {
-                            GateTile(title: "Add") { DashedCircle(systemName: "plus") }
+                            GateTile(title: "Ajouter") { DashedCircle(systemName: "plus") }
                         }
                         .buttonStyle(PlainCardButtonStyle())
                         .focused($focusedTile, equals: -1)
@@ -488,6 +497,7 @@ struct ProfileEditView: View {
     @State private var pinError: String?
     @State private var confirmingDelete = false
     @State private var editingCollection: OrivioCollection?
+    @FocusState private var avatarFocus: String?
 
     private var current: UserProfile {
         profiles.profiles.first { $0.id == profile.id } ?? profile
@@ -501,15 +511,17 @@ struct ProfileEditView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
                     HStack {
-                        Text("Edit Profile").font(.system(size: 40, weight: .bold))
+                        Text("Personnaliser le profil").font(.system(size: 40, weight: .bold))
                             .foregroundStyle(theme.palette.textPrimary)
+                            .accessibilityIdentifier("ntv.profile.edit.heading")
                         Spacer()
-                        Button("Done") { commitName(); onDone() }
+                        Button("Terminé") { commitName(); onDone() }
+                            .accessibilityIdentifier("ntv.profile.done")
                     }
 
                     HStack(spacing: OrivioSpacing.lg) {
                         ProfileAvatarView(profile: current, size: 120)
-                        TextField("Name", text: $name)
+                        TextField("Nom", text: $name)
                             .font(.system(size: 28))
                             .padding(.horizontal, OrivioSpacing.lg)
                             .padding(.vertical, OrivioSpacing.md)
@@ -518,7 +530,7 @@ struct ProfileEditView: View {
                             .onSubmit { commitName() }
                     }
 
-                    sectionLabel("Color")
+                    sectionLabel("Couleur")
                     HStack(spacing: OrivioSpacing.md) {
                         ForEach(ProfileStore.avatarColors, id: \.self) { hex in
                             Button { profiles.setColor(id: profile.id, hex: hex) } label: {
@@ -529,18 +541,50 @@ struct ProfileEditView: View {
                     }
                     .focusSection()
 
-                    if profiles.avatarCatalog.isEmpty && !profiles.accountAvailable {
-                        sectionLabel("Avatar")
-                        Text("Sign in to Orivio to choose an avatar image. Colored initials are always available above.")
-                            .font(.system(size: 20))
-                            .foregroundStyle(theme.palette.textSecondary)
+                    sectionLabel("Personnage")
+                    HStack(alignment: .top, spacing: 24) {
+                        Button { profiles.setAvatar(id: profile.id, avatarID: nil) } label: {
+                            VStack(spacing: 12) {
+                                AvatarPickLabel(selected: current.localAvatarID == nil
+                                                && current.avatarID == nil && current.avatarURL == nil) {
+                                    Circle().fill(Color(profileHex: current.avatarColorHex))
+                                        .overlay(Text(current.initial).font(.system(size: 30, weight: .medium)).foregroundStyle(.white))
+                                        .frame(width: 96, height: 96)
+                                }
+                                Text("Initiale").font(.system(size: 20))
+                            }
+                        }
+                        .buttonStyle(PlainCardButtonStyle())
+                        .accessibilityIdentifier("ntv.profile.avatar.initial")
+                        .focused($avatarFocus, equals: "initial")
+                        ForEach(NTVProfileAvatar.allCases) { avatar in
+                            Button { profiles.setLocalAvatar(id: profile.id, avatar: avatar) } label: {
+                                VStack(spacing: 12) {
+                                    AvatarPickLabel(selected: current.localAvatarID == avatar.id) {
+                                        Image(avatar.assetName).resizable().scaledToFit()
+                                            .frame(width: 96, height: 96)
+                                            .background(Color(profileHex: current.avatarColorHex), in: Circle())
+                                            .clipShape(Circle())
+                                    }
+                                    Text(avatar.title).font(.system(size: 20))
+                                }
+                            }
+                            .buttonStyle(PlainCardButtonStyle())
+                            .accessibilityLabel(avatar.title)
+                            .accessibilityValue(current.localAvatarID == avatar.id ? "Sélectionné" : "")
+                            .accessibilityIdentifier("ntv.profile.avatar.\(avatar.id)")
+                            .focused($avatarFocus, equals: avatar.id)
+                        }
                     }
+                    .foregroundStyle(theme.palette.textPrimary)
+                    .focusSection()
+                    .defaultFocus($avatarFocus, current.localAvatarID ?? "initial")
 
                     if !profiles.avatarCatalog.isEmpty {
-                        sectionLabel("Avatar")
+                        sectionLabel("Autres avatars")
                         LazyVGrid(columns: columns, spacing: OrivioSpacing.md) {
                             Button { profiles.setAvatar(id: profile.id, avatarID: nil) } label: {
-                                AvatarPickLabel(selected: current.avatarID == nil) {
+                                AvatarPickLabel(selected: current.avatarID == nil && current.localAvatarID == nil) {
                                     Circle().fill(Color(profileHex: current.avatarColorHex))
                                         .overlay(Text(current.initial).font(.system(size: 30, weight: .heavy)).foregroundStyle(.white))
                                         .frame(width: 96, height: 96)
@@ -549,7 +593,7 @@ struct ProfileEditView: View {
                             .buttonStyle(PlainCardButtonStyle())
                             ForEach(profiles.avatarCatalog) { item in
                                 Button { profiles.setAvatar(id: profile.id, avatarID: item.id) } label: {
-                                    AvatarPickLabel(selected: current.avatarID == item.id) {
+                                    AvatarPickLabel(selected: current.avatarID == item.id && current.localAvatarID == nil) {
                                         AsyncImage(url: URL(string: item.imageURL)) { img in
                                             img.resizable().scaledToFill()
                                         } placeholder: {
@@ -565,7 +609,7 @@ struct ProfileEditView: View {
                         .focusSection()
                     }
 
-                    sectionLabel("PIN Lock")
+                    sectionLabel("Verrouillage par code")
                     if let pinError {
                         Text(pinError).font(.system(size: 20)).foregroundStyle(OrivioPrimitives.error)
                     }
@@ -577,15 +621,15 @@ struct ProfileEditView: View {
                                 // current PIN, so a nil-PIN remove silently failed.
                                 Button(role: .destructive) {
                                     showRemovePin = true
-                                } label: { Label("Remove PIN", systemImage: "lock.open") }
+                                } label: { Label("Retirer le code", systemImage: "lock.open") }
                             } else {
-                                Button { showSetPin = true } label: { Label("Set PIN", systemImage: "lock") }
+                                Button { showSetPin = true } label: { Label("Définir un code", systemImage: "lock") }
                             }
                         }
                     } else {
                         Text(current.pinEnabled
-                             ? "This profile is PIN-locked. Sign in to Orivio to change or remove the PIN."
-                             : "Sign in to Orivio to set a PIN for this profile.")
+                             ? "Ce profil est verrouillé. Connectez votre compte pour modifier ou retirer le code."
+                             : "Connectez votre compte pour définir un code pour ce profil.")
                             .font(.system(size: 20))
                             .foregroundStyle(theme.palette.textSecondary)
                     }
@@ -598,7 +642,7 @@ struct ProfileEditView: View {
                         Button(role: .destructive) {
                             confirmingDelete = true
                         } label: {
-                            Label("Delete Profile", systemImage: "trash").font(.system(size: 24, weight: .semibold))
+                            Label("Supprimer le profil", systemImage: "trash").font(.system(size: 24, weight: .semibold))
                         }
                         .padding(.top, OrivioSpacing.lg)
                     }
@@ -607,7 +651,10 @@ struct ProfileEditView: View {
             }
             .scrollClipDisabled()
         }
-        .onAppear { name = current.name }
+        .onAppear {
+            name = current.name
+            avatarFocus = current.localAvatarID.flatMap(NTVProfileAvatar.init(rawValue:))?.id ?? "initial"
+        }
         // Same as pressing Done: commit the pending name edit, then dismiss.
         .onExitCommand { commitName(); onDone() }
         .fullScreenCover(item: $editingCollection) { collection in
@@ -617,7 +664,7 @@ struct ProfileEditView: View {
         }
         .fullScreenCover(isPresented: $showSetPin) {
             PinEntryView(
-                title: "Set a 4-digit PIN",
+                title: "Créer un code à 4 chiffres",
                 subtitle: profile.name,
                 onSubmit: { pin in
                     let outcome = await profiles.setPin(id: profile.id, pin: pin, currentPin: nil)
@@ -626,7 +673,7 @@ struct ProfileEditView: View {
                         showSetPin = false
                         return nil
                     case .currentPinRequired:
-                        return "This profile already has a PIN."
+                        return "Ce profil possède déjà un code."
                     case .failure(let message):
                         return message
                     }
@@ -638,12 +685,12 @@ struct ProfileEditView: View {
         }
         .fullScreenCover(isPresented: $showRemovePin) {
             PinEntryView(
-                title: "Enter current PIN",
-                subtitle: "Remove the lock on \(profile.name)",
+                title: "Saisir le code actuel",
+                subtitle: "Déverrouiller \(profile.name)",
                 onSubmit: { pin in
                     let ok = await profiles.clearPin(id: profile.id, currentPin: pin)
                     if ok { showRemovePin = false; return nil }
-                    return "Incorrect PIN, or it couldn't be removed."
+                    return "Code incorrect ou suppression impossible."
                 },
                 onCancel: { showRemovePin = false }
             )
@@ -653,17 +700,17 @@ struct ProfileEditView: View {
         // Deleting also pushes to the Orivio account (ProfileStore.delete →
         // onLocalChange → profile sync).
         .confirmationDialog(
-            "Delete “\(current.name)”?",
+            "Supprimer « \(current.name) » ?",
             isPresented: $confirmingDelete,
             titleVisibility: .visible
         ) {
-            Button("Delete Profile", role: .destructive) {
+            Button("Supprimer le profil", role: .destructive) {
                 profiles.delete(id: profile.id)
                 onDone()
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Annuler", role: .cancel) {}
         } message: {
-            Text("This removes the profile and its settings from this device and your Orivio account. This can't be undone.")
+            Text("Le profil et ses réglages seront supprimés sur cet appareil et sur votre compte. Cette action est définitive.")
         }
     }
 

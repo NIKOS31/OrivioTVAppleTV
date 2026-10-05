@@ -58,6 +58,8 @@ struct UserProfile: Codable, Identifiable, Hashable {
     var usesPrimaryPlugins: Bool
     var avatarID: String?
     var avatarURL: String?
+    /// Device-local artwork; does not depend on the shared account avatar catalog.
+    var localAvatarID: String?
     var pinEnabled: Bool
     /// SHA-256 of the PIN, cached on successful set/verify so a locked profile
     /// can still be unlocked offline. Device-local; never synced.
@@ -69,7 +71,8 @@ struct UserProfile: Codable, Identifiable, Hashable {
     init(
         id: Int, name: String, avatarColorHex: String,
         usesPrimaryAddons: Bool = false, usesPrimaryPlugins: Bool = false,
-        avatarID: String? = nil, avatarURL: String? = nil, pinEnabled: Bool = false,
+        avatarID: String? = nil, avatarURL: String? = nil, localAvatarID: String? = nil,
+        pinEnabled: Bool = false,
         pinHash: String? = nil, autoLink: AutoLinkPreferences? = nil
     ) {
         self.id = id
@@ -79,6 +82,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
         self.usesPrimaryPlugins = usesPrimaryPlugins
         self.avatarID = avatarID
         self.avatarURL = avatarURL
+        self.localAvatarID = localAvatarID
         self.pinEnabled = pinEnabled
         self.pinHash = pinHash
         self.autoLink = autoLink
@@ -86,7 +90,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, avatarColorHex, usesPrimaryAddons, usesPrimaryPlugins
-        case avatarID, avatarURL, pinEnabled, pinHash, autoLink
+        case avatarID, avatarURL, localAvatarID, pinEnabled, pinHash, autoLink
     }
 
     /// Tolerant decode, for the same reason `AutoLinkPreferences` has one — but
@@ -109,6 +113,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
         usesPrimaryPlugins = (try? c.decode(Bool.self, forKey: .usesPrimaryPlugins)) ?? false
         avatarID = try? c.decodeIfPresent(String.self, forKey: .avatarID)
         avatarURL = try? c.decodeIfPresent(String.self, forKey: .avatarURL)
+        localAvatarID = try? c.decodeIfPresent(String.self, forKey: .localAvatarID)
         pinEnabled = (try? c.decode(Bool.self, forKey: .pinEnabled)) ?? false
         pinHash = try? c.decodeIfPresent(String.self, forKey: .pinHash)
         autoLink = try? c.decodeIfPresent(AutoLinkPreferences.self, forKey: .autoLink)
@@ -413,8 +418,16 @@ final class ProfileStore: ObservableObject {
     func setAvatar(id: Int, avatarID: String?) {
         guard let idx = profiles.firstIndex(where: { $0.id == id }) else { return }
         profiles[idx].avatarID = avatarID
+        profiles[idx].avatarURL = nil
+        profiles[idx].localAvatarID = nil
         saveList()
         notifyChange()
+    }
+
+    func setLocalAvatar(id: Int, avatar: NTVProfileAvatar) {
+        guard let idx = profiles.firstIndex(where: { $0.id == id }) else { return }
+        profiles[idx].localAvatarID = avatar.id
+        saveList()
     }
 
     /// The active profile's Auto Link Selector settings (defaults if unset).
@@ -431,6 +444,7 @@ final class ProfileStore: ObservableObject {
 
     /// Resolves a profile's avatar image URL from the catalog (or its stored URL).
     func avatarURL(for profile: UserProfile) -> String? {
+        if let id = profile.localAvatarID, NTVProfileAvatar(rawValue: id) != nil { return nil }
         if let direct = profile.avatarURL, !direct.isEmpty { return direct }
         guard let avatarID = profile.avatarID else { return nil }
         return avatarCatalog.first { $0.id == avatarID }?.imageURL
@@ -522,6 +536,9 @@ final class ProfileStore: ObservableObject {
         let localAutoLink = Dictionary(profiles.compactMap { p in
             p.autoLink.map { (p.id, $0) }
         }, uniquingKeysWith: { first, _ in first })
+        let localAvatars = Dictionary(profiles.compactMap { p in
+            p.localAvatarID.map { (p.id, $0) }
+        }, uniquingKeysWith: { first, _ in first })
         // The pull RPC has no `pinEnabled` column, so every row arrives false
         // and the REAL value only lands in the separate `pull_profile_locks`
         // call, which is best-effort (`try?`). Carrying the local lock state
@@ -534,6 +551,7 @@ final class ProfileStore: ObservableObject {
             var merged = p
             merged.pinHash = merged.pinHash ?? localHashes[p.id]
             merged.autoLink = merged.autoLink ?? localAutoLink[p.id]
+            merged.localAvatarID = localAvatars[p.id]
             merged.pinEnabled = localPinEnabled[p.id] ?? merged.pinEnabled
             return merged
         }

@@ -314,7 +314,7 @@ final class HomeViewModel: ObservableObject {
         // user's order was merged in. `maxHomeRows` below is the real ceiling,
         // and it cuts in the user's own order.
         for addon in addonManager.catalogAddons {
-            for catalog in (addon.manifest.catalogs ?? []) where !catalog.requiresExtra {
+            for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
                 let key = HomeCatalogSettingsStore.catalogKey(
                     addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id
                 )

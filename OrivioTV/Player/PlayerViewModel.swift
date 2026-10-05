@@ -6551,6 +6551,11 @@ final class PlayerViewModel: ObservableObject {
     /// Playback was running when a bar click opened this scrub — the commit
     /// (and a cancel) put it back.
     private var resumeAfterScrub = false
+    /// Set by the player host; existing themes keep their transport grammar.
+    var usesNTVControls = false
+    private var ntvScrubDirection = false
+    private var ntvScrubRepeats = 0
+    private var ntvScrubPressedAt = Date.distantPast
 
     /// This CONTACT (finger-down to lift) has dragged the scrub target — by
     /// pan or by wheel. A directional press during such a contact is the
@@ -6565,6 +6570,8 @@ final class PlayerViewModel: ObservableObject {
     func beginScrub(pausing: Bool = false) {
         guard acceptsTransportInput else { return }
         guard overlay == .none || overlay == .controls || overlay == .pauseInfo else { return }
+        ntvScrubRepeats = 0
+        ntvScrubPressedAt = .distantPast
         var start = position
         if pausing, isPlaying {
             enginePause("bar click opening a scrub")
@@ -7066,7 +7073,8 @@ final class PlayerViewModel: ObservableObject {
         // having to load". The extra 200ms buys the viewer one seek instead of
         // six, and the bar shows `pendingSeekDelta` throughout, so the target is
         // moving on screen the whole time it is being gathered.
-        let window: UInt64 = gesture ? 450_000_000 : 650_000_000
+        // Coalesce bursts so a held direction does not restart the decoder on every repeat.
+        let window: UInt64 = usesNTVControls ? 280_000_000 : (gesture ? 450_000_000 : 650_000_000)
         seekDebounceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: window)
             guard !Task.isCancelled, let self else { return }
@@ -7542,6 +7550,17 @@ final class PlayerViewModel: ObservableObject {
     func barDirectionalPress(forward: Bool) {
         guard acceptsTransportInput else { return }
         nudgeSeek(forward ? Double(settings.skipSeconds) : -Double(settings.skipSeconds))
+    }
+
+    /// Single presses stay precise; a held direction progressively travels further.
+    func stepNTVScrub(forward: Bool) {
+        let now = Date()
+        let repeating = forward == ntvScrubDirection && now.timeIntervalSince(ntvScrubPressedAt) < 0.35
+        ntvScrubRepeats = repeating ? ntvScrubRepeats + 1 : 0
+        ntvScrubPressedAt = now
+        ntvScrubDirection = forward
+        let multiplier = ntvScrubRepeats >= 10 ? 6.0 : ntvScrubRepeats >= 4 ? 3.0 : 1.0
+        scrubJump((forward ? 1 : -1) * Double(settings.skipSeconds) * multiplier)
     }
 
     // The fast-forward / rewind SCAN transport was removed here.

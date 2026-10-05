@@ -92,15 +92,15 @@ enum NavigationPosition: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .left: return "Left / Vertical"
-        case .top:  return "Top / Horizontal"
+        case .left: return "À gauche · Vertical"
+        case .top:  return "En haut · Horizontal"
         }
     }
 
     var summary: String {
         switch self {
-        case .left: return "A vertical rail down the left edge. The nTV default."
-        case .top:  return "A horizontal bar across the top of the screen."
+        case .left: return "Un menu latéral sur le bord gauche de l’écran."
+        case .top:  return "Un menu flottant en haut de l’écran."
         }
     }
 
@@ -712,7 +712,7 @@ final class HomeCatalogSettingsStore: ObservableObject {
         var seen = Set<String>()
 
         for addon in addons {
-            for catalog in (addon.manifest.catalogs ?? []) where !catalog.requiresExtra {
+            for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
                 let key = Self.catalogKey(addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id)
                 guard seen.insert(key).inserted else { continue }
                 catalogKeys.append(key)

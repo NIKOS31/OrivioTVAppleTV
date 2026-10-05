@@ -6,13 +6,18 @@ struct NTVGlassSurface<S: Shape>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     let shape: S
     var emphasized = false
+    var clear = false
 
     var body: some View {
         if reduceTransparency || PerformanceProfile.isLowPower || PerformanceProfile.isMidPower {
             shape.fill(emphasized ? NTVDesign.raised : NTVDesign.surface)
         } else if #available(tvOS 26.0, *) {
-            Color.clear.glassEffect(
-                .regular.tint(NTVDesign.surface.opacity(emphasized ? 0.3 : 0.15)), in: shape)
+            if clear {
+                Color.clear.glassEffect(.clear, in: shape)
+            } else {
+                Color.clear.glassEffect(
+                    .regular.tint(NTVDesign.surface.opacity(emphasized ? 0.3 : 0.15)), in: shape)
+            }
         } else {
             shape.fill(.regularMaterial)
         }

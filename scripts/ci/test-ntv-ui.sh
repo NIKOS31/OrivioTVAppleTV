@@ -34,6 +34,7 @@ xcodebuild test \
   -derivedDataPath "$output/DerivedData" \
   -resultBundlePath "$results/navigation.xcresult" \
   -only-testing:OrivioTVUITests/NTVDesignSmoke \
+  -only-testing:OrivioTVTests/NTVCoreTests \
   -parallel-testing-enabled NO \
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \

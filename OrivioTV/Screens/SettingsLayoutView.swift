@@ -30,7 +30,7 @@ struct LayoutSettingsDetail: View {
         var options = [OrivioDropdownOption("", "Automatic (first row)")]
         var seen = Set<String>()
         for addon in addonManager.catalogAddons {
-            for catalog in (addon.manifest.catalogs ?? []) where !catalog.requiresExtra {
+            for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
                 let key = HomeCatalogSettingsStore.catalogKey(
                     addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id)
                 guard seen.insert(key).inserted else { continue }
@@ -93,7 +93,7 @@ struct LayoutSettingsDetail: View {
                 ) { settings.heroCatalogKey = $0 }
 
                 OrivioDropdown(
-                    title: "Navigation Position",
+                    title: "Position du menu",
                     subtitle: settings.navigationPosition.summary,
                     icon: "sidebar.leading",
                     selection: settings.navigationPosition.rawValue,
@@ -354,7 +354,7 @@ struct CatalogOrderSection: View {
         var keys: [String] = []
         var seen = Set<String>()
         for addon in addonManager.catalogAddons {
-            for catalog in (addon.manifest.catalogs ?? []) where !catalog.requiresExtra {
+            for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
                 let key = HomeCatalogSettingsStore.catalogKey(
                     addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id)
                 if seen.insert(key).inserted { keys.append(key) }
@@ -372,7 +372,7 @@ struct CatalogOrderSection: View {
     private var rows: [LayoutRowInfo] {
         var byKey: [String: LayoutRowInfo] = [:]
         for addon in addonManager.catalogAddons {
-            for catalog in (addon.manifest.catalogs ?? []) where !catalog.requiresExtra {
+            for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
                 let key = HomeCatalogSettingsStore.catalogKey(
                     addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id)
                 if byKey[key] == nil {

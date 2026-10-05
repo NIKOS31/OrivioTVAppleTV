@@ -129,7 +129,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "3"
         # Tracks the Android APK release this port mirrors (v0.7.15-beta).
         MARKETING_VERSION: "0.11"
-        CURRENT_PROJECT_VERSION: "2"
+        CURRENT_PROJECT_VERSION: "3"
         # The sanitize script below writes into the built .app, so user
         # script sandboxing must be off or the phase is denied file access.
         ENABLE_USER_SCRIPT_SANDBOXING: false
@@ -274,7 +274,7 @@ targets:
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "3"
         MARKETING_VERSION: "0.11"
-        CURRENT_PROJECT_VERSION: "2"
+        CURRENT_PROJECT_VERSION: "3"
         CODE_SIGN_ENTITLEMENTS: OrivioTopShelf/OrivioTopShelf.entitlements
       configs:
         Debug:
@@ -286,6 +286,22 @@ targets:
           CODE_SIGN_ENTITLEMENTS: OrivioTopShelf/OrivioTopShelf-Debug.entitlements
   # UI-test target: drives the tvOS remote (XCUIRemote) to verify focus/menu
   # behavior, which osascript keystroke automation can't do. Simulator only.
+  OrivioTVTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources:
+      - OrivioTVTests
+    dependencies:
+      - target: OrivioTV
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.orivio.tv.appletv.tests
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "3"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OrivioTV.app/OrivioTV"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGNING_ALLOWED: "NO"
   OrivioTVUITests:
     type: bundle.ui-testing
     platform: tvOS
@@ -306,9 +322,11 @@ schemes:
       targets:
         OrivioTV: all
         OrivioTVUITests: [test]
+        OrivioTVTests: [test]
     test:
       targets:
         - OrivioTVUITests
+        - OrivioTVTests
     run:
       config: Debug
       # KSPlayer's Metal renderer (MetalRender.textures) calls makeTexture and

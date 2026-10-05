@@ -573,8 +573,20 @@ struct RootView: View {
                     AppProbe.life("root appeared — tab=\(Self.tabName(selectedTab))")
                     // Skipped in the demo modes so the screen isn't covered.
                     let args = ProcessInfo.processInfo.arguments
-                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo"]
+                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvProfileDemo", "-ntvPlayerDemo"]
                     let demoMode = demoArgs.contains { args.contains($0) }
+                    #if DEBUG
+                    if demoMode {
+                        homeCatalogSettings.navigationPosition = args.contains("-ntvTopMenuDemo") ? .top : .left
+                    }
+                    #endif
+                    // The selected design is applied once; subsequent layout
+                    // choices remain the viewer's own preference.
+                    if !demoMode, theme.palette.id == NTVDesign.palette.id,
+                       !UserDefaults.standard.bool(forKey: "ntv.navigation.top.v1") {
+                        homeCatalogSettings.navigationPosition = .top
+                        UserDefaults.standard.set(true, forKey: "ntv.navigation.top.v1")
+                    }
                     // -welcomeDemo forces it regardless of the completed flag
                     // or an already-restored session, which is the only way to
                     // look at this screen twice on one install.
@@ -587,6 +599,10 @@ struct RootView: View {
                     // Settings TAB (in-place, not the full-screen pane demo) —
                     // used to drive the ATV theme's settings in the sim.
                     if args.contains("-settingsTabDemo") { selectedTab = 3 }
+                    #if DEBUG
+                    if args.contains("-ntvTopMenuDemo") { selectedTab = 3 }
+                    if args.contains("-ntvProfileDemo") { showProfileGate = true }
+                    #endif
                     if args.contains("-liveTVDemo") { selectedTab = 4 }
                     if args.contains("-searchDemo") { selectedTab = 1 }
                     if args.contains("-libraryDemo") { selectedTab = 2 }
@@ -805,6 +821,13 @@ struct RootView: View {
                 .environmentObject(theme)
             }
             .fullScreenCover(isPresented: $showProfileGate) {
+                if ProcessInfo.processInfo.arguments.contains("-ntvProfileDemo") {
+                    ProfileEditView(profile: profiles.active) { showProfileGate = false }
+                        .environmentObject(theme)
+                        .environmentObject(profiles)
+                        .environmentObject(addonManager)
+                        .environmentObject(collections)
+                } else {
                 // The gate now only SELECTS a profile; account + Manage Profiles
                 // live in Settings → Account. The design is an independent look
                 // axis (Settings → Themes → Profile Screen).
@@ -817,6 +840,7 @@ struct RootView: View {
                 .environmentObject(theme)
                 .environmentObject(profiles)
                 .environmentObject(account)
+                }
             }
             // Returning to the app pulls the latest Continue Watching so changes
             // made on another device show up without a relaunch (local edits
@@ -896,20 +920,23 @@ struct RootView: View {
     private func startPlayerDemoIfRequested() {
         let args = ProcessInfo.processInfo.arguments
         let wantsMKV = args.contains("-playerDemoMKV")
-        guard wantsMKV || args.contains("-playerDemo") else { return }
+        let wantsNTV = args.contains("-ntvPlayerDemo")
+        guard wantsMKV || wantsNTV || args.contains("-playerDemo") else { return }
+        let fixtureURL = Bundle.main.url(forResource: "ntv-player-fixture", withExtension: "mp4")
+        if wantsNTV && fixtureURL == nil { return }
         // Once per process: the root content re-appears whenever the player
         // cover dismisses — including the Picture in Picture handoff — and a
         // second demo session would tear the parked one down.
         guard !Self.playerDemoStarted else { return }
         Self.playerDemoStarted = true
         let meta = MetaItem(
-            id: "tt0111161", type: "movie", name: wantsMKV ? "Demo Stream (MKV)" : "Demo Stream (HLS)"
+            id: "ntv-player-test", type: "movie", name: wantsNTV ? "Validation nTV" : wantsMKV ? "Demo Stream (MKV)" : "Demo Stream (HLS)"
         )
         let stream = Stream(
             name: wantsMKV ? "MKV Sample\n1080p" : "Apple HLS\n1080p",
             title: wantsMKV ? "Big Buck Bunny MKV sample" : "BipBop advanced fMP4 example",
             description: nil,
-            url: wantsMKV
+            url: wantsNTV ? fixtureURL!.absoluteString : wantsMKV
                 ? "https://test-videos.co.uk/vids/bigbuckbunny/mkv/1080/Big_Buck_Bunny_1080_10s_5MB.mkv"
                 : "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8",
             infoHash: nil, behaviorHints: nil
@@ -1238,13 +1265,15 @@ struct RootView: View {
                 // is text rather than bleed.
                 .padding(.leading, !navIsTop && showSidebar && selectedTab != 0
                          ? GlassSidebar.collapsedWidth : 0)
-                // Same rule on the other axis, Home included: the bar FLOATS
-                // over Home the way the pill floats beside it, so the hero is
-                // never pushed down. The other tabs get a SAFE-AREA inset
+                // nTV Home includes a title above its spotlight, so it needs
+                // the same clearance as the other tabs. The backdrop still
+                // extends underneath the glass. Fusion's full-bleed hero keeps
+                // its existing floating layout. Apply a SAFE-AREA inset
                 // rather than a plain one — see `topBarClearance`: plain
                 // padding cut the page off under the bar, so scrolled rows hit
                 // a black band instead of sliding under the glass.
-                .safeAreaPadding(.top, navIsTop && showSidebar && selectedTab != 0
+                .safeAreaPadding(.top, navIsTop && showSidebar
+                                 && (selectedTab != 0 || theme.palette.id == NTVDesign.palette.id)
                                  ? GlassSidebar.topBarClearance : 0)
                 // The expanded panel draws OVER the page and the page does
                 // not move. There was an `.offset` here (plus an animation

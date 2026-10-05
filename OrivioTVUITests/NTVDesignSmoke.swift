@@ -4,6 +4,118 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testProfileCharacterPersistsOffline() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvProfileDemo"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["ntv.profile.edit.heading"].waitForExistence(timeout: 20))
+        let remote = XCUIRemote.shared
+        let initial = app.buttons["ntv.profile.avatar.initial"]
+        for _ in 0..<4 {
+            if initial.hasFocus { break }
+            remote.press(.left)
+        }
+        XCTAssertTrue(focused(initial, timeout: 5))
+        remote.press(.right)
+        XCTAssertTrue(focused(app.buttons["ntv.profile.avatar.ntv.glasses"], timeout: 5))
+        remote.press(.right)
+        let curls = app.buttons["ntv.profile.avatar.ntv.curls"]
+        XCTAssertTrue(focused(curls, timeout: 5))
+        remote.press(.select)
+        XCTAssertEqual(curls.value as? String, "Sélectionné")
+        capture("ntv-profile-characters")
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(curls.waitForExistence(timeout: 20))
+        XCTAssertEqual(curls.value as? String, "Sélectionné", "The bundled character must survive relaunch without an account.")
+        XCTAssertTrue(focused(curls, timeout: 5))
+        remote.press(.left)
+        remote.press(.left)
+        XCTAssertTrue(focused(initial, timeout: 5))
+        remote.press(.select)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(initial.waitForExistence(timeout: 20))
+        XCTAssertNotEqual(curls.value as? String, "Sélectionné", "Choosing initials must replace the previous character.")
+        app.terminate()
+    }
+
+    func testTopMenuRemoteRoundTrip() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvTopMenuDemo"]
+        app.launch()
+        let settings = app.buttons["ntv.navigation.3"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 20))
+        let remote = XCUIRemote.shared
+        for _ in 0..<3 {
+            if settings.hasFocus { break }
+            remote.press(.menu)
+            if focused(settings, timeout: 3) { break }
+        }
+        XCTAssertTrue(settings.hasFocus)
+        remote.press(.left)
+        XCTAssertTrue(focused(app.buttons["ntv.navigation.7"], timeout: 5))
+        remote.press(.left)
+        XCTAssertTrue(focused(app.buttons["ntv.navigation.1"], timeout: 5))
+        remote.press(.left)
+        XCTAssertTrue(focused(app.buttons["ntv.navigation.4"], timeout: 5))
+        remote.press(.left)
+        let library = app.buttons["ntv.navigation.2"]
+        XCTAssertTrue(focused(library, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.library.heading"].waitForExistence(timeout: 15))
+        remote.press(.menu)
+        XCTAssertTrue(focused(library, timeout: 5), "Back must restore the selected top tab.")
+        capture("ntv-top-glass-navigation")
+        let screen = app.windows.firstMatch.frame
+        for id in [0, 1, 2, 3, 4, 5, 6, 7] {
+            let button = app.buttons["ntv.navigation.\(id)"]
+            XCTAssertTrue(screen.contains(button.frame), "Top tab \(id) must stay within the TV screen.")
+        }
+        app.terminate()
+    }
+
+    func testPlayerTimelineCancelAndCommit() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvPlayerDemo"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        let remote = XCUIRemote.shared
+        let play = app.buttons["ntv.player.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 30), "The local video fixture must open nTV controls.")
+        if play.label == "Pause" { remote.press(.playPause) }
+        XCTAssertTrue(focused(play, timeout: 8))
+        XCTAssertEqual(play.label, "Lecture")
+        remote.press(.up)
+        let timeline = app.buttons["ntv.player.timeline"]
+        XCTAssertTrue(focused(timeline, timeout: 5))
+        remote.press(.right)
+        let position = app.staticTexts["ntv.player.position"].firstMatch
+        XCTAssertTrue(position.waitForExistence(timeout: 8))
+        let first = position.label
+        remote.press(.right)
+        XCTAssertNotEqual(position.label, first, "Right must move the seek preview before committing.")
+        capture("ntv-player-seek-preview")
+        remote.press(.menu)
+        XCTAssertTrue(play.waitForExistence(timeout: 8))
+        XCTAssertEqual(play.label, "Lecture", "Cancelling a seek must keep a paused video paused.")
+        XCTAssertTrue(focused(play, timeout: 5))
+        remote.press(.up)
+        XCTAssertTrue(focused(timeline, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(position.waitForExistence(timeout: 8))
+        remote.press(.right)
+        remote.press(.select)
+        XCTAssertTrue(play.waitForExistence(timeout: 8))
+        XCTAssertEqual(play.label, "Pause", "Committing the seek must resume playback.")
+        capture("ntv-player-controls")
+        app.terminate()
+    }
+
     func testBrandAndSidebarRoundTrip() {
         continueAfterFailure = false
         let app = XCUIApplication()

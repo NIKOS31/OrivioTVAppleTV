@@ -578,7 +578,6 @@ struct ProfileEditView: View {
                     }
                     .foregroundStyle(theme.palette.textPrimary)
                     .focusSection()
-                    .defaultFocus($avatarFocus, current.localAvatarID ?? "initial")
 
                     if !profiles.avatarCatalog.isEmpty {
                         sectionLabel("Autres avatars")
@@ -651,6 +650,9 @@ struct ProfileEditView: View {
             }
             .scrollClipDisabled()
         }
+        // The preference belongs to the entire editor. A preference limited
+        // to the character row lets the earlier Name field take initial focus.
+        .defaultFocus($avatarFocus, current.localAvatarID ?? "initial")
         .onAppear {
             name = current.name
             avatarFocus = current.localAvatarID.flatMap(NTVProfileAvatar.init(rawValue:))?.id ?? "initial"

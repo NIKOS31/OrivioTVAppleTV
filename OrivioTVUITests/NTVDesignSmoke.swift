@@ -12,6 +12,9 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(app.staticTexts["ntv.profile.edit.heading"].waitForExistence(timeout: 20))
         let remote = XCUIRemote.shared
         let initial = app.buttons["ntv.profile.avatar.initial"]
+        let focusedAvatar = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.profile.avatar.")).firstMatch
+        XCTAssertTrue(focusedAvatar.waitForExistence(timeout: 10), "The editor must initially focus the selected character.")
         for _ in 0..<4 {
             if initial.hasFocus { break }
             remote.press(.left)
@@ -86,7 +89,9 @@ final class NTVDesignSmoke: XCTestCase {
         app.launch()
         let remote = XCUIRemote.shared
         let play = app.buttons["ntv.player.play"]
-        XCTAssertTrue(play.waitForExistence(timeout: 30), "The local video fixture must open nTV controls.")
+        let opened = play.waitForExistence(timeout: 30)
+        if !opened { capture("ntv-player-startup-failure") }
+        XCTAssertTrue(opened, "The local video fixture must open nTV controls.")
         if play.label == "Pause" { remote.press(.playPause) }
         XCTAssertTrue(focused(play, timeout: 8))
         XCTAssertEqual(play.label, "Lecture")

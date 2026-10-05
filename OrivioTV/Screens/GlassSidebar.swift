@@ -156,7 +156,6 @@ struct GlassSidebar: View {
         .padding(.top, 28)
         .frame(maxWidth: .infinity, alignment: .center)
         .ignoresSafeArea(edges: .vertical)
-        .accessibilityIdentifier("ntv.navigation.top")
     }
 
     private var ntvTopGlass: some View {

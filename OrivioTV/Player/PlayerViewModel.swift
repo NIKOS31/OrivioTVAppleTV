@@ -41,7 +41,7 @@ enum PlayerDevFlags {
     static let playerHUD = args.contains("-playerHUD")
     static let controlsDemo = args.contains("-playerControlsDemo")
     /// The `-playerDemo` / `-playerDemoMKV` sample sessions.
-    static let playerDemo = args.contains("-playerDemo") || args.contains("-playerDemoMKV")
+    static let playerDemo = args.contains("-playerDemo") || args.contains("-playerDemoMKV") || args.contains("-ntvPlayerDemo")
     static let infoDemo = args.contains("-playerInfoDemo")
     static let demoTour = args.contains("-playerDemoTour")
 }

@@ -1174,15 +1174,15 @@ struct PlayerErrorOverlay: View {
                     // that expired — transient things where one more attempt
                     // genuinely works, and where the alternative was asking the
                     // viewer to leave the film and start over from the browser.
-                    Button("Try Again") { viewModel.retryPlayback() }
+                    Button("Réessayer") { viewModel.retryPlayback() }
                         .focused($retryFocused)
                     if viewModel.allEntries.count > 1 {
-                        Button("Other Sources") {
+                        Button("Autres sources") {
                             viewModel.showSourcesFromError()
                         }
                         .focused($sourcesFocused)
                     }
-                    Button("Close Player", action: dismiss)
+                    Button("Fermer le lecteur", action: dismiss)
                         .focused($closeFocused)
                 }
                 // Land focus explicitly. Left to the engine, the first pass on

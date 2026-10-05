@@ -89,7 +89,14 @@ final class NTVDesignSmoke: XCTestCase {
         app.launch()
         let remote = XCUIRemote.shared
         let play = app.buttons["ntv.player.play"]
-        let opened = play.waitForExistence(timeout: 30)
+        // A fresh video starts without chrome. Open it as a viewer does;
+        // early Up presses are ignored while the local fixture is loading.
+        for _ in 0..<10 {
+            if play.exists { break }
+            remote.press(.up)
+            if play.waitForExistence(timeout: 2) { break }
+        }
+        let opened = play.exists
         if !opened { capture("ntv-player-startup-failure") }
         XCTAssertTrue(opened, "The local video fixture must open nTV controls.")
         if play.label == "Pause" { remote.press(.playPause) }

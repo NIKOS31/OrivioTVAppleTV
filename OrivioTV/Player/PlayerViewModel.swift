@@ -4029,7 +4029,7 @@ final class PlayerViewModel: ObservableObject {
             }
         }
         guard let originURL = overrideURL ?? entry.stream.url.flatMap(URL.init(string:)) else {
-            overlay = .error("This source has no playable link.")
+            overlay = .error("Cette source ne fournit aucun lien de lecture.")
             return
         }
         PlayerProbe.event("load", "START \(entry.addonName)"
@@ -9054,8 +9054,8 @@ final class PlayerViewModel: ObservableObject {
                 self.decisionLog.record("Error", "every source exhausted",
                                         because: error.localizedDescription)
                 self.overlay = .error(
-                    "This title wouldn't play.\n\nEvery source was tried — they may be "
-                    + "offline, expired, or unavailable in your region."
+                    "Impossible de lire ce titre.\n\nToutes les sources ont été essayées. Elles peuvent être "
+                    + "indisponibles, expirées ou inaccessibles depuis votre région."
                 )
                 return
             }

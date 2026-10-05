@@ -728,14 +728,14 @@ struct ProfileEditView: View {
         )
     }
 
-    /// Installed stream addons, as dropdown options (with a leading "Any"/"None").
+    /// Installed stream addons, as dropdown options (with a leading "Toutes les qualités"/"Aucun").
     private func addonOptions(includeNone: Bool) -> [OrivioDropdownOption] {
         var names: [String] = []
         for addon in addonManager.streamAddons {
             let name = addon.manifest.name
             if !name.isEmpty, !names.contains(name) { names.append(name) }
         }
-        let head = OrivioDropdownOption("", includeNone ? "None" : "Any addon")
+        let head = OrivioDropdownOption("", includeNone ? "Aucun" : "Tous les addons")
         return [head] + names.map { OrivioDropdownOption($0) }
     }
 
@@ -756,7 +756,7 @@ struct ProfileEditView: View {
                     .foregroundStyle(theme.palette.textPrimary)
 
                 if profile.id == profiles.activeProfileID {
-                    Text("Choose what this profile sees. Open a collection to pick individual folders.")
+                    Text("Choisissez les contenus visibles sur ce profil. Ouvrez une collection pour choisir ses dossiers.")
                         .font(.system(size: 20))
                         .foregroundStyle(theme.palette.textSecondary)
 
@@ -778,7 +778,7 @@ struct ProfileEditView: View {
                         .opacity(globallyOff ? 0.45 : 1)
                     }
                 } else {
-                    Text("Switch to “\(current.name)” to choose which of the \(collections.library.count) collections it shows.")
+                    Text("Activez le profil « \(current.name) » pour choisir ses collections parmi les \(collections.library.count) disponibles.")
                         .font(.system(size: 20))
                         .foregroundStyle(theme.palette.textSecondary)
                 }
@@ -790,23 +790,23 @@ struct ProfileEditView: View {
     /// "3 of 19 folders" — so the row says what's on without opening it.
     private func folderSummary(_ collection: OrivioCollection) -> String {
         guard collections.isGloballyVisible(collection.id) else {
-            return "Off for everyone — Settings → Collections"
+            return "Masqué pour tous · Réglages → Collections"
         }
-        guard collections.isVisible(collection.id) else { return "Hidden on this profile" }
+        guard collections.isVisible(collection.id) else { return "Masqué sur ce profil" }
         let total = collection.folders.count
         let on = collection.folders.filter { collections.isFolderVisible($0.id) }.count
-        return on == total ? "All \(total) folders" : "\(on) of \(total) folders"
+        return on == total ? "Les \(total) dossiers" : "\(on) dossiers sur \(total)"
     }
 
     private var autoLinkSection: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-            sectionLabel("Auto Link Selector")
-            Text("When on, pressing Play resolves and plays the best matching source directly — no source list. Hold Play to pick a source manually.")
+            sectionLabel("Sélection automatique des sources")
+            Text("Le bouton Regarder lance la source correspondant le mieux à vos préférences. Maintenez-le pour choisir une source manuellement.")
                 .font(.system(size: 20))
                 .foregroundStyle(theme.palette.textSecondary)
                 .frame(maxWidth: 820, alignment: .leading)
 
-            Toggle("Auto Link Selector", isOn: Binding(
+            Toggle("Sélection automatique des sources", isOn: Binding(
                 get: { current.autoLinkPrefs.enabled },
                 set: { on in
                     var prefs = current.autoLinkPrefs
@@ -825,23 +825,23 @@ struct ProfileEditView: View {
 
             if current.autoLinkPrefs.enabled {
                 OrivioDropdown(
-                    title: "Preferred addon",
+                    title: "Addon préféré",
                     selection: current.autoLinkPrefs.preferredAddon,
                     options: addonOptions(includeNone: false),
                     onSelect: { autoBind(\.preferredAddon).wrappedValue = $0 }
                 )
                 OrivioDropdown(
-                    title: "Secondary addon",
-                    subtitle: "Used when the preferred addon has no match",
+                    title: "Addon de secours",
+                    subtitle: "Utilisé si l’addon préféré ne propose aucune source correspondante",
                     selection: current.autoLinkPrefs.secondaryAddon,
                     options: addonOptions(includeNone: true),
                     onSelect: { autoBind(\.secondaryAddon).wrappedValue = $0 }
                 )
                 OrivioDropdown(
-                    title: "Minimum quality",
+                    title: "Qualité minimale",
                     selection: current.autoLinkPrefs.minResolution,
                     options: [
-                        .init("", "Any"),
+                        .init("", "Toutes les qualités"),
                         .init("2160p", "4K (2160p)"),
                         .init("1080p", "1080p"),
                         .init("720p", "720p"),
@@ -850,24 +850,24 @@ struct ProfileEditView: View {
                     onSelect: { autoBind(\.minResolution).wrappedValue = $0 }
                 )
                 OrivioDropdown(
-                    title: "Maximum size",
+                    title: "Taille maximale",
                     selection: String(Int(AutoLinkPreferences.sanitizedMaxSizeGB(current.autoLinkPrefs.maxSizeGB))),
                     options: [
-                        .init("0", "No limit"),
-                        .init("5", "5 GB"),
-                        .init("10", "10 GB"),
-                        .init("20", "20 GB"),
-                        .init("40", "40 GB"),
-                        .init("60", "60 GB")
+                        .init("0", "Sans limite"),
+                        .init("5", "5 Go"),
+                        .init("10", "10 Go"),
+                        .init("20", "20 Go"),
+                        .init("40", "40 Go"),
+                        .init("60", "60 Go")
                     ],
                     onSelect: { autoBind(\.maxSizeGB).wrappedValue = Double(Int($0) ?? 0) }
                 )
-                Toggle("Cached sources only", isOn: autoBind(\.cachedOnly))
+                Toggle("Sources disponibles immédiatement", isOn: autoBind(\.cachedOnly))
                     .font(.system(size: 24, weight: .medium))
                     .tint(theme.palette.secondary)
                     .frame(maxWidth: 560)
 
-                Toggle("Avoid Dolby Vision", isOn: autoBind(\.avoidDolbyVision))
+                Toggle("Éviter le Dolby Vision", isOn: autoBind(\.avoidDolbyVision))
                     .font(.system(size: 24, weight: .medium))
                     .tint(theme.palette.secondary)
                     .frame(maxWidth: 560)
@@ -959,27 +959,27 @@ struct ProfileCollectionFoldersView: View {
                             Text(live.title)
                                 .font(.system(size: 40, weight: .bold))
                                 .foregroundStyle(theme.palette.textPrimary)
-                            Text("Choose which folders this profile sees")
+                            Text("Choisissez les dossiers visibles sur ce profil")
                                 .font(.system(size: 22))
                                 .foregroundStyle(theme.palette.textSecondary)
                         }
                         Spacer()
-                        Button("Done", action: onDone)
+                        Button("Terminé", action: onDone)
                     }
 
                     Button {
                         collections.setVisible(!collections.isVisible(live.id), id: live.id)
                     } label: {
                         ProfileCollectionRow(
-                            title: "Show this collection",
+                            title: "Afficher cette collection",
                             detail: collections.isVisible(live.id)
-                                ? "Appears on this profile" : "Hidden on this profile",
+                                ? "Visible sur ce profil" : "Masqué sur ce profil",
                             shown: collections.isVisible(live.id))
                     }
                     .buttonStyle(PlainCardButtonStyle())
 
                     if collections.isVisible(live.id) {
-                        Text("Folders")
+                        Text("Dossiers")
                             .font(.system(size: 26, weight: .semibold))
                             .foregroundStyle(theme.palette.textPrimary)
                             .padding(.top, OrivioSpacing.md)
@@ -994,8 +994,8 @@ struct ProfileCollectionFoldersView: View {
                                 ProfileCollectionRow(
                                     title: folder.title,
                                     detail: globallyOff
-                                        ? "Off for everyone — Settings → Collections"
-                                        : (collections.isFolderVisible(folder.id) ? "Shown" : "Hidden"),
+                                        ? "Masqué pour tous · Réglages → Collections"
+                                        : (collections.isFolderVisible(folder.id) ? "Visible" : "Masqué"),
                                     shown: collections.isFolderVisible(folder.id))
                             }
                             .buttonStyle(PlainCardButtonStyle())

@@ -3,7 +3,7 @@ import XCTest
 
 final class NTVCoreTests: XCTestCase {
     func testOldProfileDecodePreservesSettings() throws {
-        let data = Data(#"{"id":3,"name":"Invité","avatarColorHex":"#123456","avatarURL":"https://example.invalid/old.png","pinEnabled":true}"#.utf8)
+        let data = Data(##"{"id":3,"name":"Invité","avatarColorHex":"#123456","avatarURL":"https://example.invalid/old.png","pinEnabled":true}"##.utf8)
         let profile = try JSONDecoder().decode(UserProfile.self, from: data)
         XCTAssertEqual(profile.id, 3)
         XCTAssertEqual(profile.avatarColorHex, "#123456")
@@ -69,18 +69,39 @@ final class NTVCoreTests: XCTestCase {
     @MainActor
     func testNewTVCategoryWinsOverLatePreviousRequest() async throws {
         let addon = try fixtureAddon()
+        let gate = TVCategoryTestGate()
         let viewModel = LiveTVViewModel { _, _, genre, _ in
+            await gate.started(genre)
             try await Task.sleep(nanoseconds: genre == nil ? 150_000_000 : 10_000_000)
             return [MetaItem(id: genre ?? "old", type: "tv", name: genre ?? "old")]
         }
         let old = Task { await viewModel.load(addons: [addon]) }
-        await Task.yield()
+        while !(await gate.oldRequestStarted) { await Task.yield() }
         viewModel.selectedGenre = "Sports"
         await viewModel.load(addons: [addon])
         await old.value
         XCTAssertEqual(viewModel.sections.first?.channels.first?.id, "Sports")
         XCTAssertEqual(viewModel.selectedGenre, "Sports")
         XCTAssertFalse(viewModel.isLoading)
+    }
+
+    @MainActor
+    func testTVPaginationCanRetryAfterNetworkFailure() async throws {
+        let addon = try fixtureAddon()
+        let fixture = TVPageRetryFixture()
+        let viewModel = LiveTVViewModel { _, _, _, skip in try await fixture.page(skip: skip) }
+        await viewModel.load(addons: [addon])
+        let sectionID = try XCTUnwrap(viewModel.sections.first?.id)
+        await viewModel.loadMore(sectionID: sectionID)
+        XCTAssertEqual(viewModel.sections[0].channels.map(\.id), ["a"])
+        XCTAssertNotNil(viewModel.sections[0].loadError)
+        XCTAssertFalse(viewModel.sections[0].loadingMore)
+        XCTAssertTrue(viewModel.sections[0].canLoadMore)
+        await viewModel.loadMore(sectionID: sectionID)
+        XCTAssertEqual(viewModel.sections[0].channels.map(\.id), ["a", "b"])
+        XCTAssertNil(viewModel.sections[0].loadError)
+        let offsets = await fixture.offsets
+        XCTAssertEqual(offsets, [1, 1], "Retry must request the failed page, without skipping channels.")
     }
 
     private func catalog(type: String) throws -> ManifestCatalog {
@@ -91,5 +112,19 @@ final class NTVCoreTests: XCTestCase {
         let data = Data(#"{"id":"ntv.test.tv","name":"Test TV","version":"1","types":["tv"],"resources":["catalog"],"catalogs":[{"type":"tv","id":"channels","extra":[{"name":"genre","options":["Sports","Films"]},{"name":"skip"}]}]}"#.utf8)
         return InstalledAddon(manifestURL: "https://example.invalid/manifest.json",
                               manifest: try JSONDecoder().decode(AddonManifest.self, from: data))
+    }
+}
+
+private actor TVCategoryTestGate {
+    private(set) var oldRequestStarted = false
+    func started(_ genre: String?) { if genre == nil { oldRequestStarted = true } }
+}
+private actor TVPageRetryFixture {
+    private(set) var offsets: [Int] = []
+    func page(skip: Int?) throws -> [MetaItem] {
+        guard let skip else { return [MetaItem(id: "a", type: "tv", name: "A")] }
+        offsets.append(skip)
+        if offsets.count == 1 { throw URLError(.notConnectedToInternet) }
+        return [MetaItem(id: "b", type: "tv", name: "B")]
     }
 }

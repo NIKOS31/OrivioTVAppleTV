@@ -6,6 +6,16 @@ import SwiftUI
 private enum LibraryFilter: String, CaseIterable {
     case all = "All", movies = "Movies", shows = "Shows", plex = "Plex", jellyfin = "Jellyfin", cloud = "Cloud"
 
+    var title: String {
+        switch self {
+        case .all: return "Tous"
+        case .movies: return "Films"
+        case .shows: return "Séries"
+        case .cloud: return "Fichiers cloud"
+        case .plex, .jellyfin: return rawValue
+        }
+    }
+
     var mediaServer: MediaServerKind? {
         switch self {
         case .plex: return .plex
@@ -65,8 +75,8 @@ struct LibraryView: View {
     private func countLine(movies: Int, shows: Int) -> String? {
         guard movies + shows > 0 else { return nil }
         var parts: [String] = []
-        if movies > 0 { parts.append("\(movies) movie\(movies == 1 ? "" : "s")") }
-        if shows > 0 { parts.append("\(shows) show\(shows == 1 ? "" : "s")") }
+        if movies > 0 { parts.append("\(movies) film\(movies == 1 ? "" : "s")") }
+        if shows > 0 { parts.append("\(shows) série\(shows == 1 ? "" : "s")") }
         return parts.joined(separator: "  ·  ")
     }
 
@@ -101,7 +111,7 @@ struct LibraryView: View {
                     } else if visibleItems.isEmpty {
                         OrivioEmptyState(icon: "bookmark",
                                         title: emptyTitle,
-                                        message: "Save titles with the + button on their page and they'll live here.")
+                                        message: "Ajoutez des titres avec le bouton + sur leur fiche pour les retrouver ici.")
                             .frame(height: 460)
                     } else {
                         LazyVGrid(columns: columns, alignment: .leading, spacing: OrivioSpacing.xl) {
@@ -148,9 +158,9 @@ struct LibraryView: View {
 
     private var emptyTitle: String {
         switch filter {
-        case .movies: return "No saved movies"
-        case .shows: return "No saved shows"
-        default: return "Nothing saved yet"
+        case .movies: return "Aucun film enregistré"
+        case .shows: return "Aucune série enregistrée"
+        default: return "Votre bibliothèque est vide"
         }
     }
 
@@ -192,19 +202,19 @@ struct LibraryView: View {
         HStack(spacing: OrivioSpacing.md) {
             ForEach(filters, id: \.self) { f in
                 Button { filter = f } label: {
-                    LibraryChip(title: f.rawValue, selected: filter == f)
+                    LibraryChip(title: f.title, selected: filter == f)
                 }
                 .buttonStyle(PlainCardButtonStyle())
             }
             Spacer()
             if filter != .cloud, filter.mediaServer == nil {
                 OrivioDropdown(
-                    title: "Sort",
+                    title: "Trier par",
                     selection: sort,
                     options: [
-                        OrivioDropdownOption("Added"),
-                        OrivioDropdownOption("Name"),
-                        OrivioDropdownOption("Recently Watched")
+                        OrivioDropdownOption("Added", "Date d’ajout"),
+                        OrivioDropdownOption("Name", "Nom"),
+                        OrivioDropdownOption("Recently Watched", "Vus récemment")
                     ],
                     triggerWidth: 380
                 ) { sort = $0 }
@@ -217,13 +227,13 @@ struct LibraryView: View {
     private var cloudPane: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
             OrivioEmptyState(icon: "externaldrive.connected.to.line.below",
-                            title: "Debrid cloud files",
-                            message: "Browse and play the files already in your Real-Debrid / Premiumize / TorBox / AllDebrid cloud.")
+                            title: "Fichiers de vos services de débridage",
+                            message: "Retrouvez les fichiers de vos comptes Real-Debrid, Premiumize, TorBox ou AllDebrid.")
                 .frame(maxWidth: .infinity)
             // Left-aligned under the chips so focus drops straight down onto it
             // (a centered button forces a sideways hop).
             Button(action: onOpenCloud) {
-                SeeAllLabel(text: "Open Cloud Library")
+                SeeAllLabel(text: "Ouvrir les fichiers cloud")
             }
             .buttonStyle(PlainCardButtonStyle())
         }

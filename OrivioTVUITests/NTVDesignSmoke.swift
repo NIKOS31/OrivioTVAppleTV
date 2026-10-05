@@ -168,7 +168,13 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.right)
         remote.press(.select)
         XCTAssertTrue(play.waitForExistence(timeout: 8))
-        XCTAssertEqual(play.label, "Pause", "Committing the seek must resume playback.")
+        // Seeking completes asynchronously. Verify the resulting transport
+        // state after completion rather than during the demuxer transition.
+        let playbackResumed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "Pause"), object: play
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [playbackResumed], timeout: 8), .completed,
+                       "Committing the seek must resume playback.")
         let screen = app.windows.firstMatch.frame
         for element in [play, timeline, app.staticTexts["ntv.player.heading"], app.buttons["ntv.player.info"]] {
             XCTAssertTrue(screen.contains(element.frame), "The minimal transport must stay within the TV screen.")

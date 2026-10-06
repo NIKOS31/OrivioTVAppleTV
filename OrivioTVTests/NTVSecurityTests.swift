@@ -201,7 +201,7 @@ final class NTVSecurityTests: XCTestCase {
         let manager = AddonManager(startRefresh: false) { _ in throw CancellationError() }
         let before = manager.addons.map(\.manifestURL)
         let library = LibraryStore(), progress = ProgressStore(), watched = WatchedStore()
-        let rows = try JSONDecoder().decode([StremioLibraryItem].self, from: Data(#"[{"id":"ntv.old.account.fixture","type":"movie","name":"Offline fixture"}]"#.utf8))
+        let rows = try JSONDecoder().decode([StremioLibraryItem].self, from: Data(#"[{"_id":"ntv.old.account.fixture","type":"movie","name":"Offline fixture"}]"#.utf8))
         let beforeLibrary = library.allForSync().map(\.id)
         let pending = Task {
             await StremioSync.pull(authKey: "fixture-a", addonManager: manager, library: library, progress: progress, watched: watched,

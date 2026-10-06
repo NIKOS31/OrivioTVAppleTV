@@ -41,6 +41,7 @@ xcodebuild test \
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
   CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
   CODE_SIGN_ENTITLEMENTS="$task_root/Config/NTV-CI-Simulator.entitlements" \
+  ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
   2>&1 | tee "$output/logs/ntv-ui.log"
 test_pipeline=("${PIPESTATUS[@]}")
 set -e

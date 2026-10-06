@@ -26,7 +26,9 @@ pas du numéro du paquet. Les bibliothèques annexes FFmpegKit restent à la
 révision épinglée. Les contrôles de configure compilent et lient ces archives
 de la bonne plateforme, sans utiliser les bibliothèques installées sur le Mac.
 Les capacités vidéo matérielle, TLS, AV1, SRT, SMB et Vulkan précédentes sont
-contrôlées. Libavdevice est aussi reconstruit avec les périphériques désactivés
+contrôlées. Zlib, Metal, CoreImage et AVFoundation sont activés explicitement
+quand l'ancien binaire les annonçait : l'isolement des bibliothèques du Mac
+ne doit pas retirer ces fonctions SDK auto-détectées. Libavdevice est aussi reconstruit avec les périphériques désactivés
 pour éviter de garder une bibliothèque de la vieille release dans ce groupe.
 
 ## Validation requise
@@ -38,6 +40,18 @@ pour éviter de garder une bibliothèque de la vieille release dans ce groupe.
 - Décodage audio réel d’un WAV stéréo synthétique de 4 800 échantillons.
 - Tests de navigation/lecteur et tests de sécurité déjà présents.
 - Paquet appareil exact, checksum, provenance et scan de données privées.
+
+Le build 19 a réussi les deux compilations et 40 tests, zéro échec, avec la
+version liée 6.1.6, décodage H264/seek et PCM stéréo confirmés. Les contrôles
+supplémentaires de capacités auto-détectées et les ressources de provenance
+font l'objet du lot suivant ; sa réussite doit être vérifiée séparément.
+
+Pour construire cette maintenance, utiliser `bash scripts/ci/build-tvos.sh`
+sur macOS/Xcode, puis les scripts de tests et de packaging, comme la CI.
+Une compilation Xcode directe avec les archives non préparées du wrapper
+peut encore lier l'ancien moteur ; les tests de version la rejetteraient.
+Un diagnostic unique au lancement indique la version réellement liée,
+y compris en Release, sans URL ni donnée de compte.
 
 La préparation des scripts n’est pas une preuve de compilation ou de lecture.
 Le compte rendu de chaque build distingue les contrôles réussis, les erreurs

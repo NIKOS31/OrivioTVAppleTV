@@ -156,6 +156,11 @@ def rebuild(simulator, arch):
     target = f"{arch}-apple-tvos17.0" + ("-simulator" if simulator else "")
     include, lib, pc = dependencies(simulator, arch, directory / "deps", sdk)
     options, old_config = baseline_config(simulator, arch)
+    # Isolating the build from Homebrew must not turn off the previous
+    # SDK-provided capabilities which were implicitly auto-detected.
+    for name in ("ZLIB", "METAL", "COREIMAGE", "AVFOUNDATION"):
+        if "#define CONFIG_" + name + " 1" in old_config:
+            options.append("--enable-" + name.lower())
     (directory / "baseline-options.json").write_text(json.dumps(options, indent=2) + "\n")
     build = directory / "objects"
     build.mkdir(exist_ok=True)
@@ -173,7 +178,8 @@ def rebuild(simulator, arch):
     new_config = (build / "config.h").read_text()
     # Mandatory capabilities of the previous actual tvOS binary must survive.
     capabilities = ["VIDEOTOOLBOX", "AUDIOTOOLBOX", "GNUTLS", "GMP", "LIBDAV1D",
-                    "LIBPLACEBO", "LIBSHADERC", "LIBSMBCLIENT", "LIBSRT", "LIBZVBI", "LIBXML2", "VULKAN"]
+                    "LIBPLACEBO", "LIBSHADERC", "LIBSMBCLIENT", "LIBSRT", "LIBZVBI", "LIBXML2", "VULKAN",
+                    "ZLIB", "METAL", "COREIMAGE", "AVFOUNDATION"]
     for name in capabilities:
         define = "#define CONFIG_" + name + " 1"
         if define in old_config and define not in new_config:
@@ -259,6 +265,8 @@ if __name__ == "__main__":
     (OUT / "provenance.json").write_text(json.dumps(record, indent=2) + "\n")
     license_dir = ROOT / "OrivioTV/Resources/FFmpegLicenses"
     license_dir.mkdir(exist_ok=True)
-    for name in ("COPYING.GPLv3", "COPYING.LGPLv3", "LICENSE.md"):
+    for name in ("COPYING.GPLv3", "COPYING.LGPLv3", "COPYING.GPLv2", "COPYING.LGPLv2.1", "LICENSE.md"):
         shutil.copyfile(SOURCE / name, license_dir / name)
+    shutil.copyfile(VULKAN / "LICENSE.md", license_dir / "Vulkan-Headers-LICENSE.md")
+    copy_headers(VULKAN / "LICENSES", license_dir / "Vulkan-Headers-LICENSES")
     shutil.copyfile(OUT / "provenance.json", license_dir / "ntv-ffmpeg-build.json")

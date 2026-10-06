@@ -53,6 +53,9 @@ struct OrivioTVApp: App {
         // appear, so the tail covers launch itself — a cold start that hangs
         // before any view exists is exactly the session with no other witness.
         AppProbe.installLevels()
+        // One public dependency value per launch, including Release. No URL,
+        // credential or media title; keep av_version_info in the device binary.
+        NSLog("[nTV] linked FFmpeg=%@", NTVMediaDependencyAudit.ffmpegVersion)
     }
 
     @StateObject private var theme = ThemeManager()

@@ -30,6 +30,7 @@ if ! xcrun metal --version 2>&1 | tee "$output/logs/metal.log"; then
   xcrun metal --version 2>&1 | tee "$output/logs/metal.log"
 fi
 bash scripts/ci/prepare-tvvlckit.sh 2>&1 | tee "$output/logs/vlc-prepare.log"
+mkdir -p OrivioTV/Resources/FFmpegLicenses
 xcodegen generate --spec project.yml 2>&1 | tee "$output/logs/generate.log"
 
 # XcodeGen may rewrite project metadata; keep the upstream dependency lock.

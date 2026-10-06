@@ -16,6 +16,9 @@ final class NTVFFmpegTests: XCTestCase {
         let configuration = String(cString: avcodec_configuration())
         XCTAssertTrue(configuration.contains("--enable-videotoolbox"))
         XCTAssertTrue(configuration.contains("--enable-gnutls"))
+        XCTAssertTrue(configuration.contains("--enable-zlib"))
+        XCTAssertTrue(configuration.contains("--enable-metal"))
+        XCTAssertNotEqual(av_hwdevice_find_type_by_name("videotoolbox"), AV_HWDEVICE_TYPE_NONE)
     }
 
     func testActualFFmpegH264DecodeAndSeek() throws {

@@ -116,7 +116,9 @@ def dependencies(simulator, arch, directory, sdk):
     common = " ".join(library_names + ["-lc++", "-liconv", "-lresolv", "-lz", "-lbz2",
                 "-framework Security", "-framework CoreFoundation", "-framework Foundation",
                 "-framework Metal", "-framework QuartzCore", "-framework IOSurface",
-                "-framework CoreGraphics", "-framework CoreVideo"])
+                "-framework CoreGraphics", "-framework CoreVideo", "-framework UIKit",
+                "-framework AudioToolbox", "-framework AVFAudio", "-framework AVFoundation",
+                "-framework CoreAudio", "-framework CoreMedia", "-framework VideoToolbox"])
     for name, (pkg, version) in versions.items():
         (pc / (pkg + ".pc")).write_text(
             f"Name: {pkg}\nDescription: Pinned FFmpegKit target archive\nVersion: {version}\n"

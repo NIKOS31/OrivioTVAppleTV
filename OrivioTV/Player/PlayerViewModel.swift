@@ -11825,6 +11825,14 @@ extension PlayerViewModel: KSPlayerLayerDelegate {
         // the engine did or didn't report — never let the 30s load watchdog
         // fail over a stream that is visibly playing.
         if currentTime > 0 { markLoadStarted() }
+        // A warm seek can resume the engine without another buffer-state
+        // notification. Reconcile the transport with the running engine;
+        // otherwise the clock advances while the button still says Play.
+        if !isExiting, !pauseIntent, !isScrubbing, layer.player.isPlaying {
+            if !isPlaying { isPlaying = true }
+            pausedAt = nil
+            if layer.player.loadState == .playable, isBuffering { isBuffering = false }
+        }
         // The engine may have swapped its display layer under us since the
         // last tick — see refreshPictureInPictureSource.
         refreshPictureInPictureSource()

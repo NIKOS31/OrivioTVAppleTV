@@ -175,6 +175,12 @@ final class NTVDesignSmoke: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [playbackResumed], timeout: 8), .completed,
                        "Committing the seek must resume playback.")
+        let resumedPosition = position.label
+        let clockAdvanced = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label != %@", resumedPosition), object: position
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [clockAdvanced], timeout: 5), .completed,
+                       "The real playback clock must advance after committing, not just change the button label.")
         let screen = app.windows.firstMatch.frame
         for element in [play, timeline, app.staticTexts["ntv.player.heading"], app.buttons["ntv.player.info"]] {
             XCTAssertTrue(screen.contains(element.frame), "The minimal transport must stay within the TV screen.")

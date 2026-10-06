@@ -167,7 +167,7 @@ final class TMDBSettingsStore: ObservableObject {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(settings) else { return }
-        UserDefaults.standard.set(
+        NTVSecurePreferences.standard.set(
             data, forKey: ProfileScopedDefaults.writeKey(Self.key, feature: Self.feature, profileID))
     }
 }

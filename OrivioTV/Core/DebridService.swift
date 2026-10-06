@@ -253,10 +253,10 @@ final class DebridStore: ObservableObject {
     private func saveRDRefresh() {
         let target = ProfileScopedDefaults.writeKey(Self.rdRefreshKey, feature: Self.feature, profileID)
         if let refresh = rdRefresh, let data = try? JSONEncoder().encode(refresh) {
-            UserDefaults.standard.set(data, forKey: target)
+            NTVSecurePreferences.standard.set(data, forKey: target)
         } else {
             // Empty marker, not removal — see `saveMeta`.
-            UserDefaults.standard.set(Data(), forKey: target)
+            NTVSecurePreferences.standard.set(Data(), forKey: target)
         }
     }
 
@@ -333,7 +333,7 @@ final class DebridStore: ObservableObject {
     private func saveKeys() {
         let raw = Dictionary(uniqueKeysWithValues: keys.map { ($0.key.rawValue, $0.value) })
         if let data = try? JSONEncoder().encode(raw) {
-            UserDefaults.standard.set(
+            NTVSecurePreferences.standard.set(
                 data, forKey: ProfileScopedDefaults.writeKey(Self.keysKey, feature: Self.feature, profileID))
         }
     }
@@ -341,7 +341,7 @@ final class DebridStore: ObservableObject {
     private func saveMeta() {
         // Write "" rather than removing: an absent scoped key falls back to
         // the legacy seed, which would resurrect a cleared preference.
-        UserDefaults.standard.set(
+        NTVSecurePreferences.standard.set(
             preferred?.rawValue ?? "",
             forKey: ProfileScopedDefaults.writeKey(Self.preferredKey, feature: Self.feature, profileID))
     }

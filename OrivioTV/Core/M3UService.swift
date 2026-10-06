@@ -68,7 +68,7 @@ enum M3UService {
         // process lifetime, so Live TV stayed empty until the app was killed
         // even after the network came good.
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            NSLog("[OrivioM3U] %@ returned HTTP %d — not caching", urlString, http.statusCode)
+            NSLog("[OrivioM3U] playlist request returned HTTP %d — not caching", http.statusCode)
             return []
         }
         let parsed = await Task.detached(priority: .userInitiated) { parse(text) }.value

@@ -62,18 +62,18 @@ final class StremioAccountStore: ObservableObject {
     var isSignedIn: Bool { !(authKey ?? "").isEmpty }
 
     init() {
-        authKey = UserDefaults.standard.string(forKey: Self.authKeyKey)
-        email   = UserDefaults.standard.string(forKey: Self.emailKey)
-        avatar  = UserDefaults.standard.string(forKey: Self.avatarKey)
+        authKey = NTVSecurePreferences.standard.string(forKey: Self.authKeyKey)
+        email   = NTVSecurePreferences.standard.string(forKey: Self.emailKey)
+        avatar  = NTVSecurePreferences.standard.string(forKey: Self.avatarKey)
     }
 
     func signIn(authKey: String, user: StremioUser?) {
         self.authKey = authKey
         self.email = user?.email
         self.avatar = user?.avatar
-        UserDefaults.standard.set(authKey, forKey: Self.authKeyKey)
-        UserDefaults.standard.set(user?.email, forKey: Self.emailKey)
-        UserDefaults.standard.set(user?.avatar, forKey: Self.avatarKey)
+        NTVSecurePreferences.standard.set(authKey, forKey: Self.authKeyKey)
+        NTVSecurePreferences.standard.set(user?.email, forKey: Self.emailKey)
+        NTVSecurePreferences.standard.set(user?.avatar, forKey: Self.avatarKey)
     }
 
     func setSyncing(_ v: Bool) { isSyncing = v }
@@ -82,9 +82,9 @@ final class StremioAccountStore: ObservableObject {
     func signOut() {
         let key = authKey
         authKey = nil; email = nil; avatar = nil; lastSyncStatus = nil
-        UserDefaults.standard.removeObject(forKey: Self.authKeyKey)
-        UserDefaults.standard.removeObject(forKey: Self.emailKey)
-        UserDefaults.standard.removeObject(forKey: Self.avatarKey)
+        NTVSecurePreferences.standard.removeObject(forKey: Self.authKeyKey)
+        NTVSecurePreferences.standard.removeObject(forKey: Self.emailKey)
+        NTVSecurePreferences.standard.removeObject(forKey: Self.avatarKey)
         if let key { Task { await StremioAccountService.logout(authKey: key) } }
     }
 }
@@ -95,11 +95,7 @@ enum StremioAccountService {
     private static let linkBase = "https://link.stremio.com"
     private static let apiBase  = "https://api.strem.io"
 
-    private static let session: URLSession = {
-        let c = URLSessionConfiguration.default
-        c.timeoutIntervalForRequest = 25
-        return URLSession(configuration: c)
-    }()
+    private static let session = NTVAuthenticatedSession.make(timeout: 25)
 
     /// Start a QR/link login — returns the code + link to display.
     static func createLink() async throws -> StremioLinkCode {
@@ -108,6 +104,10 @@ enum StremioAccountService {
         guard let url = URL(string: path) else { throw StremioAccountError.badURL(path) }
         let (data, _) = try await session.data(from: url)
         let r = try JSONDecoder().decode(Resp.self, from: data)
+        guard let link = URL(string: r.link), NTVAuthenticatedSession.permits(link),
+              link.host?.lowercased() == "link.stremio.com" else {
+            throw StremioAccountError.server("Lien de connexion Stremio non valide.")
+        }
         return StremioLinkCode(code: r.code, link: r.link)
     }
 

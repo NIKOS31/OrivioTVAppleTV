@@ -36,6 +36,7 @@ xcodebuild test \
   -only-testing:OrivioTVUITests/NTVDesignSmoke \
   -only-testing:OrivioTVTests/NTVCoreTests \
   -only-testing:OrivioTVTests/NTVTwitchTests \
+  -only-testing:OrivioTVTests/NTVSecurityTests \
   -parallel-testing-enabled NO \
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \

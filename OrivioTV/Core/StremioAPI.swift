@@ -232,7 +232,10 @@ enum StremioAPI {
     /// must time the NETWORK, not a cached manifest (which reported "OK, 0 ms"
     /// for a host that had just gone down, and could never report "slow").
     static func manifest(url: String, bypassCache: Bool = false) async throws -> AddonManifest {
-        try await get(url, ttl: 300, bypassCache: bypassCache)
+        guard let target = URL(string: url),
+              ["http", "https"].contains(target.scheme?.lowercased() ?? ""),
+              !(target.host ?? "").isEmpty else { throw StremioAPIError.badURL("manifest") }
+        return try await get(url, ttl: 300, bypassCache: bypassCache)
     }
 
     static func catalog(

@@ -629,7 +629,7 @@ enum ProfileScopedDefaults {
     /// Same key ProfileStore writes; read directly so stores are scoped
     /// correctly from launch, before any manager wires them up.
     static var activeProfileID: Int {
-        UserDefaults.standard.object(forKey: "orivio.profiles.active") as? Int ?? 1
+        NTVSecurePreferences.standard.object(forKey: "orivio.profiles.active") as? Int ?? 1
     }
 
     static func key(_ base: String, _ profile: Int) -> String { "\(base).p\(profile)" }
@@ -644,11 +644,11 @@ enum ProfileScopedDefaults {
     /// falls straight back to the device-wide copy — and turning it back on
     /// finds each profile's own state (or the seed) exactly where it was.
     static func isSeparate(_ feature: String) -> Bool {
-        (UserDefaults.standard.object(forKey: separateFlagKey(feature)) as? Bool) ?? true
+        (NTVSecurePreferences.standard.object(forKey: separateFlagKey(feature)) as? Bool) ?? true
     }
 
     static func setSeparate(_ feature: String, _ on: Bool) {
-        UserDefaults.standard.set(on, forKey: separateFlagKey(feature))
+        NTVSecurePreferences.standard.set(on, forKey: separateFlagKey(feature))
     }
 
     private static func separateFlagKey(_ feature: String) -> String {
@@ -663,20 +663,20 @@ enum ProfileScopedDefaults {
     /// Mode-aware reads: separate → scoped with the legacy seed fallback;
     /// shared → the legacy key alone.
     static func data(_ base: String, feature: String, _ profile: Int) -> Data? {
-        isSeparate(feature) ? data(base, profile) : UserDefaults.standard.data(forKey: base)
+        isSeparate(feature) ? data(base, profile) : NTVSecurePreferences.standard.data(forKey: base)
     }
 
     static func string(_ base: String, feature: String, _ profile: Int) -> String? {
-        isSeparate(feature) ? string(base, profile) : UserDefaults.standard.string(forKey: base)
+        isSeparate(feature) ? string(base, profile) : NTVSecurePreferences.standard.string(forKey: base)
     }
 
     static func bool(_ base: String, feature: String, _ profile: Int, default def: Bool = false) -> Bool {
         isSeparate(feature) ? bool(base, profile, default: def)
-            : (UserDefaults.standard.object(forKey: base) as? Bool) ?? def
+            : (NTVSecurePreferences.standard.object(forKey: base) as? Bool) ?? def
     }
 
     static func data(_ base: String, _ profile: Int) -> Data? {
-        if let scoped = UserDefaults.standard.data(forKey: key(base, profile)) {
+        if let scoped = NTVSecurePreferences.standard.data(forKey: key(base, profile)) {
             // De-pollution, same as TraktStore's adopt cleanup: while every
             // profile briefly seeded from the legacy value, incidental
             // echo-writes (TMDB's enabled-flip on init, theme didSets on a
@@ -693,41 +693,41 @@ enum ProfileScopedDefaults {
             // pollution being cleaned was seeded HISTORICALLY — one sweep per
             // slot is the whole job.
             let sweepKey = "orivio.profiles.depolluted." + key(base, profile)
-            if profile != 1, !UserDefaults.standard.bool(forKey: sweepKey) {
-                UserDefaults.standard.set(true, forKey: sweepKey)
-                if scoped == UserDefaults.standard.data(forKey: base) {
-                    UserDefaults.standard.removeObject(forKey: key(base, profile))
+            if profile != 1, !NTVSecurePreferences.standard.bool(forKey: sweepKey) {
+                NTVSecurePreferences.standard.set(true, forKey: sweepKey)
+                if scoped == NTVSecurePreferences.standard.data(forKey: base) {
+                    NTVSecurePreferences.standard.removeObject(forKey: key(base, profile))
                     return nil
                 }
             }
             return scoped
         }
-        return profile == 1 ? UserDefaults.standard.data(forKey: base) : nil
+        return profile == 1 ? NTVSecurePreferences.standard.data(forKey: base) : nil
     }
 
     static func string(_ base: String, _ profile: Int) -> String? {
-        if let scoped = UserDefaults.standard.string(forKey: key(base, profile)) { return scoped }
-        return profile == 1 ? UserDefaults.standard.string(forKey: base) : nil
+        if let scoped = NTVSecurePreferences.standard.string(forKey: key(base, profile)) { return scoped }
+        return profile == 1 ? NTVSecurePreferences.standard.string(forKey: base) : nil
     }
 
     static func bool(_ base: String, _ profile: Int, default def: Bool = false) -> Bool {
-        if let scoped = UserDefaults.standard.object(forKey: key(base, profile)) as? Bool { return scoped }
-        if profile == 1, let legacy = UserDefaults.standard.object(forKey: base) as? Bool { return legacy }
+        if let scoped = NTVSecurePreferences.standard.object(forKey: key(base, profile)) as? Bool { return scoped }
+        if profile == 1, let legacy = NTVSecurePreferences.standard.object(forKey: base) as? Bool { return legacy }
         return def
     }
 
     /// Remove one profile's scoped copies (profile deletion).
     static func forget(_ bases: [String], profile: Int) {
-        for base in bases { UserDefaults.standard.removeObject(forKey: key(base, profile)) }
+        for base in bases { NTVSecurePreferences.standard.removeObject(forKey: key(base, profile)) }
     }
 
     /// Remove EVERY profile's scoped copies plus the legacy seed (account
     /// switch, for credential-bearing stores).
     static func forgetAll(_ bases: [String]) {
         for base in bases {
-            UserDefaults.standard.removeObject(forKey: base)
+            NTVSecurePreferences.standard.removeObject(forKey: base)
             for id in 1...ProfileStore.maxProfiles {
-                UserDefaults.standard.removeObject(forKey: key(base, id))
+                NTVSecurePreferences.standard.removeObject(forKey: key(base, id))
             }
         }
     }

@@ -38,6 +38,9 @@ struct AddonPhoneAddView: View {
                         .font(.system(size: 24, weight: .medium, design: .monospaced))
                         .foregroundStyle(theme.palette.secondary)
                         .accessibilityIdentifier("ntv.addons.phone.address")
+                    Text("Lien temporaire. Utilisez un réseau local de confiance.")
+                        .font(.system(size: 18))
+                        .foregroundStyle(theme.palette.textSecondary)
                 } else if let error = server.lastError {
                     Text(error)
                         .font(FusionType.bodyText(theme.font))
@@ -46,6 +49,7 @@ struct AddonPhoneAddView: View {
                         .frame(maxWidth: 900)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("ntv.addons.phone.error")
+                    Button("Renouveler le code") { server.start() }
                 } else {
                     OrivioLoadingView(label: localizedForNTV ? "Préparation du QR" : "Préparation du QR")
                         .frame(height: 360)
@@ -100,9 +104,10 @@ struct AddonPhoneAddView: View {
                     // Report what actually installed — the manifest's own name,
                     // logo and description — rather than echoing the link back.
                     // A URL tells you nothing about what you just added.
-                    guard let installed = addonManager.addons.first(where: { $0.manifestURL == url })
+                    let normalized = AddonManager.normalizeManifestURL(url)
+                    guard let installed = addonManager.addons.first(where: { $0.manifestURL == normalized })
                     else {
-                        return .success(.init(manifestURL: url, name: url,
+                        return .success(.init(manifestURL: normalized, name: "Addon ajouté",
                                               logo: nil, description: nil))
                     }
                     return .success(.init(manifestURL: url,
@@ -200,7 +205,7 @@ struct IPTVPhoneAddView: View {
                 LiveTVSettingsStore.shared.customPlaylistURL = normalized
                 return .success(.init(manifestURL: normalized,
                                       name: "Liste active : \(channels.count) chaînes",
-                                      logo: nil, description: normalized))
+                                      logo: nil, description: nil))
             }
             server.start()
         }

@@ -620,7 +620,7 @@ struct RootView: View {
                             do {
                                 try await addonManager.install(manifestURL: url)
                                 let m = addonManager.addons.first { $0.manifestURL == url }?.manifest
-                                return .success(.init(manifestURL: url, name: m?.name ?? url,
+                                return .success(.init(manifestURL: url, name: m?.name ?? "Addon ajouté",
                                                       logo: m?.logo, description: m?.description))
                             } catch { return .failure(error) }
                         }
@@ -628,8 +628,8 @@ struct RootView: View {
                         devAddonServer = server
                         Task { @MainActor in
                             for _ in 0..<20 {
-                                if let a = server.address {
-                                    NSLog("[OrivioAddonServer] listening at %@", a); return
+                                if server.address != nil {
+                                    NSLog("[OrivioAddonServer] local import ready; code displayed on TV"); return
                                 }
                                 try? await Task.sleep(nanoseconds: 250_000_000)
                             }

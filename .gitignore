@@ -2,6 +2,7 @@
 build/
 DerivedData/
 .build/
+__pycache__/
 .swiftpm/
 *.xcuserstate
 **/xcuserdata/
@@ -31,6 +32,7 @@ NuvioTV/Secrets.swift
 nodeserver/node_modules/
 Vendor/NodeMobile.xcframework/
 Vendor/TVVLCKit.xcframework/
+OrivioTV/Resources/FFmpegLicenses/
 build-sim/
 build/
 

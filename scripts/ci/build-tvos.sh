@@ -58,6 +58,9 @@ if pins(sys.argv[1]) != pins(sys.argv[2]):
 print("Upstream dependency pins preserved.")
 PY
 
+# Keep KSPlayer/the wrapper ABI, replace the old core's actual target archives.
+bash scripts/ci/prepare-ffmpeg.sh 2>&1 | tee "$output/logs/ffmpeg-prepare.log"
+
 # Leave SourcePackages inside DerivedData: upstream's vendor sanitization
 # pre-build script locates the framework checkouts relative to BUILD_DIR.
 xcodebuild build \
@@ -95,6 +98,7 @@ data = {
     "code_signing": False,
     "simulator_signing": "ad-hoc; test Keychain namespace only",
     "ui_tests_executed": False,
+    "ffmpeg": json.load(open("build/ci/ffmpeg/provenance.json", encoding="utf-8")),
 }
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=2)
@@ -106,7 +110,7 @@ if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
 ### tvOS baseline
 
 - Release device and Debug simulator builds succeeded.
-- Upstream dependency pins were preserved; signing was disabled.
+- Wrapper dependency pins were preserved; FFmpeg 6.1.6 was rebuilt from a verified release. Device signing was disabled.
 - Optional integration keys were left blank in the CI checkout.
 - The nTV simulator test is reported separately; physical Apple TV playback/focus tests were not executed.
 - Logs and Xcode result bundles are available in the diagnostics artifact.

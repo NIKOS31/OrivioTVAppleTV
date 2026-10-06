@@ -83,5 +83,8 @@ jobs:
             build/ci/results/
             build/ci/build-info.json
             build/ci/screenshots/
+            build/ci/ffmpeg/provenance.json
+            build/ci/ffmpeg/signature-status.txt
+            build/ci/ffmpeg/*/objects/ffbuild/config.log
           if-no-files-found: warn
           retention-days: 7

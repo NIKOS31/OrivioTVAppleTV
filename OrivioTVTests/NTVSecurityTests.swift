@@ -7,7 +7,7 @@ final class NTVSecurityTests: XCTestCase {
         let ffmpeg = NTVMediaDependencyAudit.ffmpegVersion
         print("[NTV audit] linked libVLC=\(vlc); FFmpeg=\(ffmpeg)")
         XCTAssertTrue(vlc.hasPrefix("3.0.24 "), "The linked VLC must include the audited security update.")
-        XCTAssertFalse(ffmpeg.isEmpty, "Inventory must use the actual linked FFmpeg version.")
+        XCTAssertEqual(ffmpeg, "6.1.6", "The actual linked FFmpeg must be the rebuilt maintenance release.")
     }
 
     func testLegacyCredentialMigratesWithoutKeepingPlaintext() throws {

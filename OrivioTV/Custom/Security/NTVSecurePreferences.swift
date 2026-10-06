@@ -23,7 +23,8 @@ struct NTVKeychainStorage: NTVSecretStorage {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(search as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data else { throw StorageError.unavailable }
+        guard status == errSecSuccess else { throw StorageError.osStatus(status) }
+        guard let data = result as? Data else { throw StorageError.unavailable }
         return data
     }
     func write(_ data: Data, key: String) throws {
@@ -33,14 +34,15 @@ struct NTVKeychainStorage: NTVSecretStorage {
             var item = query(key)
             item[kSecValueData as String] = data
             item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { throw StorageError.unavailable }
-        } else if status != errSecSuccess { throw StorageError.unavailable }
+            let addStatus = SecItemAdd(item as CFDictionary, nil)
+            guard addStatus == errSecSuccess else { throw StorageError.osStatus(addStatus) }
+        } else if status != errSecSuccess { throw StorageError.osStatus(status) }
     }
     func remove(_ key: String) throws {
         let status = SecItemDelete(query(key) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw StorageError.unavailable }
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw StorageError.osStatus(status) }
     }
-    enum StorageError: Error { case unavailable }
+    enum StorageError: Error { case unavailable; case osStatus(OSStatus) }
 }
 
 /// Preserves legacy preference names and profile scope while moving credentials

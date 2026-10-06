@@ -359,11 +359,7 @@ enum DebridResult {
 /// Resolves torrent streams to direct HTTP links via a debrid provider.
 /// Mirrors the Android DirectDebridResolver flows for each service.
 enum DebridService {
-    private static let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        return URLSession(configuration: config)
-    }()
+    private static let session = NTVAuthenticatedSession.make(timeout: 30)
 
     private static let videoExtensions = ["mkv", "mp4", "avi", "mov", "m4v", "wmv", "flv", "ts", "webm"]
 

@@ -434,7 +434,7 @@ struct AccountView: View {
                 .focused($focusedControl, equals: .importBackup)
             }
 
-            Text("Backups stay local and do not include provider credentials or account tokens.")
+            Text("Cette sauvegarde reste locale. Elle peut contenir des liens privés d’addons ou de listes de chaînes : ne la partagez pas avec d’autres personnes. Les mots de passe et sessions de connexion ne sont pas exportés.")
                 .font(.system(size: 21, weight: .medium))
                 .foregroundStyle(theme.palette.textSecondary)
                 .frame(maxWidth: 780, alignment: .leading)
@@ -1260,7 +1260,7 @@ private struct AccountBackupExportView: View {
                 Text("Local Backup")
                     .font(.system(size: 44, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("\(text.count) characters · credentials are not included")
+                Text("\(text.count) caractères · peut contenir des liens privés, à conserver pour vous")
                     .font(.system(size: 21, weight: .medium))
                     .foregroundStyle(theme.palette.textSecondary)
 

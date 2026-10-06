@@ -327,11 +327,7 @@ enum TraktPollResult {
 enum TraktService {
     private static let base = "https://api.trakt.tv"
 
-    private static let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 25
-        return URLSession(configuration: config)
-    }()
+    private static let session = NTVAuthenticatedSession.make(timeout: 25)
 
     /// Returns nil for a path that can't form a URL — it used to force-unwrap.
     /// Paths are interpolated from user-supplied text (a pasted trakt.tv list

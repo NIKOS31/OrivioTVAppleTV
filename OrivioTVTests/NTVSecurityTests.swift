@@ -2,6 +2,14 @@ import XCTest
 @testable import OrivioTV
 
 final class NTVSecurityTests: XCTestCase {
+    func testLinkedMediaLibrariesInventoryAndPatchedVLC() {
+        let vlc = NTVMediaDependencyAudit.vlcVersion
+        let ffmpeg = NTVMediaDependencyAudit.ffmpegVersion
+        print("[NTV audit] linked libVLC=\(vlc); FFmpeg=\(ffmpeg)")
+        XCTAssertTrue(vlc.hasPrefix("3.0.24 "), "The linked VLC must include the audited security update.")
+        XCTAssertFalse(ffmpeg.isEmpty, "Inventory must use the actual linked FFmpeg version.")
+    }
+
     func testLegacyCredentialMigratesWithoutKeepingPlaintext() throws {
         let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
         let secrets = MemorySecretStorage()

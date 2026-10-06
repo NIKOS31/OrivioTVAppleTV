@@ -39,7 +39,8 @@ xcodebuild test \
   -only-testing:OrivioTVTests/NTVSecurityTests \
   -parallel-testing-enabled NO \
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+  CODE_SIGN_ENTITLEMENTS="$task_root/Config/NTV-CI-Simulator.entitlements" \
   2>&1 | tee "$output/logs/ntv-ui.log"
 test_pipeline=("${PIPESTATUS[@]}")
 set -e
@@ -72,7 +73,7 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     data = json.load(handle)
 data["ui_tests_executed"] = True
 data["ui_test_scope"] = "nTV sidebar/Library, top floating menu, real-addon Home/Movies/Detail/manual Sources/Addon recovery/Series, Addons QR/restart/state persistence, offline profile characters, player timeline cancel/commit"
-data["unit_test_scope"] = "legacy profiles/local avatar persistence/remote sync, TV home exclusion/pagination/stale category, Twitch public OAuth/encoding/identity/Helix/session cancellation/concurrent refresh with offline fixtures"
+data["unit_test_scope"] = "legacy profiles/local avatar persistence/remote sync, TV home exclusion/pagination/stale category, Twitch public OAuth/encoding/identity/Helix/session cancellation/concurrent refresh; security real Keychain/migration/revocation/private scope, account races, stale addon responses, real phone import server/HTTP framing/Origin/Host/capability/expiry/quota, linked media dependency inventory; offline account fixtures"
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=2)
     handle.write("\n")

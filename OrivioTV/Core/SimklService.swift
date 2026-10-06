@@ -209,14 +209,7 @@ enum SimklPollResult {
 enum SimklService {
     private static let base = "https://api.simkl.com"
 
-    private static let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 25
-        // The poll hits the same URL every few seconds and a cached 200 would
-        // look like a login that never completes.
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
-    }()
+    private static let session = NTVAuthenticatedSession.make(timeout: 25)
 
     /// Mirrors `TraktService.request`: nil rather than a force-unwrap trap for
     /// a path that can't form a URL.

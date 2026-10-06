@@ -82,13 +82,16 @@ have — all are optional; with them blank the app still browses and plays via
 addons, only the Orivio account, Trakt, and TMDB enrichment need them:
 
 ```bash
-cp Secrets.example.swift NuvioTV/Secrets.swift   # then edit NuvioTV/Secrets.swift
+cp Secrets.example.swift OrivioTV/Secrets.swift   # then edit OrivioTV/Secrets.swift
+bash scripts/ci/prepare-tvvlckit.sh               # verify the official patched VLC distribution
 xcodegen generate
 xcodebuild -project OrivioTV.xcodeproj -scheme OrivioTV \
   -destination 'generic/platform=tvOS Simulator' build
 ```
 
-`NuvioTV/Secrets.swift` is gitignored, so your keys never enter the repo.
+`OrivioTV/Secrets.swift` is gitignored. Keep actual keys and configured addon links
+out of commits and shared backups. See `Vendor/TVVLCKit-SOURCE.md` for the pinned
+VideoLAN distribution used by the fallback engine.
 
 To run on a real Apple TV, open `OrivioTV.xcodeproj` in Xcode, pick your signing team,
 and run on the device. Dev flags: launch with `-playerDemo` to open the player against

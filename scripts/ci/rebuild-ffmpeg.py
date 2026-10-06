@@ -153,7 +153,13 @@ def rebuild(simulator, arch):
     sdk_name = "appletvsimulator" if simulator else "appletvos"
     sdk = capture(["xcrun", "--sdk", sdk_name, "--show-sdk-path"])
     compiler = capture(["xcrun", "--sdk", sdk_name, "--find", "clang"])
+    host_sdk = capture(["xcrun", "--sdk", "macosx", "--show-sdk-path"])
+    host_compiler = capture(["xcrun", "--sdk", "macosx", "--find", "clang"])
+    host_flags = shlex.join(["-target", f"{platform.machine()}-apple-macos14.0", "-isysroot", host_sdk, "-O2"])
     target = f"{arch}-apple-tvos17.0" + ("-simulator" if simulator else "")
+    metal_target = "air64-apple-tvos17.0" + ("-simulator" if simulator else "")
+    metal_compiler = capture(["xcrun", "--sdk", sdk_name, "--find", "metal"])
+    metal_linker = capture(["xcrun", "--sdk", sdk_name, "--find", "metallib"])
     include, lib, pc = dependencies(simulator, arch, directory / "deps", sdk)
     options, old_config = baseline_config(simulator, arch)
     # Isolating the build from Homebrew must not turn off the previous
@@ -170,10 +176,16 @@ def rebuild(simulator, arch):
     args = [SOURCE / "configure", *options, "--disable-autodetect", "--enable-avdevice",
             "--prefix=" + str(prefix), "--arch=" + ("aarch64" if arch == "arm64" else "x86_64"),
             "--target-os=darwin", "--cc=" + compiler, "--cxx=" + compiler + "++",
+            "--host-cc=" + host_compiler, "--host-cflags=" + host_flags, "--host-ldflags=" + host_flags,
+            "--metalcc=" + shlex.join([metal_compiler, "-c", "-target", metal_target, "-isysroot", sdk]),
+            "--metallib=" + metal_linker,
             "--as=" + compiler, "--extra-cflags=" + flags, "--extra-cxxflags=" + flags,
             "--extra-ldflags=" + ldflags, "--pkg-config=" + shutil.which("pkg-config")]
     args += ["--enable-neon", "--enable-asm"] if arch == "arm64" else ["--disable-neon", "--disable-asm"]
-    env = dict(os.environ, PKG_CONFIG_LIBDIR=str(pc), PKG_CONFIG_PATH="", SDKROOT=sdk)
+    env = dict(os.environ, PKG_CONFIG_LIBDIR=str(pc), PKG_CONFIG_PATH="")
+    # bin2c runs on the Mac; inheriting the tvOS SDK built an unlaunchable
+    # tool when Metal kernels were enabled. Target compilers have explicit SDKs.
+    env.pop("SDKROOT", None)
     run(args, cwd=build, env=env)
     new_config = (build / "config.h").read_text()
     # Mandatory capabilities of the previous actual tvOS binary must survive.
@@ -231,7 +243,8 @@ def rebuild(simulator, arch):
         (framework / "Info.plist").write_bytes(plistlib.dumps(fw_info))
         run(["xcrun", "lipo", framework / module, "-verify_arch", arch])
         records[module] = hashlib.sha256(archive.read_bytes()).hexdigest()
-    return {"target": target, "capabilities_preserved": capabilities, "archives_sha256": records}
+    return {"target": target, "metal_target": metal_target,
+            "capabilities_preserved": capabilities, "archives_sha256": records}
 
 
 if __name__ == "__main__":

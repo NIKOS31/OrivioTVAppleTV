@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "build/ci/ffmpeg"
 PIN = "c32be9bfb628042737ad3ef622e930c5c7b15954"
 CORE = ["avcodec", "avdevice", "avfilter", "avformat", "avutil", "swresample", "swscale"]
+SOURCE_SHA = "d4fcb164028dd3beee5d92c0ac72e46aac6973c75ea12dc14de07bf8f407370a"
+HEADERS_SHA = "717b49c52dbd37c78cf2f7f0fc715292c42e74841219e6cca918cd293ad5dce4"
 
 
 def run(args, **kwargs):
@@ -59,7 +61,25 @@ def slice_path(name, simulator, arch):
 
 
 def copy_headers(source, destination):
-    shutil.copytree(source, destination, dirs_exist_ok=True)
+    # SwiftPM protects its checkout; do not propagate read-only modes into
+    # the merged build include tree or silently choose conflicting headers.
+    destination.mkdir(parents=True, exist_ok=True)
+    for entry in source.rglob("*"):
+        target = destination / entry.relative_to(source)
+        if entry.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif entry.is_file():
+            data = entry.read_bytes()
+            if target.exists():
+                if target.read_bytes() != data:
+                    raise RuntimeError("Conflicting dependency header: " + str(target))
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+
+
+def writable(path):
+    path.chmod(path.stat().st_mode | 0o200)
 
 
 def dependencies(simulator, arch, directory, sdk):
@@ -170,7 +190,13 @@ def rebuild(simulator, arch):
         # All paths are resolved from the pinned checkout and a fixed module list.
         if not framework.resolve().is_relative_to(CHECKOUT):
             raise RuntimeError("Framework destination escaped checkout")
+        for parent in [framework, *framework.parents]:
+            if parent.is_relative_to(CHECKOUT):
+                writable(parent)
         headers = framework / "Headers"
+        for child in [headers, *headers.rglob("*")]:
+            if child.is_dir():
+                writable(child)
         shutil.rmtree(headers)
         copy_headers(prefix / "include" / ("lib" + name), headers)
         for header in extra.get(name, []):
@@ -186,11 +212,14 @@ def rebuild(simulator, arch):
                 text = re.sub(r'#\s*include\s+["<]lib' + other + r'/([^">]+)[">]',
                               r'#include <Lib' + other + r'/\1>', text)
             header.write_text(text)
+        writable(framework / module)
         shutil.copyfile(archive, framework / module)
         row["SupportedArchitectures"] = [arch]
+        writable(root / "Info.plist")
         (root / "Info.plist").write_bytes(plistlib.dumps(info))
         fw_info = plistlib.loads((framework / "Info.plist").read_bytes())
         fw_info.update(CFBundleShortVersionString="6.1.6", CFBundleVersion="6.1.6", MinimumOSVersion="17.0")
+        writable(framework / "Info.plist")
         (framework / "Info.plist").write_bytes(plistlib.dumps(fw_info))
         run(["xcrun", "lipo", framework / module, "-verify_arch", arch])
         records[module] = hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -207,6 +236,12 @@ if __name__ == "__main__":
     CHECKOUT = matches[0].resolve()
     if capture(["git", "-C", CHECKOUT, "rev-parse", "HEAD"]) != PIN:
         raise SystemExit("Unexpected FFmpegKit revision")
+    for path, expected in ((Path(sys.argv[1]), SOURCE_SHA), (Path(sys.argv[2]), HEADERS_SHA)):
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise SystemExit("Unverified source archive")
+    signature = (OUT / "signature-status.txt").read_text()
+    if "[GNUPG:] VALIDSIG FCF986EA15E6E293A5644F10B4322F04D67658D8 " not in signature:
+        raise SystemExit("Expected the verified FFmpeg release signature")
     SOURCE = unpack(Path(sys.argv[1]))
     VULKAN = unpack(Path(sys.argv[2]))
     # Same Apple Metal compatibility correction as the pinned upstream builder.

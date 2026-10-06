@@ -35,6 +35,7 @@ pour éviter de garder une bibliothèque de la vieille release dans ce groupe.
 - `av_version_info()` réellement lié égal à `6.1.6`.
 - Disponibilité des décodeurs vidéo/audio/sous-titres et conteneurs attendus.
 - Décodage H264 réel depuis la fixture locale et déplacement jusqu’à 2 s.
+- Décodage audio réel d’un WAV stéréo synthétique de 4 800 échantillons.
 - Tests de navigation/lecteur et tests de sécurité déjà présents.
 - Paquet appareil exact, checksum, provenance et scan de données privées.
 

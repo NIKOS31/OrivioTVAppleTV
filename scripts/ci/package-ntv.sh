@@ -77,6 +77,7 @@ record = {
     "signature_required": True,
     "personal_addons_configured": False,
     "ui_tests_executed": build["ui_tests_executed"],
+    "ffmpeg": build["ffmpeg"],
 }
 (directory / "nTV-unsigned.ipa.sha256").write_text(checksum + "  " + ipa.name + "\n", encoding="utf-8")
 (directory / "package-info.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")

@@ -77,7 +77,8 @@ xcodebuild build \
   -derivedDataPath "$derived_data" \
   -resultBundlePath "$results/simulator.xcresult" \
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+  CODE_SIGN_ENTITLEMENTS="$task_root/Config/NTV-CI-Simulator.entitlements" \
   2>&1 | tee "$output/logs/simulator.log"
 
 python3 - "$output/build-info.json" <<'PY'
@@ -91,6 +92,7 @@ data = {
     "xcodegen": subprocess.check_output(["xcodegen", "--version"], text=True).strip(),
     "builds": {"device": "Release", "simulator": "Debug"},
     "code_signing": False,
+    "simulator_signing": "ad-hoc; test Keychain namespace only",
     "ui_tests_executed": False,
 }
 with open(sys.argv[1], "w", encoding="utf-8") as handle:

@@ -275,7 +275,7 @@ struct AnimatedGIFView: UIViewRepresentable {
             onLoaded?(true)
             return
         }
-        NSLog("[OrivioGIF] load start %@", url.suffix(40).description)
+        NSLog("[OrivioGIF] load start")
         // Captured so every completion path can confirm the tile is still
         // showing THIS url before touching the view or calling back — cell
         // reuse retargets the coordinator while a load is in flight, and
@@ -300,7 +300,7 @@ struct AnimatedGIFView: UIViewRepresentable {
             }
             guard let data, !Task.isCancelled
             else {
-                NSLog("[OrivioGIF] fetch FAILED %@", url.suffix(40).description)
+                NSLog("[OrivioGIF] fetch FAILED")
                 await MainActor.run { if coordinator.loadedURL == url { onLoaded?(false) } }; return
             }
             NSLog("[OrivioGIF] fetched %d bytes", data.count)

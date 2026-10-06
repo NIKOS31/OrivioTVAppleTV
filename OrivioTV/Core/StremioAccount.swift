@@ -58,34 +58,54 @@ final class StremioAccountStore: ObservableObject {
     private static let authKeyKey = "orivio.stremio.authKey.v1"
     private static let emailKey   = "orivio.stremio.email.v1"
     private static let avatarKey  = "orivio.stremio.avatar.v1"
+    private let preferences: NTVSecurePreferences
+    private let logout: @Sendable (String) async -> Void
+    private(set) var sessionGeneration = 0
 
     var isSignedIn: Bool { !(authKey ?? "").isEmpty }
 
-    init() {
-        authKey = NTVSecurePreferences.standard.string(forKey: Self.authKeyKey)
-        email   = NTVSecurePreferences.standard.string(forKey: Self.emailKey)
-        avatar  = NTVSecurePreferences.standard.string(forKey: Self.avatarKey)
+    init(preferences: NTVSecurePreferences = .standard,
+         logout: @escaping @Sendable (String) async -> Void = { await StremioAccountService.logout(authKey: $0) }) {
+        self.preferences = preferences
+        self.logout = logout
+        authKey = preferences.string(forKey: Self.authKeyKey)
+        email   = preferences.string(forKey: Self.emailKey)
+        avatar  = preferences.string(forKey: Self.avatarKey)
     }
 
-    func signIn(authKey: String, user: StremioUser?) {
-        self.authKey = authKey
+    @discardableResult
+    func beginAuthentication() -> Int {
+        sessionGeneration &+= 1
+        return sessionGeneration
+    }
+
+    func cancelAuthentication() { sessionGeneration &+= 1 }
+
+    @discardableResult
+    func signIn(authKey: String, user: StremioUser?, expectedGeneration: Int? = nil) -> Bool {
+        if let expectedGeneration, expectedGeneration != sessionGeneration { return false }
+        sessionGeneration &+= 1
+        // Subscribers must see the new identity when the key's willSet fires.
         self.email = user?.email
         self.avatar = user?.avatar
-        NTVSecurePreferences.standard.set(authKey, forKey: Self.authKeyKey)
-        NTVSecurePreferences.standard.set(user?.email, forKey: Self.emailKey)
-        NTVSecurePreferences.standard.set(user?.avatar, forKey: Self.avatarKey)
+        self.authKey = authKey
+        preferences.set(authKey, forKey: Self.authKeyKey)
+        preferences.set(user?.email, forKey: Self.emailKey)
+        preferences.set(user?.avatar, forKey: Self.avatarKey)
+        return true
     }
 
     func setSyncing(_ v: Bool) { isSyncing = v }
     func setStatus(_ s: String?) { lastSyncStatus = s }
 
     func signOut() {
+        sessionGeneration &+= 1
         let key = authKey
         authKey = nil; email = nil; avatar = nil; lastSyncStatus = nil
-        NTVSecurePreferences.standard.removeObject(forKey: Self.authKeyKey)
-        NTVSecurePreferences.standard.removeObject(forKey: Self.emailKey)
-        NTVSecurePreferences.standard.removeObject(forKey: Self.avatarKey)
-        if let key { Task { await StremioAccountService.logout(authKey: key) } }
+        preferences.removeObject(forKey: Self.authKeyKey)
+        preferences.removeObject(forKey: Self.emailKey)
+        preferences.removeObject(forKey: Self.avatarKey)
+        if let key { Task { await logout(key) } }
     }
 }
 
@@ -132,7 +152,7 @@ enum StremioAccountService {
             if let error = r.error {
                 // Stremio returns code 101 while the link is not authorized yet.
                 if error.code == 101 { return .pending }
-                return .failed(error.message ?? "Stremio rejected this login code.")
+                return .failed("Stremio a refusé ce code de connexion.")
             }
             return .pending
         } catch {
@@ -194,7 +214,7 @@ enum StremioAccountService {
             throw StremioAccountError.server("Unexpected datastoreMeta response")
         }
         if let error = root["error"] as? [String: Any], let message = error["message"] as? String, !message.isEmpty {
-            throw StremioAccountError.server(message)
+            throw StremioAccountError.server("Stremio a refusé la requête. Vérifie ta connexion ou tes identifiants.")
         }
         guard let result = root["result"] as? [Any] else {
             throw StremioAccountError.server("datastoreMeta returned no result")
@@ -238,7 +258,7 @@ enum StremioAccountService {
         let (data, _) = try await post("/api/addonCollectionGet", ["authKey": authKey])
         let response = try JSONDecoder().decode(Resp.self, from: data)
         if let message = response.error?.message, !message.isEmpty {
-            throw StremioAccountError.server(message)
+            throw StremioAccountError.server("Stremio a refusé la requête. Vérifie ta connexion ou tes identifiants.")
         }
         return (response.result?.addons ?? [])
             .compactMap { $0 }
@@ -299,7 +319,7 @@ enum StremioAccountService {
         guard let response = try? JSONDecoder().decode(Resp.self, from: data),
               let message = response.error?.message,
               !message.isEmpty else { return }
-        throw StremioAccountError.server(message)
+        throw StremioAccountError.server("Stremio a refusé la requête. Vérifie ta connexion ou tes identifiants.")
     }
 
     private static func post(_ path: String, _ body: [String: Any]) async throws -> (Data, URLResponse) {
@@ -489,9 +509,13 @@ enum StremioSync {
                      addonManager: AddonManager,
                      library: LibraryStore,
                      progress: ProgressStore,
-                     watched: WatchedStore) async -> String {
-        async let libraryFetch = StremioAccountService.fetchLibrary(authKey: authKey)
-        async let addonFetch = StremioAccountService.fetchAddonCollection(authKey: authKey)
+                     watched: WatchedStore,
+                     isCurrent: () -> Bool = { true },
+                     libraryLoader: @Sendable (String) async throws -> [StremioLibraryItem] = { try await StremioAccountService.fetchLibrary(authKey: $0) },
+                     addonLoader: @Sendable (String) async throws -> [StremioAddonDescriptor] = { try await StremioAccountService.fetchAddonCollection(authKey: $0) }) async -> String {
+        guard !Task.isCancelled, isCurrent() else { return "Synchronisation annulée" }
+        async let libraryFetch = libraryLoader(authKey)
+        async let addonFetch = addonLoader(authKey)
 
         let items: [StremioLibraryItem]
         let addonDescriptors: [StremioAddonDescriptor]
@@ -501,6 +525,7 @@ enum StremioSync {
         } catch {
             return "Couldn't reach Stremio"
         }
+        guard !Task.isCancelled, isCurrent() else { return "Synchronisation annulée" }
 
         var saved: [SavedLibraryItem] = []
         var continueWatching: [WatchProgress] = []
@@ -616,14 +641,17 @@ enum StremioSync {
             // Anything new here has to reach the Orivio account too: the full
             // sync no longer re-uploads every store unconditionally.
             if await addonManager.applyRemote(addons: addonStates, reconcile: false) > 0 {
+                guard !Task.isCancelled, isCurrent() else { return "Synchronisation annulée" }
                 addonManager.requestSyncPush()
             }
         }
-        let playing = await MainActor.run { OrivioSyncManager.playbackActive }
+        guard !Task.isCancelled, isCurrent() else { return "Synchronisation annulée" }
+        let playing = OrivioSyncManager.playbackActive
         if !saved.isEmpty {
             // Metadata lookups are a run of add-on requests: skipped while a
             // stream plays, filled in by the next idle pass.
             if !playing { saved = await enrichLibraryItems(saved, addonManager: addonManager) }
+            guard !Task.isCancelled, isCurrent() else { return "Synchronisation annulée" }
             if library.mergeRemote(saved, reconcile: false) { library.requestSyncPush() }
         }
         OrivioSyncDiagnostics.record(
@@ -637,6 +665,7 @@ enum StremioSync {
             if !playing {
                 continueWatching = await enrichContinueWatching(continueWatching, addonManager: addonManager)
             }
+            guard !Task.isCancelled, isCurrent() else { return "Synchronisation annulée" }
             if continueWatching.count != before {
                 OrivioSyncDiagnostics.record(
                     .info, area: "Stremio",
@@ -675,10 +704,13 @@ enum StremioSync {
                              progress: ProgressStore,
                              watched: WatchedStore,
                              clearedProgressIDs: Set<String> = [],
-                             removedLibraryItems: [StremioSyncManager.PendingLibraryRemoval] = []) async -> PushOutcome {
+                             removedLibraryItems: [StremioSyncManager.PendingLibraryRemoval] = [],
+                             isCurrent: () -> Bool = { true }) async -> PushOutcome {
+        let cancelled = PushOutcome(summary: "Synchronisation annulée", libraryPushed: false, changedRows: 0)
+        guard !Task.isCancelled, isCurrent() else { return cancelled }
         var warnings: [String] = []
         var libraryPushed = true
-        let playing = await MainActor.run { OrivioSyncManager.playbackActive }
+        let playing = OrivioSyncManager.playbackActive
 
         // Add-ons: `addonCollectionSet` replaces the account's whole list, so
         // send it only when the list actually changed since the last push.
@@ -694,6 +726,7 @@ enum StremioSync {
         if addonSignature != lastPushedAddonSignature {
             do {
                 try await StremioAccountService.setAddonCollection(authKey: authKey, addons: addonManager.addons)
+                guard !Task.isCancelled, isCurrent() else { return cancelled }
                 lastPushedAddonSignature = addonSignature
                 addonsSent = true
             } catch {
@@ -705,6 +738,7 @@ enum StremioSync {
         let serviceProgress = progress.serviceBackedForSync()
         let rawLibrary = library.allForSync()
         let savedLibrary = playing ? rawLibrary : await enrichLibraryItems(rawLibrary, addonManager: addonManager)
+        guard !Task.isCancelled, isCurrent() else { return cancelled }
         if savedLibrary != rawLibrary { library.mergeRemote(savedLibrary, reconcile: false) }
         let watchedRows = watched.allForSync()
         let cleared = clearedProgressIDs
@@ -742,9 +776,11 @@ enum StremioSync {
             }
             return (changed, changedHashes, items.count)
         }.value
+        guard !Task.isCancelled, isCurrent() else { return cancelled }
         if !changed.isEmpty {
             do {
                 try await StremioAccountService.putLibrary(authKey: authKey, items: changed)
+                guard !Task.isCancelled, isCurrent() else { return cancelled }
                 lastPushedRowHashes.merge(changedHashes) { $1 }
             } catch {
                 libraryPushed = false

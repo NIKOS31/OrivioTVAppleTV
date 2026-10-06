@@ -172,6 +172,78 @@ final class NTVSecurityTests: XCTestCase {
     }
 
     @MainActor
+    func testStremioRetiredLoginCannotRestoreCredentialsOrReplaceNewerLogin() {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: MemorySecretStorage())
+        let store = StremioAccountStore(preferences: prefs, logout: { _ in })
+        let first = store.beginAuthentication()
+        store.signOut()
+        XCTAssertFalse(store.signIn(authKey: "fixture-a", user: nil, expectedGeneration: first))
+        XCTAssertNil(store.authKey)
+        XCTAssertNil(prefs.string(forKey: "orivio.stremio.authKey.v1"))
+        let older = store.beginAuthentication()
+        let newer = store.beginAuthentication()
+        XCTAssertTrue(store.signIn(authKey: "fixture-b", user: StremioUser(email: "b@example.invalid", avatar: nil), expectedGeneration: newer))
+        XCTAssertFalse(store.signIn(authKey: "fixture-a", user: nil, expectedGeneration: older))
+        XCTAssertEqual(store.authKey, "fixture-b")
+        XCTAssertEqual(store.email, "b@example.invalid")
+        XCTAssertEqual(prefs.string(forKey: "orivio.stremio.authKey.v1"), "fixture-b")
+        XCTAssertNil(defaults.string(forKey: "orivio.stremio.authKey.v1"))
+    }
+
+    @MainActor
+    func testLateStremioPullCannotMergeAfterSignOut() async throws {
+        let gate = StremioLibraryGate()
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let store = StremioAccountStore(preferences: NTVSecurePreferences(defaults: defaults, secrets: MemorySecretStorage()), logout: { _ in })
+        store.signIn(authKey: "fixture-a", user: nil)
+        let generation = store.sessionGeneration
+        let manager = AddonManager(startRefresh: false) { _ in throw CancellationError() }
+        let before = manager.addons.map(\.manifestURL)
+        let library = LibraryStore(), progress = ProgressStore(), watched = WatchedStore()
+        let rows = try JSONDecoder().decode([StremioLibraryItem].self, from: Data(#"[{"id":"ntv.old.account.fixture","type":"movie","name":"Offline fixture"}]"#.utf8))
+        let beforeLibrary = library.allForSync().map(\.id)
+        let pending = Task {
+            await StremioSync.pull(authKey: "fixture-a", addonManager: manager, library: library, progress: progress, watched: watched,
+                isCurrent: { store.sessionGeneration == generation && store.authKey == "fixture-a" },
+                libraryLoader: { _ in await gate.wait() },
+                addonLoader: { _ in [StremioAddonDescriptor(transportUrl: "https://addon.example.invalid/old-account/manifest.json")] })
+        }
+        for _ in 0..<100 {
+            if await gate.started { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let requestStarted = await gate.started
+        XCTAssertTrue(requestStarted)
+        store.signOut()
+        await gate.release(rows)
+        let result = await pending.value
+        XCTAssertEqual(result, "Synchronisation annulée")
+        XCTAssertEqual(manager.addons.map(\.manifestURL), before)
+        XCTAssertEqual(library.allForSync().map(\.id), beforeLibrary)
+    }
+
+    @MainActor
+    func testCurrentStremioPullCanStillImportAddonOffline() async throws {
+        let defaults = UserDefaults.standard
+        let saved = defaults.dictionaryRepresentation().filter { $0.key.hasPrefix("orivio.addons.") }
+        defer {
+            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("orivio.addons.") { defaults.removeObject(forKey: key) }
+            for (key, value) in saved { defaults.set(value, forKey: key) }
+        }
+        let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"ntv.fixture","name":"Fixture","version":"1","types":["movie"],"resources":[],"catalogs":[]}"#.utf8))
+        let manager = AddonManager(startRefresh: false) { _ in manifest }
+        manager.clearAll()
+        let result = await StremioSync.pull(authKey: "fixture-a", addonManager: manager,
+            library: LibraryStore(), progress: ProgressStore(), watched: WatchedStore(), isCurrent: { true },
+            libraryLoader: { _ in [] },
+            addonLoader: { _ in [StremioAddonDescriptor(transportUrl: "https://addon.example.invalid/current-account/manifest.json")] })
+        XCTAssertTrue(result.hasPrefix("Pulled 1 add-ons"))
+        XCTAssertEqual(manager.addons.count, 1)
+        XCTAssertEqual(manager.addons.first?.manifest.id, "ntv.fixture")
+    }
+
+    @MainActor
     func testLateEmailLoginCannotUndoSignOut() async throws {
         let session = stubSession()
         defer { session.invalidateAndCancel(); AccountRequestGate.reset() }
@@ -231,6 +303,19 @@ private final class MemorySecretStorage: NTVSecretStorage {
     func remove(_ key: String) throws {
         if failDelete { throw NTVKeychainStorage.StorageError.unavailable }
         values[key] = nil
+    }
+}
+
+private actor StremioLibraryGate {
+    private(set) var started = false
+    private var continuation: CheckedContinuation<[StremioLibraryItem], Never>?
+    func wait() async -> [StremioLibraryItem] {
+        started = true
+        return await withCheckedContinuation { continuation = $0 }
+    }
+    func release(_ rows: [StremioLibraryItem]) {
+        continuation?.resume(returning: rows)
+        continuation = nil
     }
 }
 

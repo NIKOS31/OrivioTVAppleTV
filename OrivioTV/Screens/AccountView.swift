@@ -780,36 +780,42 @@ struct AccountView: View {
     }
 
     private func startStremioLogin() {
+        let generation = stremio.beginAuthentication()
         stremioStatus = nil
         stremioConnectStatus = "Starting sign-in..."
         showStremioConnect = true
-        Task { await loadStremioCode() }
+        Task { await loadStremioCode(generation: generation) }
     }
 
-    private func loadStremioCode() async {
+    private func loadStremioCode(generation: Int) async {
         do {
             let code = try await StremioAccountService.createLink()
+            guard !Task.isCancelled, showStremioConnect, generation == stremio.sessionGeneration else { return }
             stremioLinkCode = code
             stremioConnectStatus = "Waiting for authorization..."
-            beginStremioPolling(code)
+            beginStremioPolling(code, generation: generation)
         } catch {
+            guard generation == stremio.sessionGeneration, showStremioConnect else { return }
             stremioStatus = "Couldn't start Stremio login."
             showStremioConnect = false
         }
     }
 
-    private func beginStremioPolling(_ code: StremioLinkCode) {
+    private func beginStremioPolling(_ code: StremioLinkCode, generation: Int) {
         stremioPollTask?.cancel()
         stremioPollTask = Task {
             let deadline = Date().addingTimeInterval(300)
             while !Task.isCancelled && Date() < deadline {
-                switch await StremioAccountService.readLink(code: code.code) {
+                let result = await StremioAccountService.readLink(code: code.code)
+                guard !Task.isCancelled, showStremioConnect, generation == stremio.sessionGeneration else { return }
+                switch result {
                 case .pending:
                     stremioConnectStatus = "Waiting for authorization..."
                 case .authorized(let authKey):
                     stremioConnectStatus = "Authorized. Syncing your account..."
                     let user = await StremioAccountService.getUser(authKey: authKey)
-                    stremio.signIn(authKey: authKey, user: user)
+                    guard !Task.isCancelled, showStremioConnect,
+                          stremio.signIn(authKey: authKey, user: user, expectedGeneration: generation) else { return }
                     stremioLinkCode = nil
                     showStremioConnect = false
                     syncStremioNow()
@@ -825,7 +831,9 @@ struct AccountView: View {
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
-            if !Task.isCancelled && showStremioConnect { await loadStremioCode() }
+            if !Task.isCancelled && showStremioConnect && generation == stremio.sessionGeneration {
+                await loadStremioCode(generation: generation)
+            }
         }
     }
 
@@ -864,6 +872,8 @@ struct AccountView: View {
     }
 
     private func beginStremioEmailSignIn() {
+        stremio.cancelAuthentication()
+        stremioPollTask?.cancel()
         stremioPasswordField = ""
         stremioEmailError = nil
         stremioEmailBusy = false
@@ -871,7 +881,8 @@ struct AccountView: View {
     }
 
     private func cancelStremioEmailSignIn() {
-        guard !stremioEmailBusy else { return }
+        stremio.cancelAuthentication()
+        stremioEmailBusy = false
         showStremioEmailSignIn = false
         stremioPasswordField = ""
         stremioEmailError = nil
@@ -880,13 +891,15 @@ struct AccountView: View {
 
     private func submitStremioEmailSignIn() {
         guard !stremioEmailBusy else { return }
+        let generation = stremio.beginAuthentication()
         stremioEmailBusy = true
         stremioEmailError = nil
         Task {
             do {
                 let result = try await StremioAccountService.login(email: stremioEmailField,
                                                                    password: stremioPasswordField)
-                stremio.signIn(authKey: result.authKey, user: result.user)
+                guard !Task.isCancelled, showStremioEmailSignIn,
+                      stremio.signIn(authKey: result.authKey, user: result.user, expectedGeneration: generation) else { return }
                 stremioPasswordField = ""
                 stremioEmailBusy = false
                 showStremioEmailSignIn = false
@@ -895,6 +908,7 @@ struct AccountView: View {
                 syncStremioNow()
                 focusedControl = .stremioSync
             } catch {
+                guard generation == stremio.sessionGeneration, showStremioEmailSignIn else { return }
                 stremioEmailBusy = false
                 stremioEmailError = (error as? LocalizedError)?.errorDescription
                     ?? "Couldn't sign in to Stremio."
@@ -903,6 +917,7 @@ struct AccountView: View {
     }
 
     private func cancelStremioConnect() {
+        stremio.cancelAuthentication()
         stremioPollTask?.cancel()
         stremioLinkCode = nil
         showStremioConnect = false
@@ -917,6 +932,7 @@ struct AccountView: View {
         }
 
         guard let key = stremio.authKey else { return }
+        let generation = stremio.sessionGeneration
         stremio.setSyncing(true)
         stremio.setStatus("Syncing...")
         Task {
@@ -925,8 +941,10 @@ struct AccountView: View {
                 addonManager: addonManager,
                 library: library,
                 progress: progress,
-                watched: watched
+                watched: watched,
+                isCurrent: { stremio.sessionGeneration == generation && stremio.authKey == key }
             )
+            guard !Task.isCancelled, generation == stremio.sessionGeneration, stremio.authKey == key else { return }
             stremio.setStatus(result)
             stremio.setSyncing(false)
             focusedControl = .stremioSync

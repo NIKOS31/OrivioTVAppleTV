@@ -73,7 +73,7 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     data = json.load(handle)
 data["ui_tests_executed"] = True
 data["ui_test_scope"] = "nTV sidebar/Library, top floating menu, real-addon Home/Movies/Detail/manual Sources/Addon recovery/Series, Addons QR/restart/state persistence, offline profile characters, player timeline cancel/commit"
-data["unit_test_scope"] = "legacy profiles/local avatar persistence/remote sync, TV home exclusion/pagination/stale category, Twitch public OAuth/encoding/identity/Helix/session cancellation/concurrent refresh; security real Keychain/migration/revocation/private scope, account races, stale addon responses, real phone import server/HTTP framing/Origin/Host/capability/expiry/quota, linked media dependency inventory; offline account fixtures"
+data["unit_test_scope"] = "legacy profiles/local avatar persistence/remote sync, TV home exclusion/pagination/stale category, Twitch public OAuth/encoding/identity/Helix/session cancellation/concurrent refresh; security real Keychain/migration/revocation/private scope, Orivio/Stremio account races, stale Stremio pull and positive addon import, stale addon responses, real phone import server/HTTP framing/Origin/Host/capability/expiry/quota, linked media dependency inventory; offline account fixtures"
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=2)
     handle.write("\n")

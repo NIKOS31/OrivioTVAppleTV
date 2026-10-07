@@ -189,7 +189,7 @@ final class ProfileStore: ObservableObject {
         // (a partially applied delete) is stale: the list is the user's view.
         deletedProfileIDs.subtract(profiles.map(\.id))
         if profiles.isEmpty {
-            profiles = [UserProfile(id: 1, name: "Profile 1", avatarColorHex: Self.avatarColors[0])]
+            profiles = [UserProfile(id: 1, name: "Profil 1", avatarColorHex: Self.avatarColors[0])]
             // Persist the synthesised default ONLY when there was nothing
             // readable to lose. If a stored blob exists but failed to decode,
             // writing this over it destroys every profile the user had (see
@@ -213,7 +213,7 @@ final class ProfileStore: ObservableObject {
 
     var active: UserProfile {
         profiles.first { $0.id == activeProfileID } ?? profiles.first
-            ?? UserProfile(id: 1, name: "Profile 1", avatarColorHex: Self.avatarColors[0])
+            ?? UserProfile(id: 1, name: "Profil 1", avatarColorHex: Self.avatarColors[0])
     }
 
     var canAddProfile: Bool { profiles.count < Self.maxProfiles }

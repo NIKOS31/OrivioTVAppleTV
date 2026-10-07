@@ -100,7 +100,7 @@ struct ThemePalette: Identifiable, Equatable {
 
 enum OrivioThemes {
     static let crimson = ThemePalette(
-        id: "crimson", displayName: "Crimson",
+        id: "crimson", displayName: "Carmin",
         secondary: OrivioPrimitives.red500,
         secondaryVariant: OrivioPrimitives.red600,
         focusRing: OrivioPrimitives.red300,
@@ -108,7 +108,7 @@ enum OrivioThemes {
         backgroundCard: Color(hex: 0x241A1A)
     )
     static let ocean = ThemePalette(
-        id: "ocean", displayName: "Ocean",
+        id: "ocean", displayName: "Océan",
         secondary: OrivioPrimitives.blue500,
         secondaryVariant: OrivioPrimitives.blue700,
         focusRing: OrivioPrimitives.blue300,
@@ -128,7 +128,7 @@ enum OrivioThemes {
         backgroundCard: Color(hex: 0x1F1A24)
     )
     static let emerald = ThemePalette(
-        id: "emerald", displayName: "Emerald",
+        id: "emerald", displayName: "Émeraude",
         secondary: OrivioPrimitives.green500,
         secondaryVariant: OrivioPrimitives.green700,
         focusRing: OrivioPrimitives.green300,
@@ -166,7 +166,7 @@ enum OrivioThemes {
     /// Orivio Purple — a deep, electric purple accent (deeper than the softer
     /// "Violet"), available to every theme like any accent.
     static let orivioPurple = ThemePalette(
-        id: "purple", displayName: "Orivio Purple",
+        id: "purple", displayName: "Pourpre",
         secondary: Color(hex: 0x6D27E8),
         secondaryVariant: Color(hex: 0x3C137F),
         focusRing: Color(hex: 0x925DFF),
@@ -179,7 +179,7 @@ enum OrivioThemes {
     /// Lavender — a soft light-purple accent; needs dark text on its fill
     /// like White.
     static let lavender = ThemePalette(
-        id: "lavender", displayName: "Lavender",
+        id: "lavender", displayName: "Lavande",
         secondary: Color(hex: 0xB99AFF),
         secondaryVariant: Color(hex: 0x6D5AA8),
         onSecondary: Color(hex: 0x15121E),

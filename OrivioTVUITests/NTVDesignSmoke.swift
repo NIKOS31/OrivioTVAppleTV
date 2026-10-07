@@ -148,6 +148,17 @@ final class NTVDesignSmoke: XCTestCase {
             let button = app.buttons["ntv.navigation.\(id)"]
             XCTAssertTrue(screen.contains(button.frame), "Top tab \(id) must stay within the TV screen.")
         }
+        for _ in 0..<3 { remote.press(.left) }
+        let home = app.buttons["ntv.navigation.0"]
+        XCTAssertTrue(focused(home, timeout: 5))
+        remote.press(.select)
+        let heading = app.staticTexts["ntv.home.heading"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["ntv.home.spotlight"].waitForExistence(timeout: 80))
+        XCTAssertGreaterThan(heading.frame.minY, home.frame.maxY + 8,
+                             "Home must reserve a visible band below the floating top menu.")
+        XCTAssertTrue(screen.contains(heading.frame))
+        capture("ntv-home-top-menu-clearance")
         app.terminate()
     }
 
@@ -286,9 +297,9 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["ntv.home.spotlight"].waitForExistence(timeout: 80),
                       "Home should display a title supplied by the default addon.")
-        XCTAssertGreaterThan(app.staticTexts["ntv.home.heading"].frame.minY,
-                             app.buttons["ntv.navigation.0"].frame.maxY + 8,
-                             "Home must reserve a visible band below the floating menu.")
+        XCTAssertGreaterThan(app.staticTexts["ntv.home.heading"].frame.minX,
+                             app.buttons["ntv.navigation.0"].frame.maxX + 8,
+                             "Home must leave horizontal space beside the collapsed left menu.")
         capture("ntv-home-real-catalogs")
 
         let remote = XCUIRemote.shared

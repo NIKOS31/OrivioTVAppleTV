@@ -1444,7 +1444,7 @@ struct RootView: View {
         }
         .onAppear { ntvCanvas.activate(ntvBackdropID) }
         .onChange(of: ntvBackdropID) { _, id in ntvCanvas.activate(id) }
-        .onChange(of: profiles.activeID) { _, _ in ntvCanvas.clear() }
+        .onChange(of: profiles.activeProfileID) { _, _ in ntvCanvas.clear() }
         .onChange(of: account.currentUserID) { _, _ in ntvCanvas.clear() }
         .animation(perf.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: showSidebar)

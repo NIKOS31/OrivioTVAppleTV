@@ -10,7 +10,7 @@ struct NTVTwitchView: View {
     private enum Focus: Hashable { case connect, cancel, followed, search, query, submit }
     @FocusState private var focused: Focus?
     private var owner: String { account.currentUserID ?? "local" }
-    private var scope: String { "\(owner).profile.\(profiles.activeID)" }
+    private var scope: String { "\(owner).profile.\(profiles.activeProfileID)" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
@@ -84,7 +84,7 @@ struct NTVTwitchView: View {
     private func prepare() async {
         searching = false
         query = ""
-        await model.prepare(profileID: profiles.activeID, ownerScope: owner)
+        await model.prepare(profileID: profiles.activeProfileID, ownerScope: owner)
     }
 
     @ViewBuilder private var connectionCode: some View {

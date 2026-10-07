@@ -6404,12 +6404,14 @@ final class PlayerViewModel: ObservableObject {
     private var infoTabsAtTouchStart = false
     private var ntvTouchStartedOnTimeline = false
     private var scrubMotionTime: TimeInterval = 0
+    private var ntvTouchAnchor: Double?
 
     func remoteTouchBegan() {
         debug("touch ↓")
         infoTabsAtTouchStart = infoFocusOnTabs
         ntvTouchStartedOnTimeline = usesNTVControls && controlsFocusOnBar
         scrubMotionTime = ProcessInfo.processInfo.systemUptime
+        ntvTouchAnchor = scrubValue
         scrubLastDx = 0            // translation resets per gesture
         panInFlight = true
         lastPanDx = 0
@@ -6530,6 +6532,7 @@ final class PlayerViewModel: ObservableObject {
 
     func remoteTouchEnded(dx: CGFloat, dy: CGFloat) {
         ntvTouchStartedOnTimeline = false
+        ntvTouchAnchor = nil
         panInFlight = false
         scrubDragInContact = false   // the contact is over; presses now hop
         if touchIntent == .scrub { endScrubGesture() }
@@ -6557,7 +6560,10 @@ final class PlayerViewModel: ObservableObject {
             ? NTVScrubMotion.delta(points: Double(inc), elapsed: elapsed, duration: duration)
             : Double(inc) * secondsPerPoint
         let proposed = target + delta
-        let clamped = max(0, min(proposed, duration > 0 ? duration - 1 : proposed))
+        if usesNTVControls, ntvTouchAnchor == nil { ntvTouchAnchor = target }
+        let clamped = usesNTVControls
+            ? NTVScrubMotion.position(proposed: proposed, anchor: ntvTouchAnchor ?? target, duration: duration)
+            : max(0, min(proposed, duration > 0 ? duration - 1 : proposed))
         scrubDragInContact = true
         publishScrub(clamped)
         // Moved out of the dense window — fetch the next one once you stop.

@@ -133,6 +133,7 @@ struct GlassSidebar: View {
                     ntvTopButton(tab, iconOnly: false)
                 }
             }
+            .frame(maxWidth: .infinity)
             .padding(8)
             .background { ntvTopGlass }
 
@@ -148,14 +149,15 @@ struct GlassSidebar: View {
                 .accessibilityLabel("Profil : \(profiles.active.name)")
                 .accessibilityIdentifier("ntv.navigation.profile")
             }
+            .fixedSize(horizontal: true, vertical: true)
             .padding(8)
             .background { ntvTopGlass }
         }
-        .fixedSize(horizontal: true, vertical: true)
+        .padding(.horizontal, NTVViewport.horizontalInset)
         .defaultFocus(focusBinding, selected)
         .padding(.top, 28)
         .frame(maxWidth: .infinity, alignment: .center)
-        .ignoresSafeArea(edges: .vertical)
+        .ignoresSafeArea()
     }
 
     private var ntvTopGlass: some View {
@@ -177,6 +179,7 @@ struct GlassSidebar: View {
         } label: {
             NTVTopNavigationLabel(tab: tab, selected: selected == tab.rawValue,
                                   iconOnly: iconOnly)
+                .frame(maxWidth: iconOnly ? nil : .infinity)
         }
         .buttonStyle(PlainCardButtonStyle())
         .focused(focusBinding, equals: tab.rawValue)
@@ -446,6 +449,7 @@ private struct NTVTopNavigationLabel: View {
             }
         }
         .frame(height: 56)
+        .frame(maxWidth: iconOnly ? nil : .infinity)
         .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .background {
             Capsule(style: .continuous)

@@ -43,7 +43,7 @@ struct NTVTwitchAuthorization {
 
 /// Serialises refreshes for one profile so a rotating public-client refresh
 /// token cannot be exchanged twice. It is deliberately independent of the
-/// movie/addon account manager and is not started by the current app UI.
+/// movie/addon account manager and is started only while the Twitch UI is used.
 actor NTVTwitchSession {
     struct Storage {
         let load: () throws -> NTVTwitchTokens?
@@ -78,6 +78,7 @@ actor NTVTwitchSession {
     func adopt(tokens: NTVTwitchTokens) async throws -> NTVTwitchIdentity {
         let expected = generation
         let result = try await api.validate(tokens.accessToken)
+        try Task.checkCancellation()
         guard expected == generation else { throw CancellationError() }
         try storage.save(tokens)
         generation += 1
@@ -146,8 +147,14 @@ actor NTVTwitchSession {
 
     func disconnect() async throws {
         let old = tokens?.accessToken
-        try clear() // Always remove the local session before attempting the network revoke.
-        if let old { try await api.revoke(old) }
+        var localFailure: Error?
+        do { try clear() } catch { localFailure = error }
+        // Even a failed local deletion must not skip revocation at Twitch.
+        if let old {
+            do { try await api.revoke(old) }
+            catch { if localFailure == nil { throw error } }
+        }
+        if let localFailure { throw localFailure }
     }
 
     private func authorizedState() async throws -> (NTVTwitchTokens, NTVTwitchIdentity) {

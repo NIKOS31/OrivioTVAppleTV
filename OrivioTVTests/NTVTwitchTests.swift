@@ -6,6 +6,108 @@ final class NTVTwitchTests: XCTestCase {
     private let identityJSON = #"{"client_id":"ntvtest","user_id":"42","login":"fixture","scopes":["user:read:follows"],"expires_in":14400}"#
     private let deviceJSON = #"{"device_code":"fixture-device","user_code":"ABCD","expires_in":1800,"interval":5,"verification_uri":"https://www.twitch.tv/activate?public=true&device-code=ABCD"}"#
 
+    func testFailedCredentialDeletionStaysRevokedAcrossReload() throws {
+        let suite = "ntv.twitch.test." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let secrets = TwitchSecretFixture()
+        let credentials = NTVTwitchCredentials(clientID: "ntvtest", profileID: 1, defaults: defaults, secrets: secrets)
+        let tokens = try JSONDecoder().decode(NTVTwitchTokens.self, from: Data(tokenJSON.utf8))
+        try credentials.save(tokens)
+        secrets.failRemove = true
+        XCTAssertThrowsError(try credentials.remove())
+        XCTAssertFalse(secrets.values.isEmpty, "Simulate a Keychain item which physically remains.")
+        let reopened = NTVTwitchCredentials(clientID: "ntvtest", profileID: 1, defaults: defaults, secrets: secrets)
+        XCTAssertNil(try reopened.load(), "Reopening cannot restore a revoked session.")
+        secrets.failWrite = true
+        XCTAssertThrowsError(try reopened.save(tokens))
+        XCTAssertNil(try reopened.load(), "Failed reconnect must not remove revocation.")
+        secrets.failWrite = false
+        try reopened.save(tokens)
+        XCTAssertEqual(try reopened.load()?.accessToken, tokens.accessToken)
+        let preferences = String(describing: defaults.dictionaryRepresentation())
+        XCTAssertFalse(preferences.contains(tokens.accessToken))
+        XCTAssertFalse(preferences.contains(tokens.refreshToken))
+    }
+
+    func testTwitchCredentialsSeparateProfilesAndAccountOwners() throws {
+        let suite = "ntv.twitch.scope." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let secrets = TwitchSecretFixture()
+        let a = NTVTwitchCredentials(clientID: "ntvtest", profileID: 1, ownerScope: "owner-A", defaults: defaults, secrets: secrets)
+        let b = NTVTwitchCredentials(clientID: "ntvtest", profileID: 1, ownerScope: "owner-B", defaults: defaults, secrets: secrets)
+        let otherProfile = NTVTwitchCredentials(clientID: "ntvtest", profileID: 2, ownerScope: "owner-A", defaults: defaults, secrets: secrets)
+        let tokens = try JSONDecoder().decode(NTVTwitchTokens.self, from: Data(tokenJSON.utf8))
+        try a.save(tokens)
+        XCTAssertNil(try b.load())
+        XCTAssertNil(try otherProfile.load())
+        try b.save(tokens)
+        secrets.failRemove = true
+        XCTAssertThrowsError(try a.remove())
+        XCTAssertNil(try a.load())
+        XCTAssertEqual(try b.load()?.accessToken, tokens.accessToken, "Retiring A must not revoke B.")
+    }
+
+    func testDisconnectAttemptsRemoteRevocationAfterLocalRemovalFailure() async throws {
+        let tape = TwitchHTTPFixture([(200, identityJSON), (204, "")])
+        let api = try NTVTwitchAPI(clientID: "ntvtest", transport: { try await tape.send($0) })
+        let tokens = try JSONDecoder().decode(NTVTwitchTokens.self, from: Data(tokenJSON.utf8))
+        let session = try NTVTwitchSession(api: api, storage: .init(load: { tokens }, save: { _ in },
+            remove: { throw NTVTwitchError.secureStorage }))
+        _ = try await session.validateSession()
+        do { try await session.disconnect(); XCTFail("Storage failure must remain visible") }
+        catch { XCTAssertEqual(error as? NTVTwitchError, .secureStorage) }
+        let requests = await tape.requests
+        XCTAssertEqual(requests.filter { $0.url?.path == "/oauth2/revoke" }.count, 1)
+        do { _ = try await session.validateSession(); XCTFail("Memory session must be retired") }
+        catch { XCTAssertEqual(error as? NTVTwitchError, .unauthorized) }
+    }
+
+    @MainActor func testLeavingTwitchDiscardsDelayedFollowedPage() async throws {
+        let tape = TwitchHTTPFixture([(200, identityJSON), (200, streamsJSON(ids: ["late"], cursor: nil))], delay: 40_000_000)
+        let api = try NTVTwitchAPI(clientID: "ntvtest", transport: { try await tape.send($0) })
+        let tokens = try JSONDecoder().decode(NTVTwitchTokens.self, from: Data(tokenJSON.utf8))
+        let model = NTVTwitchViewModel(api: api, makeSession: { api, _, _ in
+            try NTVTwitchSession(api: api, storage: .init(load: { tokens }, save: { _ in }, remove: {}))
+        })
+        await model.prepare(profileID: 1, ownerScope: "local")
+        while await tape.requests.count < 2 { await Task.yield() }
+        model.leave()
+        try await Task.sleep(nanoseconds: 70_000_000)
+        XCTAssertTrue(model.streams.isEmpty)
+        XCTAssertNil(model.identity)
+        XCTAssertFalse(model.loadingPage)
+    }
+
+    @MainActor func testFollowedPaginationDeduplicatesAndStopsRepeatedCursor() async throws {
+        let tape = TwitchHTTPFixture([(200, identityJSON), (200, streamsJSON(ids: ["one"], cursor: "repeat")),
+                                      (200, streamsJSON(ids: ["one", "two"], cursor: "repeat"))])
+        let api = try NTVTwitchAPI(clientID: "ntvtest", transport: { try await tape.send($0) })
+        let tokens = try JSONDecoder().decode(NTVTwitchTokens.self, from: Data(tokenJSON.utf8))
+        let model = NTVTwitchViewModel(api: api, makeSession: { api, _, _ in
+            try NTVTwitchSession(api: api, storage: .init(load: { tokens }, save: { _ in }, remove: {}))
+        })
+        await model.prepare(profileID: 1, ownerScope: "local")
+        for _ in 0..<100 { if !model.loadingPage { break }; try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(model.streams.map(\.id), ["one"])
+        XCTAssertEqual(model.followedCursor, "repeat")
+        model.loadFollowed(append: true)
+        for _ in 0..<100 { if !model.loadingPage { break }; try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(model.streams.map(\.id), ["one", "two"])
+        XCTAssertNil(model.followedCursor)
+        model.leave()
+    }
+
+    private func streamsJSON(ids: [String], cursor: String?) -> String {
+        let data = ids.map { id -> [String: Any] in
+            ["id": id, "user_id": "fixture", "user_login": "fixture", "user_name": "Fixture",
+             "game_name": "Fixture", "title": "Fixture", "viewer_count": 1, "thumbnail_url": ""]
+        }
+        let pagination: [String: String] = cursor.map { ["cursor": $0] } ?? [:]
+        return String(data: try! JSONSerialization.data(withJSONObject: ["data": data, "pagination": pagination]), encoding: .utf8)!
+    }
+
     func testDeviceAuthorizationWaitsAndSlowsDownWithoutSecret() async throws {
         let tape = TwitchHTTPFixture([
             (200, deviceJSON), (400, #"{"message":"authorization_pending"}"#),
@@ -143,4 +245,19 @@ private actor TwitchWaitFixture {
 private final class TwitchMemoryCredentials {
     var tokens: NTVTwitchTokens?
     init(_ tokens: NTVTwitchTokens?) { self.tokens = tokens }
+}
+
+private final class TwitchSecretFixture: NTVSecretStorage {
+    var values: [String: Data] = [:]
+    var failRemove = false
+    var failWrite = false
+    func read(_ key: String) throws -> Data? { values[key] }
+    func write(_ data: Data, key: String) throws {
+        if failWrite { throw NTVTwitchError.secureStorage }
+        values[key] = data
+    }
+    func remove(_ key: String) throws {
+        if failRemove { throw NTVTwitchError.secureStorage }
+        values.removeValue(forKey: key)
+    }
 }

@@ -136,7 +136,7 @@ enum OrivioThemes {
         backgroundCard: Color(hex: 0x1A241A)
     )
     static let amber = ThemePalette(
-        id: "amber", displayName: "Amber",
+        id: "amber", displayName: "Ambre",
         secondary: OrivioPrimitives.amber500,
         secondaryVariant: OrivioPrimitives.amber700,
         focusRing: OrivioPrimitives.amber300,
@@ -191,7 +191,7 @@ enum OrivioThemes {
     /// Mint — the bright Hulu-style neon green accent; needs dark text on its
     /// fill (like White/Lavender). Pairs especially well with the Streamline theme.
     static let mint = ThemePalette(
-        id: "mint", displayName: "Mint",
+        id: "mint", displayName: "Menthe",
         secondary: Color(hex: 0x1CE783),
         secondaryVariant: Color(hex: 0x0FB968),
         onSecondary: Color(hex: 0x04241A),

@@ -160,7 +160,7 @@ enum StremioAPI {
             return value
         } catch {
             done("FAILED")
-            AppProbe.warn("addon", "\(name) — \(error)")
+            AppProbe.warn("addon", "\(name) — \(NTVAddonDiagnostics.failure(error))")
             throw error
         }
     }

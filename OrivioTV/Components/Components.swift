@@ -815,8 +815,9 @@ struct PosterCard: View {
 
     let item: MetaItem
     var progress: Double? = nil
+    var widthOverride: CGFloat? = nil
 
-    private var cardWidth: CGFloat { layout.posterSize.posterWidth }
+    private var cardWidth: CGFloat { widthOverride ?? layout.posterSize.posterWidth }
     private var cardHeight: CGFloat { cardWidth * 3 / 2 }
     private var stremio: Bool { theme.isStremioTheme }
     /// Stremio uses generously rounded poster corners.
@@ -1354,7 +1355,7 @@ struct GridPosterCell: View {
         let base = Button {
             onSelect(item)
         } label: {
-            PosterCard(item: item)
+            PosterCard(item: item, widthOverride: captionWidth)
                 .onFocusChange {
                     focused = $0
                     // Honest router note (no handler): a rail exit from a grid
@@ -1724,7 +1725,8 @@ struct RowHeader: View {
         Text(NTVFrench.catalogTitle(title))
             .font(FusionType.moduleHeading(theme.font))
             .foregroundStyle(theme.palette.textPrimary)
-            .padding(.leading, OrivioSpacing.huge)
+            .padding(.leading, theme.palette.id == NTVDesign.palette.id
+                     ? NTVViewport.horizontalInset : OrivioSpacing.huge)
     }
 }
 

@@ -1,50 +1,46 @@
 import Foundation
-import Security
+import CryptoKit
 
-/// Device-local, per-profile credentials. No defaults, iCloud synchronisation,
-/// account-backend payload or diagnostics contain an OAuth token.
+/// OAuth tokens remain device-local. Defaults hold only a revocation marker,
+/// never credentials. A failed Keychain deletion must survive reopening the UI.
 struct NTVTwitchCredentials {
     private let account: String
-    private static let service = "ntv.twitch.oauth.v1"
+    private let defaults: UserDefaults
+    private let secrets: any NTVSecretStorage
 
-    init(clientID: String, profileID: Int) {
-        account = "\(clientID).profile.\(profileID)"
+    init(clientID: String, profileID: Int, ownerScope: String = "local",
+         defaults: UserDefaults = .standard,
+         secrets: any NTVSecretStorage = NTVKeychainStorage(service: "ntv.twitch.oauth.v1")) {
+        let base = "\(clientID).profile.\(profileID)"
+        account = ownerScope == "local" ? base : base + ".owner." + Self.digest(ownerScope)
+        self.defaults = defaults
+        self.secrets = secrets
     }
 
-    private var query: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: Self.service, kSecAttrAccount as String: account,
-         kSecAttrSynchronizable as String: false]
+    private static func digest(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
     }
+    private var revocationKey: String { "ntv.twitch.revoked." + Self.digest(account) }
 
     func load() throws -> NTVTwitchTokens? {
-        var search = query
-        search[kSecReturnData as String] = true
-        search[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(search as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data,
-              let tokens = try? JSONDecoder().decode(NTVTwitchTokens.self, from: data) else {
-            throw NTVTwitchError.secureStorage
-        }
-        return tokens
+        guard !defaults.bool(forKey: revocationKey) else { return nil }
+        do {
+            guard let data = try secrets.read(account) else { return nil }
+            return try JSONDecoder().decode(NTVTwitchTokens.self, from: data)
+        } catch { throw NTVTwitchError.secureStorage }
     }
 
     func save(_ tokens: NTVTwitchTokens) throws {
-        let data = try JSONEncoder().encode(tokens)
-        let status = SecItemUpdate(query as CFDictionary,
-                                  [kSecValueData as String: data] as CFDictionary)
-        if status == errSecItemNotFound {
-            var item = query
-            item[kSecValueData as String] = data
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { throw NTVTwitchError.secureStorage }
-        } else if status != errSecSuccess { throw NTVTwitchError.secureStorage }
+        do {
+            try secrets.write(JSONEncoder().encode(tokens), key: account)
+            // Clear the marker only after a new authorized session is stored.
+            defaults.removeObject(forKey: revocationKey)
+        } catch { throw NTVTwitchError.secureStorage }
     }
 
     func remove() throws {
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw NTVTwitchError.secureStorage }
+        defaults.set(true, forKey: revocationKey)
+        do { try secrets.remove(account) }
+        catch { throw NTVTwitchError.secureStorage }
     }
 }

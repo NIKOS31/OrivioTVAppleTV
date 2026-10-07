@@ -81,6 +81,7 @@ struct OrivioTVApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .modifier(NTVLaunchPresentation())
                 .environment(\.locale, Locale(identifier: "fr_FR"))
                 .fontDesign(theme.rootFontDesign)   // app-wide font family (Fusion routes serif to headings only)
                 .environmentObject(theme)
@@ -302,6 +303,7 @@ struct RootView: View {
     /// it); false for the cold-launch gate, where Back stays a no-op.
     @State private var profileGateCancellable = false
     @State private var selectedTab = 0
+    @State private var ntvCanvas = NTVBackdropCanvas()
     /// Polls the account every 30s while Home is up so Continue Watching stays
     /// live — removals and additions made on another device (or that failed to
     /// reconcile on foreground) appear without a relaunch. Fires continuously;
@@ -463,7 +465,17 @@ struct RootView: View {
                     profiles.onProfileDeleted = { [weak trakt, weak simkl, weak addonManager,
                                                    weak plugins, weak debrid, weak playerSettings,
                                                    weak tmdbSettings, weak theme, weak streamBadges,
-                                                   weak orivioSync] id in
+                                                   weak orivioSync, weak account] id in
+                        let credentials = NTVTwitchCredentials(clientID: NTVTwitchConfiguration.clientID,
+                            profileID: id, ownerScope: account?.currentUserID ?? "local")
+                        let twitchTokens = try? credentials.load()
+                        try? credentials.remove()
+                        if let twitchTokens {
+                            Task {
+                                let api = try? NTVTwitchAPI(clientID: NTVTwitchConfiguration.clientID)
+                                try? await api?.revoke(twitchTokens.accessToken)
+                            }
+                        }
                         trakt?.forgetProfile(id)
                         simkl?.forgetProfile(id)
                         addonManager?.forgetProfile(id)
@@ -577,7 +589,7 @@ struct RootView: View {
                     AppProbe.life("root appeared — tab=\(Self.tabName(selectedTab))")
                     // Skipped in the demo modes so the screen isn't covered.
                     let args = ProcessInfo.processInfo.arguments
-                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvProfileDemo", "-ntvPlayerDemo"]
+                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvProfileDemo", "-ntvPlayerDemo", "-ntvTwitchDemo"]
                     let demoMode = demoArgs.contains { args.contains($0) }
                     #if DEBUG
                     if demoMode {
@@ -1230,9 +1242,22 @@ struct RootView: View {
     /// the left edge over full-bleed content. OVERLAY layout (not an HStack)
     /// so the expanding panel just draws over the content — the content
     /// column never re-lays-out during the spring.
+    private var ntvBackdropID: String? {
+        guard theme.palette.id == NTVDesign.palette.id else { return nil }
+        switch selectedTab {
+        case 0 where homePath.isEmpty: return "ntv.home.backdrop"
+        case 5 where moviesPath.isEmpty: return "ntv.catalog.movie.backdrop"
+        case 6 where seriesPath.isEmpty: return "ntv.catalog.series.backdrop"
+        default: return nil
+        }
+    }
+
     private var tabLayout: some View {
         ZStack(alignment: navIsTop ? .top : .leading) {
+            if theme.palette.id == NTVDesign.palette.id { NTVCanvasBackdrop(canvas: ntvCanvas) }
             selectedContent
+                .environmentObject(ntvCanvas)
+                .modifier(NTVFullWidthViewport(enabled: theme.palette.id == NTVDesign.palette.id))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Tab changes CUT. No fade, in either direction.
                 //
@@ -1417,6 +1442,10 @@ struct RootView: View {
                     }
             }
         }
+        .onAppear { ntvCanvas.activate(ntvBackdropID) }
+        .onChange(of: ntvBackdropID) { _, id in ntvCanvas.activate(id) }
+        .onChange(of: profiles.activeID) { _, _ in ntvCanvas.clear() }
+        .onChange(of: account.currentUserID) { _, _ in ntvCanvas.clear() }
         .animation(perf.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: showSidebar)
         .animation(perf.sidebarAnimationEffective

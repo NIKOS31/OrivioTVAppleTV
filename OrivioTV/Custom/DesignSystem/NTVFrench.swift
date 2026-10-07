@@ -31,6 +31,8 @@ enum NTVFrench {
 
     static func catalogTitle(_ title: String) -> String {
         let prefixes = [
+            ("Popular - Film", "Films populaires"), ("Popular - Série", "Séries populaires"),
+            ("Top - Film", "Films les mieux notés"), ("New - Film", "Nouveaux films"),
             ("Popular - Movie", "Films populaires"), ("Popular - Series", "Séries populaires"),
             ("Popular - Séries", "Séries populaires"), ("Top - Movie", "Films les mieux notés"),
             ("Top - Series", "Séries les mieux notées"), ("Top - Séries", "Séries les mieux notées"),

@@ -35,11 +35,21 @@ struct NTVCatalogView: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
+            presentation(width: geometry.size.width)
+        }
+        .ignoresSafeArea(edges: .horizontal)
+    }
+
+    private func presentation(width: CGFloat) -> some View {
         let catalogs = self.catalogs
         let selected = catalogs.first { $0.id == catalogID } ?? catalogs.first
         let genres = selected?.manifest.genreOptions ?? []
         let activeGenre = genres.contains(genre) ? genre : ""
-        ZStack {
+        let posterWidth = NTVViewport.posterWidth(
+            available: width - 2 * NTVViewport.horizontalInset,
+            preferred: settings.posterSize.posterWidth)
+        return ZStack {
             NTVFocusBackdrop(hero: hero, identifier: "ntv.catalog.\(mediaType).backdrop")
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
@@ -92,12 +102,12 @@ struct NTVCatalogView: View {
                                     }
                                 })
                         } else {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: settings.posterSize.posterWidth,
-                                maximum: settings.posterSize.posterWidth), spacing: 28, alignment: .top)],
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: posterWidth,
+                                maximum: posterWidth), spacing: NTVViewport.posterGap, alignment: .top)],
                                 alignment: .leading, spacing: 36) {
                                 ForEach(viewModel.items) { item in
                                     GridPosterCell(item: item,
-                                        captionWidth: settings.posterSize.posterWidth,
+                                        captionWidth: posterWidth,
                                         onSelect: onSelect, onPlayManually: onPlayManually,
                                         gridFocus: $focusedID)
                                         .id(item.id)
@@ -108,13 +118,13 @@ struct NTVCatalogView: View {
                                         }
                                 }
                             }
+                            .accessibilityIdentifier("ntv.catalog.\(mediaType).grid")
                         }
                     }
-                    .padding(.horizontal, OrivioSpacing.huge)
+                    .padding(.horizontal, NTVViewport.horizontalInset)
                     .padding(.top, OrivioSpacing.xl)
                     .padding(.bottom, 120)
                 }
-                .scrollClipDisabled()
                 .onExitCommand { backToTop(proxy) }
             }
         }

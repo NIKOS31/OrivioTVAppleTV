@@ -2,18 +2,38 @@ import XCTest
 @testable import OrivioTV
 
 final class NTVCoreTests: XCTestCase {
+    func testPosterColumnsUseAvailableWidthAtDifferentTVSizes() {
+        for width in [CGFloat(1280), 1920, 2560] {
+            for preferred in [CGFloat(180), 210, 260] {
+                let available = width - 2 * NTVViewport.horizontalInset
+                let count = Int((available + NTVViewport.posterGap) / (preferred + NTVViewport.posterGap))
+                let fitted = NTVViewport.posterWidth(available: available, preferred: preferred)
+                XCTAssertEqual(CGFloat(count) * fitted + CGFloat(count - 1) * NTVViewport.posterGap,
+                               available, accuracy: 0.01, "The last column cannot leave unused width.")
+                XCTAssertGreaterThanOrEqual(fitted, preferred)
+            }
+        }
+    }
+
     func testTouchScrubSlowDragKeepsScenePrecision() {
         let delta = NTVScrubMotion.delta(points: 2, elapsed: 0.1, duration: 7200)
         XCTAssertGreaterThan(delta, 0)
         XCTAssertLessThanOrEqual(delta, 10, "A small slow drag must remain within a few seconds of the scene.")
     }
 
-    func testTouchScrubFastSwipeTraversesLongFilm() {
+    func testTouchScrubFastSwipeRemainsBounded() {
         let slow = NTVScrubMotion.delta(points: 100, elapsed: 1, duration: 7200)
         let fast = NTVScrubMotion.delta(points: 100, elapsed: 0.1, duration: 7200)
-        XCTAssertGreaterThan(fast, 600, "A fast swipe must travel more than ten minutes in a two-hour film.")
-        XCTAssertGreaterThan(fast, slow * 4)
+        XCTAssertGreaterThan(fast, slow, "A faster swipe can move farther while remaining controllable.")
+        XCTAssertLessThanOrEqual(fast, 5, "One projected remote sample cannot jump across the film.")
         XCTAssertEqual(NTVScrubMotion.delta(points: -100, elapsed: 0.1, duration: 7200), -fast)
+    }
+
+    func testOneTouchGestureCannotTraverseTheWholeFilm() {
+        XCTAssertEqual(NTVScrubMotion.position(proposed: 7000, anchor: 120, duration: 7200), 210)
+        XCTAssertEqual(NTVScrubMotion.position(proposed: -7000, anchor: 120, duration: 7200), 30)
+        XCTAssertEqual(NTVScrubMotion.position(proposed: 90, anchor: 10, duration: 90), 19)
+        XCTAssertEqual(NTVScrubMotion.position(proposed: .nan, anchor: 10, duration: 90), 0)
     }
 
     func testTouchScrubRejectsUnknownDurationAndInvalidSamples() {

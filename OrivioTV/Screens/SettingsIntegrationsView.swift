@@ -12,13 +12,15 @@ struct IntegrationsDetail: View {
     @EnvironmentObject private var mediaServers: MediaServerStore
     @State private var sheet: IntegrationSheet?
 
-    enum IntegrationSheet: String, Identifiable { case tmdb, mdblist, debrid, p2p, plex, jellyfin; var id: String { rawValue } }
+    enum IntegrationSheet: String, Identifiable { case tmdb, mdblist, debrid, p2p, plex, jellyfin, twitch; var id: String { rawValue } }
 
     var body: some View {
         // APK layout: a single list of drill-in rows, each opening a sub-screen.
         DetailScaffold(title: SettingsCategory.integration.title, subtitle: SettingsCategory.integration.subtitle) {
             SettingsGroupCard(title: "") {
                 // Orivio account moved to Settings → Account.
+                integrationRow(title: "Twitch", subtitle: "Connexion, chaînes suivies et recherche", icon: "bubble.left.and.bubble.right") { sheet = .twitch }
+                    .accessibilityIdentifier("ntv.integration.twitch")
                 integrationRow(title: "TMDB", subtitle: "Compléter les informations des titres", icon: "film.stack") { sheet = .tmdb }
                 integrationRow(title: "MDBList", subtitle: "Services de notes externes", icon: "star.circle.fill") { sheet = .mdblist }
                 integrationRow(title: "Debrid", subtitle: "Sources en cache disponibles en lecture directe", icon: "bolt.horizontal.circle.fill") { sheet = .debrid }
@@ -56,6 +58,8 @@ struct IntegrationsDetail: View {
     @ViewBuilder
     private func integrationSheet(_ s: IntegrationSheet) -> some View {
         switch s {
+        case .twitch:
+            NTVTwitchView()
         case .tmdb:
             DetailScaffold(title: "TMDB", subtitle: "Compléter les informations des titres") {
                 SettingsGroupCard(title: "") { tmdbSection }

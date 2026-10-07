@@ -2,6 +2,24 @@ import XCTest
 @testable import OrivioTV
 
 final class NTVSecurityTests: XCTestCase {
+    func testAddonDiagnosticsNeverEchoPrivateURLsOrErrorContents() {
+        let sentinel = "PRIVATE-ADDON-SENTINEL"
+        for raw in ["https://user:\(sentinel)@private.invalid/\(sentinel)/manifest.json?key=\(sentinel)",
+                    "https://127.0.0.1/\(sentinel)/catalog/movie/\(sentinel).json",
+                    "https://private.invalid/unknown/\(sentinel)", "invalid \(sentinel)"] {
+            let label = AppProbe.requestName(raw)
+            XCTAssertFalse(label.contains(sentinel))
+            XCTAssertFalse(label.contains("private.invalid"))
+            XCTAssertFalse(label.contains("127.0.0.1"))
+        }
+        let network = URLError(.timedOut, userInfo: [NSURLErrorFailingURLErrorKey: URL(string: "https://private.invalid/\(sentinel)")!])
+        let errors: [Error] = [StremioAPIError.badURL(sentinel), network,
+                              NSError(domain: sentinel, code: 42, userInfo: [NSLocalizedDescriptionKey: sentinel])]
+        for error in errors {
+            XCTAssertFalse(NTVAddonDiagnostics.failure(error).contains(sentinel))
+        }
+    }
+
     func testLinkedMediaLibrariesInventoryAndPatchedVLC() {
         let vlc = NTVMediaDependencyAudit.vlcVersion
         let ffmpeg = NTVMediaDependencyAudit.ffmpegVersion

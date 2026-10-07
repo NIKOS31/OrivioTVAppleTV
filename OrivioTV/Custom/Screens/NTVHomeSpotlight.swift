@@ -5,32 +5,25 @@ import SwiftUI
 struct NTVFocusBackdrop: View {
     @ObservedObject var hero: HeroFocus
     @ObservedObject private var performance = PerformanceSettingsStore.shared
+    @EnvironmentObject private var canvas: NTVBackdropCanvas
     let identifier: String
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                NTVDesign.background
-                if performance.settings.heroBackdrop,
-                   let url = hero.item?.background ?? hero.item?.poster {
-                    RemoteImage(url: url, maxDimension: geometry.size.width,
-                                maxPixels: PerformanceProfile.backdropPixelCap)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .clipped()
-                    LinearGradient(colors: [NTVDesign.background.opacity(0.82),
-                                             NTVDesign.background.opacity(0.25)],
-                                   startPoint: .leading, endPoint: .trailing)
-                    LinearGradient(colors: [.clear, NTVDesign.background.opacity(0.94)],
-                                   startPoint: .top, endPoint: .bottom)
-                }
-            }
-        }
-        .ignoresSafeArea()
+        Color.clear
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Fond du titre sélectionné")
         .accessibilityValue(hero.item?.id ?? "")
         .accessibilityIdentifier(identifier)
+        .onAppear { reportArtwork() }
+        .onChange(of: hero.item?.id) { _, _ in reportArtwork() }
+        .onChange(of: hero.item?.background) { _, _ in reportArtwork() }
+        .onChange(of: hero.item?.poster) { _, _ in reportArtwork() }
+        .onChange(of: performance.settings.heroBackdrop) { _, _ in reportArtwork() }
+    }
+
+    private func reportArtwork() {
+        canvas.update(identifier, url: performance.settings.heroBackdrop ? (hero.item?.background ?? hero.item?.poster) : nil)
     }
 }
 

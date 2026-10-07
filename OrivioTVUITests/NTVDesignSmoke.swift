@@ -4,6 +4,50 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testTwitchConnectionAndFollowedChannelsFromSettings() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvTopMenuDemo", "-ntvTwitchDemo"]
+        app.launch()
+        let remote = XCUIRemote.shared
+        let integration = app.buttons["ntv.settings.category.integration"]
+        XCTAssertTrue(integration.waitForExistence(timeout: 20))
+        for _ in 0..<8 {
+            if integration.hasFocus { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(focused(integration, timeout: 5))
+        remote.press(.select)
+        remote.press(.right)
+        let entry = app.buttons["ntv.integration.twitch"]
+        XCTAssertTrue(focused(entry, timeout: 5))
+        remote.press(.select)
+        let connect = app.buttons["ntv.twitch.connect"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 10))
+        XCTAssertTrue(focused(connect, timeout: 5))
+        remote.press(.select)
+        let code = app.staticTexts["ntv.twitch.code"]
+        XCTAssertTrue(code.waitForExistence(timeout: 5))
+        XCTAssertEqual(code.label, "NTVTEST")
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(code.frame))
+        capture("ntv-twitch-device-code")
+        let stream = app.descendants(matching: .any)["ntv.twitch.stream.fixture-live"].firstMatch
+        XCTAssertTrue(stream.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["ntv.twitch.disconnect"].exists)
+        capture("ntv-twitch-followed")
+        XCTAssertTrue(focused(app.buttons["ntv.twitch.followed"], timeout: 5))
+        remote.press(.right)
+        XCTAssertTrue(focused(app.buttons["ntv.twitch.search"], timeout: 5))
+        remote.press(.select)
+        let query = app.textFields["ntv.twitch.query"]
+        XCTAssertTrue(query.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(query.frame))
+        capture("ntv-twitch-search")
+        remote.press(.menu)
+        XCTAssertTrue(app.staticTexts["ntv.settings.heading"].waitForExistence(timeout: 5))
+        app.terminate()
+    }
+
     func testSettingsWorkspaceAndProfileCustomization() {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -159,6 +203,24 @@ final class NTVDesignSmoke: XCTestCase {
                              "Home must reserve a visible band below the floating top menu.")
         XCTAssertTrue(screen.contains(heading.frame))
         capture("ntv-home-top-menu-clearance")
+        let canvas = app.descendants(matching: .any)["ntv.canvas"].firstMatch
+        XCTAssertTrue(canvas.waitForExistence(timeout: 5))
+        XCTAssertEqual(canvas.frame.minY, screen.minY, accuracy: 2, "Artwork must reach behind the floating menu.")
+        XCTAssertEqual(canvas.frame.width, screen.width, accuracy: 2)
+        remote.press(.menu)
+        XCTAssertTrue(focused(home, timeout: 5))
+        remote.press(.right)
+        let movies = app.buttons["ntv.navigation.5"]
+        XCTAssertTrue(focused(movies, timeout: 5))
+        remote.press(.select)
+        let firstMovie = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(firstMovie.waitForExistence(timeout: 80))
+        let posters = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).allElementsBoundByIndex
+        let row = posters.filter { abs($0.frame.minY - firstMovie.frame.minY) < 30 }
+        XCTAssertLessThanOrEqual(firstMovie.frame.minX, screen.minX + 70, "The grid must use the screen width.")
+        XCTAssertGreaterThanOrEqual(row.map { $0.frame.maxX }.max() ?? 0, screen.maxX - 80,
+                                    "The last column must reach the right content margin.")
+        capture("ntv-films-full-width")
         app.terminate()
     }
 

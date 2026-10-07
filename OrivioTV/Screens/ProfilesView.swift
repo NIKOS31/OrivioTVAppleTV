@@ -141,7 +141,7 @@ struct ProfileGateView: View {
                         ForEach(profiles.profiles) { profile in
                             Button { select(profile) } label: {
                                 GateTile(title: profile.name, locked: profile.pinEnabled) {
-                                    ProfileAvatarView(profile: profile)
+                                    ProfileAvatarView(profile: profile, size: 180)
                                 }
                             }
                             .buttonStyle(PlainCardButtonStyle())
@@ -159,7 +159,7 @@ struct ProfileGateView: View {
                         // took that away from everyone.
                         if profiles.canAddProfile, !addWouldBypassALock {
                             Button { addProfile() } label: {
-                                GateTile(title: "Ajouter") { DashedCircle(systemName: "plus") }
+                                GateTile(title: "Ajouter") { DashedCircle(systemName: "plus").frame(width: 180, height: 180) }
                             }
                             .buttonStyle(PlainCardButtonStyle())
                         }
@@ -244,7 +244,7 @@ private struct GateTile<Content: View>: View {
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(isFocused ? theme.palette.textPrimary : theme.palette.textSecondary)
                 .lineLimit(1)
-                .frame(maxWidth: 160)
+                .frame(maxWidth: 200)
         }
     }
 }
@@ -507,7 +507,7 @@ struct ProfileEditView: View {
     @State private var confirmingDelete = false
     @State private var editingCollection: OrivioCollection?
     @FocusState private var avatarFocus: String?
-    private let characterColumns = [GridItem(.adaptive(minimum: 148, maximum: 148), spacing: 24, alignment: .top)]
+    private let characterColumns = [GridItem(.adaptive(minimum: 184, maximum: 184), spacing: 24, alignment: .top)]
 
     private var current: UserProfile {
         profiles.profiles.first { $0.id == profile.id } ?? profile
@@ -552,14 +552,14 @@ struct ProfileEditView: View {
                     .focusSection()
 
                     sectionLabel("Personnage")
-                    LazyVGrid(columns: characterColumns, alignment: .leading, spacing: 24) {
+                    LazyVGrid(columns: characterColumns, alignment: .center, spacing: 24) {
                         Button { profiles.setAvatar(id: profile.id, avatarID: nil) } label: {
                             VStack(spacing: 12) {
                                 AvatarPickLabel(selected: current.localAvatarID == nil
                                                 && current.avatarID == nil && current.avatarURL == nil) {
                                     Circle().fill(Color(profileHex: current.avatarColorHex))
                                         .overlay(Text(current.initial).font(.system(size: 30, weight: .medium)).foregroundStyle(.white))
-                                        .frame(width: 96, height: 96)
+                                        .frame(width: 128, height: 128)
                                 }
                                 Text("Initiale").font(.system(size: 20)).frame(height: 48, alignment: .top)
                             }
@@ -572,7 +572,7 @@ struct ProfileEditView: View {
                                 VStack(spacing: 12) {
                                     AvatarPickLabel(selected: current.localAvatarID == avatar.id) {
                                         Image(avatar.assetName).resizable().scaledToFit()
-                                            .frame(width: 96, height: 96)
+                                            .frame(width: 128, height: 128)
                                             .background(Color(profileHex: current.avatarColorHex), in: Circle())
                                             .clipShape(Circle())
                                     }
@@ -590,7 +590,8 @@ struct ProfileEditView: View {
                         }
                     }
                     .foregroundStyle(theme.palette.textPrimary)
-                    .frame(maxWidth: 1180, alignment: .leading)
+                    .frame(maxWidth: 1440, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .focusSection()
 
                     if !profiles.avatarCatalog.isEmpty {

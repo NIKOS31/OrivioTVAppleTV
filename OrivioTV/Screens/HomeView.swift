@@ -1576,11 +1576,11 @@ struct HomeView: View {
                         .font(.system(size: 38, weight: .semibold))
                         .foregroundStyle(NTVDesign.textPrimary)
                         .accessibilityIdentifier("ntv.home.heading")
-                        .padding(.horizontal, OrivioSpacing.huge)
+                        .padding(.horizontal, NTVViewport.horizontalInset)
                     if perf.settings.heroBackdrop {
                         NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
                                          onSelect: heroSelect, onBack: onHomeBack)
-                            .padding(.horizontal, OrivioSpacing.huge)
+                            .padding(.horizontal, NTVViewport.horizontalInset)
                             .focusSection()
                     }
                     if viewModel.entries.isEmpty && !viewModel.isLoading {
@@ -1591,7 +1591,7 @@ struct HomeView: View {
                             onOpenSettings: onOpenSettings,
                             onRetry: { Task { await reload() } }
                         )
-                        .padding(.horizontal, OrivioSpacing.huge)
+                        .padding(.horizontal, NTVViewport.horizontalInset)
                     } else {
                         rowsContent
                     }
@@ -1601,6 +1601,7 @@ struct HomeView: View {
                 .padding(.bottom, 120)
             }
         }
+        .ignoresSafeArea(edges: .horizontal)
     }
 
     private var fusionModernLayout: some View {
@@ -2537,7 +2538,8 @@ private struct HomePosterRow: View {
                             .id(item.id)
                         }
                     }
-                    .padding(.horizontal, OrivioSpacing.huge)
+                    .padding(.horizontal, theme.palette.id == NTVDesign.palette.id
+                             ? NTVViewport.horizontalInset : OrivioSpacing.huge)
                     .padding(.vertical, OrivioSpacing.lg)
                 }
                 .scrollClipDisabled()
@@ -2608,7 +2610,8 @@ private struct HomePosterRow: View {
                     SeeAllLabel()
                 }
                 .buttonStyle(PlainCardButtonStyle())
-                .padding(.trailing, OrivioSpacing.huge)
+                .padding(.trailing, theme.palette.id == NTVDesign.palette.id
+                         ? NTVViewport.horizontalInset : OrivioSpacing.huge)
             }
         }
     }
@@ -2776,7 +2779,8 @@ private struct ContinueWatchingRow: View {
                       .id(progress.id)
                     }
                 }
-                .padding(.horizontal, OrivioSpacing.huge)
+                .padding(.horizontal, theme.palette.id == NTVDesign.palette.id
+                         ? NTVViewport.horizontalInset : OrivioSpacing.huge)
                 .padding(.vertical, OrivioSpacing.lg)
             }
             .scrollClipDisabled()

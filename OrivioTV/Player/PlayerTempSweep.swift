@@ -893,23 +893,9 @@ enum AppProbe {
         }
     }
 
-    /// A URL boiled down to what identifies it in a log: host plus the part of
-    /// the path that says what was asked for, with the token query an add-on
-    /// carries dropped. Full URLs are 200 characters of noise, and several of
-    /// them contain credentials.
+    /// A request category, never an addon host/configuration or media ID.
     nonisolated static func requestName(_ urlString: String) -> String {
-        guard let url = URL(string: urlString) else { return urlString }
-        let host = url.host ?? "?"
-        var path = url.path
-        if path.hasSuffix(".json") { path.removeLast(5) }
-        // Add-on paths are `/…config…/resource/type/id`; the resource is what
-        // matters and the config in front of it can be enormous.
-        for resource in ["/catalog/", "/meta/", "/stream/", "/subtitles/"] where path.contains(resource) {
-            if let r = path.range(of: resource) { path = String(path[r.lowerBound...]) }
-            break
-        }
-        if path.count > 80 { path = String(path.prefix(80)) + "…" }
-        return host + path
+        NTVAddonDiagnostics.requestName(urlString)
     }
 
     // MARK: The [app] block

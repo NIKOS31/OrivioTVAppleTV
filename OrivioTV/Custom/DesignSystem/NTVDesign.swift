@@ -20,6 +20,7 @@ enum NTVBrand {
 }
 
 enum NTVDesign {
+    static let topChromeClearance: CGFloat = 88
     static let background = Color(hex: 0x101218)
     static let surface = Color(hex: 0x1A1F27)
     static let raised = Color(hex: 0x252D37)

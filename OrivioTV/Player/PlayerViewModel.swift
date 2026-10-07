@@ -6402,10 +6402,14 @@ final class PlayerViewModel: ObservableObject {
     /// carries focus from the rows up onto the pills must not ALSO count as
     /// the close gesture, so the close reads the state at touch-down.
     private var infoTabsAtTouchStart = false
+    private var ntvTouchStartedOnTimeline = false
+    private var scrubMotionTime: TimeInterval = 0
 
     func remoteTouchBegan() {
         debug("touch ↓")
         infoTabsAtTouchStart = infoFocusOnTabs
+        ntvTouchStartedOnTimeline = usesNTVControls && controlsFocusOnBar
+        scrubMotionTime = ProcessInfo.processInfo.systemUptime
         scrubLastDx = 0            // translation resets per gesture
         panInFlight = true
         lastPanDx = 0
@@ -6435,6 +6439,12 @@ final class PlayerViewModel: ObservableObject {
             break
         case .undecided:
             let adx = abs(dx), ady = abs(dy)
+            if usesNTVControls, ntvTouchStartedOnTimeline,
+               (overlay == .controls || overlay == .pauseInfo), adx > 22, adx > ady * 1.4 {
+                beginScrub(pausing: true)
+                if isScrubbing { touchIntent = .scrub }
+                return
+            }
             // Skip Intro first. While the pill is up it is the one thing the
             // viewer is reaching for, so ANY perceptible movement highlights
             // it — no aiming, no swipe direction to learn.
@@ -6519,6 +6529,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func remoteTouchEnded(dx: CGFloat, dy: CGFloat) {
+        ntvTouchStartedOnTimeline = false
         panInFlight = false
         scrubDragInContact = false   // the contact is over; presses now hop
         if touchIntent == .scrub { endScrubGesture() }
@@ -6538,8 +6549,14 @@ final class PlayerViewModel: ObservableObject {
     private func scrubPanPoints(dx: CGFloat) {
         let inc = dx - scrubLastDx
         scrubLastDx = dx
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = now - scrubMotionTime
+        scrubMotionTime = now
         guard let target = scrubValue, !wheelEngaged else { return }
-        let proposed = target + Double(inc) * secondsPerPoint
+        let delta = usesNTVControls
+            ? NTVScrubMotion.delta(points: Double(inc), elapsed: elapsed, duration: duration)
+            : Double(inc) * secondsPerPoint
+        let proposed = target + delta
         let clamped = max(0, min(proposed, duration > 0 ? duration - 1 : proposed))
         scrubDragInContact = true
         publishScrub(clamped)
@@ -7555,12 +7572,12 @@ final class PlayerViewModel: ObservableObject {
     /// Single presses stay precise; a held direction progressively travels further.
     func stepNTVScrub(forward: Bool) {
         let now = Date()
-        let repeating = forward == ntvScrubDirection && now.timeIntervalSince(ntvScrubPressedAt) < 0.35
+        let repeating = forward == ntvScrubDirection && now.timeIntervalSince(ntvScrubPressedAt) < 0.65
         ntvScrubRepeats = repeating ? ntvScrubRepeats + 1 : 0
         ntvScrubPressedAt = now
         ntvScrubDirection = forward
-        let multiplier = ntvScrubRepeats >= 10 ? 6.0 : ntvScrubRepeats >= 4 ? 3.0 : 1.0
-        scrubJump((forward ? 1 : -1) * Double(settings.skipSeconds) * multiplier)
+        let multiplier = ntvScrubRepeats >= 7 ? 12.0 : ntvScrubRepeats >= 3 ? 4.0 : 1.0
+        scrubJump((forward ? 1 : -1) * Double(settings.scrubJumpSeconds) * multiplier)
     }
 
     // The fast-forward / rewind SCAN transport was removed here.

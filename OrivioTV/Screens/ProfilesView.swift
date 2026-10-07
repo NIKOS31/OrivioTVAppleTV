@@ -101,6 +101,7 @@ struct ProfileGateView: View {
     var onCancel: (() -> Void)? = nil
 
     @State private var pinProfile: UserProfile?
+    @State private var showManagement = false
     // Open with focus on the profile you last used, so the trackpad starts on a
     // sensible tile rather than an arbitrary one.
     @FocusState private var focusedProfile: Int?
@@ -124,9 +125,9 @@ struct ProfileGateView: View {
                             return nil
                         }
                         if outcome.retryAfterSeconds > 0 {
-                            return "Too many attempts. Try again in \(outcome.retryAfterSeconds)s."
+                            return "Trop de tentatives. Réessayez dans \(outcome.retryAfterSeconds) s."
                         }
-                        return outcome.message ?? "Incorrect PIN"
+                        return outcome.message ?? "Code incorrect"
                     },
                     onCancel: { pinProfile = nil }
                 )
@@ -165,6 +166,11 @@ struct ProfileGateView: View {
                         // Manage Profiles and Orivio Account moved to Settings → Account.
                     }
                     .defaultFocus($focusedProfile, profiles.active.id)
+                    if onCancel != nil {
+                        Button("Personnaliser les profils") { showManagement = true }
+                            .buttonStyle(NTVActionButtonStyle())
+                            .accessibilityIdentifier("ntv.profiles.manage")
+                    }
                 }
                 .padding(OrivioSpacing.huge)
             }
@@ -175,6 +181,9 @@ struct ProfileGateView: View {
         // or Settings, Back closes it and keeps the current profile.
         .onExitCommand { onCancel?() }
         .task { await profiles.loadAvatarCatalog() }
+        .fullScreenCover(isPresented: $showManagement) {
+            ProfileManageView { showManagement = false }
+        }
     }
 
     private func select(_ profile: UserProfile) {
@@ -498,7 +507,7 @@ struct ProfileEditView: View {
     @State private var confirmingDelete = false
     @State private var editingCollection: OrivioCollection?
     @FocusState private var avatarFocus: String?
-    private let characterColumns = Array(repeating: GridItem(.fixed(148), spacing: 24, alignment: .top), count: 7)
+    private let characterColumns = [GridItem(.adaptive(minimum: 148, maximum: 148), spacing: 24, alignment: .top)]
 
     private var current: UserProfile {
         profiles.profiles.first { $0.id == profile.id } ?? profile
@@ -581,6 +590,7 @@ struct ProfileEditView: View {
                         }
                     }
                     .foregroundStyle(theme.palette.textPrimary)
+                    .frame(maxWidth: 1180, alignment: .leading)
                     .focusSection()
 
                     if !profiles.avatarCatalog.isEmpty {

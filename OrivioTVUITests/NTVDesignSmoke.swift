@@ -4,6 +4,46 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testSettingsWorkspaceAndProfileCustomization() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvTopMenuDemo"]
+        app.launch()
+        let heading = app.staticTexts["ntv.settings.heading"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 20))
+        XCTAssertEqual(heading.label, "Réglages")
+        let navigation = app.buttons["ntv.navigation.3"]
+        XCTAssertTrue(navigation.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(heading.frame.minY, navigation.frame.maxY + 8, "The page title must clear the floating menu.")
+        let screen = app.windows.firstMatch.frame
+        XCTAssertTrue(screen.contains(heading.frame))
+        XCTAssertTrue(screen.contains(app.buttons["ntv.settings.customize"].frame))
+        capture("ntv-settings-workspace-fr")
+
+        let remote = XCUIRemote.shared
+        for _ in 0..<3 {
+            if navigation.hasFocus { break }
+            remote.press(.menu)
+            if focused(navigation, timeout: 3) { break }
+        }
+        XCTAssertTrue(navigation.hasFocus)
+        remote.press(.right)
+        let profile = app.buttons["ntv.navigation.profile"]
+        XCTAssertTrue(focused(profile, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["Qui regarde ?"].waitForExistence(timeout: 10))
+        remote.press(.down)
+        let manage = app.buttons["ntv.profiles.manage"]
+        XCTAssertTrue(focused(manage, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["Gérer les profils"].waitForExistence(timeout: 10))
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.profile.edit.heading"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["ntv.profile.avatar.ntv.glasses"].exists)
+        capture("ntv-profile-real-entry")
+        app.terminate()
+    }
+
     func testProfileCharacterPersistsOffline() {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -246,6 +286,9 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["ntv.home.spotlight"].waitForExistence(timeout: 80),
                       "Home should display a title supplied by the default addon.")
+        XCTAssertGreaterThan(app.staticTexts["ntv.home.heading"].frame.minY,
+                             app.buttons["ntv.navigation.0"].frame.maxY + 8,
+                             "Home must reserve a visible band below the floating menu.")
         capture("ntv-home-real-catalogs")
 
         let remote = XCUIRemote.shared

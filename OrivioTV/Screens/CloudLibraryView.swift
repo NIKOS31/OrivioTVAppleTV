@@ -26,12 +26,12 @@ struct CloudLibraryView: View {
     }
 
     var body: some View {
-        DetailScaffold(title: "Cloud Library", subtitle: "Files in your debrid cloud") {
+        DetailScaffold(title: "Fichiers cloud", subtitle: "Fichiers de votre service de débridage") {
             if availableProviders.isEmpty {
                 OrivioEmptyState(
                     icon: "externaldrive.badge.xmark",
-                    title: "No debrid provider configured",
-                    message: "Add a Real-Debrid, Premiumize, TorBox or AllDebrid API key in Settings → Integrations to browse your cloud files.",
+                    title: "Aucun service de débridage configuré",
+                    message: "Ajoutez votre compte de débridage dans Réglages → Intégrations pour retrouver vos fichiers.",
                     holdsFocus: true
                 )
                 .frame(maxWidth: .infinity, minHeight: 300)
@@ -44,7 +44,7 @@ struct CloudLibraryView: View {
             if resolving {
                 ZStack {
                     Color.black.opacity(0.6).ignoresSafeArea()
-                    OrivioLoadingView(label: "Getting link")
+                    OrivioLoadingView(label: "Préparation du lien")
                 }
             }
         }
@@ -74,13 +74,13 @@ struct CloudLibraryView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading {
-            OrivioLoadingView(label: "Loading cloud files", holdsFocus: availableProviders.count <= 1)
+            OrivioLoadingView(label: "Chargement des fichiers cloud", holdsFocus: availableProviders.count <= 1)
                 .frame(maxWidth: .infinity, minHeight: 300)
         } else if files.isEmpty {
             OrivioEmptyState(
                 icon: "tray",
-                title: "No video files found",
-                message: "Nothing playable is in this provider's cloud yet.",
+                title: "Aucun fichier vidéo trouvé",
+                message: "Aucune vidéo disponible dans ce service pour le moment.",
                 holdsFocus: availableProviders.count <= 1
             )
             .frame(maxWidth: .infinity, minHeight: 300)
@@ -88,10 +88,10 @@ struct CloudLibraryView: View {
             // Movies and Shows separated into their own sections, like Search.
             VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
                 if !movieFiles.isEmpty {
-                    LibrarySection(title: "Movies") { fileList(movieFiles) }
+                    LibrarySection(title: "Films") { fileList(movieFiles) }
                 }
                 if !showFiles.isEmpty {
-                    LibrarySection(title: "Shows") { fileList(showFiles) }
+                    LibrarySection(title: "Séries") { fileList(showFiles) }
                 }
             }
         }

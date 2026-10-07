@@ -1721,7 +1721,7 @@ struct RowHeader: View {
     let title: String
 
     var body: some View {
-        Text(title)
+        Text(NTVFrench.catalogTitle(title))
             .font(FusionType.moduleHeading(theme.font))
             .foregroundStyle(theme.palette.textPrimary)
             .padding(.leading, OrivioSpacing.huge)
@@ -1818,7 +1818,7 @@ struct FocusAnchor: View {
 
 struct OrivioLoadingView: View {
     @EnvironmentObject private var theme: ThemeManager
-    var label: String = "Loading"
+    var label: String = "Chargement"
     /// Hold focus while this is the only thing on screen (see FocusAnchor).
     var holdsFocus: Bool = false
 

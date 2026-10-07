@@ -108,7 +108,7 @@ final class OrivioAccountManager: ObservableObject {
                     code: start.code,
                     webURL: start.webURL,
                     nonce: nonce,
-                    statusText: "Scan the code with your phone to sign in",
+                    statusText: "Scannez le code avec votre téléphone pour vous connecter",
                     expiresAt: Self.parseDate(start.expiresAt),
                     pollIntervalSeconds: max(start.pollIntervalSeconds, 2)
                 )
@@ -191,7 +191,7 @@ final class OrivioAccountManager: ObservableObject {
             // only after several consecutive failures.
             pollFailures += 1
             guard pollFailures >= Self.maxPollFailures else {
-                qrLogin?.statusText = "Trouble reaching the server — retrying…"
+                qrLogin?.statusText = "Serveur inaccessible. Nouvelle tentative…"
                 return
             }
             cancelPolling()
@@ -246,7 +246,7 @@ final class OrivioAccountManager: ObservableObject {
     func signIn(email: String, password: String) async {
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !email.isEmpty, !password.isEmpty else {
-            errorMessage = "Enter your email and password."
+            errorMessage = "Saisissez votre adresse e-mail et votre mot de passe."
             return
         }
         errorMessage = nil
@@ -452,10 +452,10 @@ final class OrivioAccountManager: ObservableObject {
 
     private func statusText(for status: String, raw: String) -> String {
         switch status {
-        case "approved": return "Approved — signing in…"
-        case "pending": return "Waiting for approval on your phone…"
-        case "expired": return "This code expired. Try again."
-        default: return "Status: \(raw)"
+        case "approved": return "Autorisé. Connexion…"
+        case "pending": return "En attente de validation sur votre téléphone…"
+        case "expired": return "Ce code a expiré. Réessayez."
+        default: return "État : \(raw)"
         }
     }
 
@@ -464,19 +464,19 @@ final class OrivioAccountManager: ObservableObject {
         case OrivioAuthError.http(let code, let body):
             // Prefer the backend's own error message when it sends one.
             if let serverMsg = Self.serverError(in: body) { return serverMsg }
-            if code == 404 { return "Login service unavailable. Please try again later." }
-            if code == 400 { return "The login request was rejected. Try again." }
-            return "The server returned an error (\(code))."
+            if code == 404 { return "Connexion indisponible. Réessayez plus tard." }
+            if code == 400 { return "La connexion a été refusée. Réessayez." }
+            return "Le serveur a renvoyé une erreur (\(code))."
         case OrivioAuthError.message(let message):
             return message
         case let urlError as URLError where urlError.code == .notConnectedToInternet:
-            return "No internet connection."
+            return "Aucune connexion Internet."
         case let urlError as URLError where urlError.code == .timedOut:
-            return "The server took too long to respond. Please try again."
+            return "Le serveur met trop de temps à répondre. Réessayez."
         case let urlError as URLError:
-            return "Network error (\(urlError.code.rawValue)). Please try again."
+            return "Erreur réseau (\(urlError.code.rawValue)). Réessayez."
         default:
-            return "Sign-in failed: \(error.localizedDescription)"
+            return "Connexion impossible : \(error.localizedDescription)"
         }
     }
 

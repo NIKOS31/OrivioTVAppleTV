@@ -24,7 +24,7 @@ struct CommunityCollectionPreset: Identifiable {
             switch self {
             case .streaming: return "Pick exactly the services you use — each becomes a tab in one Streaming Services row"
             case .studios: return "Every film from the studio, direct from TMDB — pick the ones you care about"
-            case .trending: return "What's popular, best-reviewed, and newest right now"
+            case .trending: return "Titres populaires, mieux notés et nouveautés"
             }
         }
         var icon: String {
@@ -42,11 +42,11 @@ struct CommunityCollectionPreset: Identifiable {
 
         var markerLabel: String {
             switch self {
-            case .network: return "Streaming Network"
+            case .network: return "Plateforme ou chaîne"
             case .studio: return "Studio"
-            case .trending: return "Trending"
-            case .topRated: return "Top Rated"
-            case .newest: return "Newest"
+            case .trending: return "Tendances"
+            case .topRated: return "Les mieux notés"
+            case .newest: return "Les plus récents"
             }
         }
         /// Fallback emoji cover for sources with no brand logo (DISCOVER-type).
@@ -78,8 +78,8 @@ struct CommunityCollectionPreset: Identifiable {
     var mediaLabel: String {
         let hasMovie = sources.contains { ($0.mediaType ?? "movie").lowercased() != "tv" }
         let hasTV = sources.contains { ($0.mediaType ?? "movie").lowercased() == "tv" }
-        if hasMovie && hasTV { return "Movies & Shows" }
-        return hasTV ? "TV Shows" : "Movies"
+        if hasMovie && hasTV { return "Films et séries" }
+        return hasTV ? "Séries" : "Films"
     }
 }
 
@@ -269,18 +269,18 @@ enum CommunityCollections {
         studio("blumhouse", "Blumhouse", 3172),
 
         // MARK: Trending & Top Rated — each its own installable category.
-        discover("moviesnow", "Trending Movies", kind: .trending, mediaType: "movie", sortBy: "popularity.desc",
+        discover("moviesnow", "Films tendance", kind: .trending, mediaType: "movie", sortBy: "popularity.desc",
                  traktEndpoint: "movies/trending"),
-        discover("showsnow", "Trending Shows", kind: .trending, mediaType: "tv", sortBy: "popularity.desc",
+        discover("showsnow", "Séries tendance", kind: .trending, mediaType: "tv", sortBy: "popularity.desc",
                  traktEndpoint: "shows/trending"),
         // Verified live: sorting by vote_average with no vote-count floor is
         // pure noise (obscure titles with a single 10/10 vote outrank The
         // Shawshank Redemption). 1000 for movies / 800 for shows: clean,
         // recognizable results (Shawshank, Godfather, Schindler's List /
         // Breaking Bad, Arcane, Chernobyl) while still ~4900 / ~700 titles.
-        discover("moviestop", "Top Rated Movies", kind: .topRated, mediaType: "movie",
+        discover("moviestop", "Films les mieux notés", kind: .topRated, mediaType: "movie",
                  sortBy: "vote_average.desc", minVoteCount: 1000, traktEndpoint: "movies/popular"),
-        discover("showstop", "Top Rated Shows", kind: .topRated, mediaType: "tv",
+        discover("showstop", "Séries les mieux notées", kind: .topRated, mediaType: "tv",
                  sortBy: "vote_average.desc", minVoteCount: 800, traktEndpoint: "shows/popular"),
         // Verified live: plain primary_release_date.desc surfaced unreleased
         // 2029-2099 placeholder entries with zero votes (e.g. "Avatar 5",
@@ -288,7 +288,7 @@ enum CommunityCollections {
         // restricts to the last 120 days (computed fresh at query time,
         // excludes anything not yet released) sorted by popularity within
         // that window — Toy Story 5, Supergirl, The Devil Wears Prada 2, etc.
-        discover("newest", "Newest Releases", kind: .newest, mediaType: "movie",
+        discover("newest", "Dernières sorties", kind: .newest, mediaType: "movie",
                  sortBy: "popularity.desc", recentDaysWindow: 120,
                  traktEndpoint: "movies/popular", traktQuery: "years=$YEAR"),
     ]
@@ -499,7 +499,7 @@ struct CommunityCollectionsView: View {
                 VStack(alignment: .leading, spacing: OrivioSpacing.xxl) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Community Collections")
+                            Text("Collections de la communauté")
                                 .font(FusionType.pageTitle(theme.font))
                                 .foregroundStyle(theme.palette.textPrimary)
                             Text("Curated, high-quality categories — install just the ones you want, grouped into one Home row per section.")
@@ -507,7 +507,7 @@ struct CommunityCollectionsView: View {
                                 .foregroundStyle(theme.palette.textSecondary)
                         }
                         Spacer()
-                        Button("Done", action: onDone)
+                        Button("Terminé", action: onDone)
                             .font(.system(size: 22, weight: .semibold))
                     }
 
@@ -545,7 +545,7 @@ struct CommunityCollectionsView: View {
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.secondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(group.rawValue)
+                    Text(NTVFrench.label(group.rawValue))
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(theme.palette.textPrimary)
                     Text(group.subtitle)
@@ -684,8 +684,8 @@ private struct CommunityCollectionCard: View {
             // Per-category Dark/Bright choice — each category remembers its
             // own pick independently, applied live to its Home row too.
             HStack(spacing: OrivioSpacing.sm) {
-                coverStyleOption(title: "Dark", bright: false)
-                coverStyleOption(title: "Bright", bright: true)
+                coverStyleOption(title: "Sombre", bright: false)
+                coverStyleOption(title: "Clair", bright: true)
             }
 
             Button {
@@ -694,13 +694,13 @@ private struct CommunityCollectionCard: View {
                 if isInstalling {
                     HStack(spacing: OrivioSpacing.sm) {
                         ProgressView()
-                        Text("Installing…")
+                        Text("Installation…")
                     }
                     .font(.system(size: 20, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     SettingsActionRow(
-                        title: isInstalled ? "Installed — Remove" : "Install",
+                        title: isInstalled ? "Installé · Supprimer" : "Installer",
                         leadingIcon: isInstalled ? "checkmark.circle.fill" : "arrow.down.circle.fill"
                     )
                 }

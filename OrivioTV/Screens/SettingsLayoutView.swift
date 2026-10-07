@@ -27,7 +27,7 @@ struct LayoutSettingsDetail: View {
     /// names like "Trending" repeat across add-ons and would otherwise be
     /// indistinguishable in the picker.
     private var heroSourceOptions: [OrivioDropdownOption] {
-        var options = [OrivioDropdownOption("", "Automatic (first row)")]
+        var options = [OrivioDropdownOption("", "Automatique, première rangée")]
         var seen = Set<String>()
         for addon in addonManager.catalogAddons {
             for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
@@ -43,14 +43,14 @@ struct LayoutSettingsDetail: View {
         // key as its value. Name it for what it is; picking anything else
         // clears it.
         if !settings.heroCatalogKey.isEmpty, !seen.contains(settings.heroCatalogKey) {
-            options.append(OrivioDropdownOption(settings.heroCatalogKey, "Unavailable catalog"))
+            options.append(OrivioDropdownOption(settings.heroCatalogKey, "Catalogue indisponible"))
         }
         return options
     }
 
     var body: some View {
         DetailScaffold(title: SettingsCategory.layout.title, subtitle: SettingsCategory.layout.subtitle) {
-            SettingsGroupCard(title: "Home Layout", subtitle: "Choose your home screen layout") {
+            SettingsGroupCard(title: "Disposition de l’accueil", subtitle: "Choisir la présentation de l’accueil") {
                 HStack(spacing: OrivioSpacing.md) {
                     ForEach(HomeLayout.allCases) { option in
                         Button { settings.homeLayout = option } label: {
@@ -62,20 +62,20 @@ struct LayoutSettingsDetail: View {
 
                 if settings.homeLayout == .modern {
                     SettingsToggleCard(
-                        title: "Landscape Posters",
-                        subtitle: "Switch between portrait and landscape cards for Modern view",
+                        title: "Affiches horizontales",
+                        subtitle: "Choisir des cartes verticales ou horizontales",
                         isOn: $settings.landscapePosters
                     )
                 }
 
                 SettingsToggleCard(
-                    title: "Featured section",
-                    subtitle: "The rotating Featured banner between Continue Watching and your catalog rows. Off removes it from the home screen.",
+                    title: "Sélection à découvrir",
+                    subtitle: "Afficher la sélection de titres entre la reprise et les rangées de catalogues",
                     isOn: $settings.showFeaturedBar
                 )
 
                 OrivioDropdown(
-                    title: "Hero layout",
+                    title: "Disposition du titre à découvrir",
                     subtitle: settings.heroLayout.summary,
                     icon: "rectangle.topthird.inset.filled",
                     selection: settings.heroLayout.rawValue,
@@ -85,8 +85,8 @@ struct LayoutSettingsDetail: View {
                 ) { settings.heroLayout = HeroLayout(rawValue: $0) ?? .hybrid }
 
                 OrivioDropdown(
-                    title: "Hero source",
-                    subtitle: "Which catalog the hero shows. Automatic uses whichever row sits first in your Home order. A catalog you've switched off below — or one ranked too far down to be built — falls back to that first row.",
+                    title: "Catalogue de la sélection",
+                    subtitle: "Choisir le catalogue de la sélection. Automatique utilise la première rangée disponible.",
                     icon: "square.stack.3d.down.right.fill",
                     selection: settings.heroCatalogKey,
                     options: heroSourceOptions
@@ -103,31 +103,31 @@ struct LayoutSettingsDetail: View {
                 ) { settings.navigationPosition = NavigationPosition(rawValue: $0) ?? .left }
 
                 SettingsToggleCard(
-                    title: "Hide the sidebar",
-                    subtitle: "Give the rows the full width of the screen. Press LEFT from the edge of the page (or Menu) to bring the sidebar back; picking a tab hides it again. Settings always keeps its sidebar.",
+                    title: "Masquer le menu",
+                    subtitle: "Afficher le contenu sur toute la largeur. Retour, ou un déplacement vers le menu depuis le bord, le fait réapparaître.",
                     isOn: $settings.autoHideSidebar
                 )
 
                 SettingsToggleCard(
-                    title: "Hero trailers",
-                    subtitle: "With the hero pinned, play the highlighted title's trailer in the hero behind the name and details. Sitting on the hero itself cycles through the Top 10, trailer and all.",
+                    title: "Bandes-annonces de la sélection",
+                    subtitle: "Lire la bande-annonce du titre sélectionné dans le fond de l’accueil",
                     isOn: $settings.heroTrailersEnabled
                 )
 
                 SettingsToggleCard(
-                    title: "Hero trailer sound",
-                    subtitle: "Play the hero trailer with sound instead of muted.",
+                    title: "Son des bandes-annonces",
+                    subtitle: "Activer le son des bandes-annonces de l’accueil",
                     isOn: $settings.heroTrailerSound
                 )
 
                 SettingsToggleCard(
-                    title: "Full stream names",
-                    subtitle: "On the source list, show every link's complete release name — wrapped across lines instead of cut off.",
+                    title: "Noms complets des sources",
+                    subtitle: "Afficher le nom complet des sources sur plusieurs lignes",
                     isOn: $settings.fullStreamTitles
                 )
             }
 
-            SettingsGroupCard(title: "Posters", subtitle: "Card size and labels across the app") {
+            SettingsGroupCard(title: "Affiches", subtitle: "Taille des cartes et libellés") {
                 HStack(spacing: OrivioSpacing.md) {
                     ForEach(PosterSize.allCases) { size in
                         Button { settings.posterSize = size } label: {
@@ -138,89 +138,89 @@ struct LayoutSettingsDetail: View {
                 }
 
                 SettingsToggleCard(
-                    title: "Poster labels",
-                    subtitle: "Show the title and release year beneath poster cards, everywhere they appear — Home rows, Discover, Search, Library and your Plex/Jellyfin shelves. Off leaves just the artwork. Continue Watching keeps its labels either way: those name the episode and how much is left, which is information rather than decoration.",
+                    title: "Titres sous les affiches",
+                    subtitle: "Afficher le titre et l’année sous les affiches. Les informations de reprise restent toujours visibles.",
                     isOn: $settings.showPosterLabels
                 )
 
                 SettingsToggleCard(
-                    title: "Poster banners",
-                    subtitle: "Show the tags some add-ons print across their poster artwork, like \"In Cinema\", \"#2 Today\" or \"New Movie\". Off swaps in the plain poster the add-on sends alongside, wherever it sends one; posters without a plain version stay as they are. Titles already in Continue Watching or your Library keep the artwork they were saved with.",
+                    title: "Bandeaux des affiches",
+                    subtitle: "Afficher les bandeaux ajoutés aux affiches par certains addons. Désactivé : utiliser l’affiche simple lorsqu’elle est fournie.",
                     isOn: $settings.showPosterBanners
                 )
 
                 OrivioDropdown(
-                    title: "Corner radius",
-                    subtitle: "Roundness of poster card corners",
+                    title: "Arrondi des angles",
+                    subtitle: "Arrondi des coins des affiches",
                     icon: "square.on.square.dashed",
                     selection: String(settings.posterCornerRadius),
                     options: HomeCatalogSettingsStore.posterCornerRadiusValues.map {
-                        OrivioDropdownOption(String($0), $0 == 0 ? "Square" : "\($0) pt")
+                        OrivioDropdownOption(String($0), $0 == 0 ? "Carré" : "\($0) pt")
                     }
                 ) { settings.posterCornerRadius = Int($0) ?? 12 }
 
                 SettingsToggleCard(
-                    title: "Hide unreleased content",
-                    subtitle: "Keep titles that haven't aired yet out of catalog rows",
+                    title: "Masquer les titres non sortis",
+                    subtitle: "Afficher seulement les titres déjà sortis",
                     isOn: $settings.hideUnreleasedContent
                 )
             }
 
-            SettingsGroupCard(title: "Rows & Details", subtitle: "Row titles and detail-page fields") {
+            SettingsGroupCard(title: "Rangées et fiches", subtitle: "Titres des rangées et informations des fiches") {
                 SettingsToggleCard(
-                    title: "Addon name in row titles",
-                    subtitle: "Append the source addon's name to each catalog row header",
+                    title: "Nom de l’addon dans les rangées",
+                    subtitle: "Ajouter le nom de l’addon au titre de chaque rangée",
                     isOn: $settings.catalogAddonNameEnabled
                 )
                 SettingsToggleCard(
-                    title: "Type suffix in row titles",
-                    subtitle: "Append “- Movie” / “- Series” to catalog row headers",
+                    title: "Type de contenu dans les rangées",
+                    subtitle: "Préciser Films ou Séries dans le titre des rangées",
                     isOn: $settings.catalogTypeSuffixEnabled
                 )
                 SettingsToggleCard(
-                    title: "Full release date",
-                    subtitle: "Show the full date on the details page instead of just the year",
+                    title: "Date de sortie complète",
+                    subtitle: "Afficher la date complète sur la fiche au lieu de l’année",
                     isOn: $settings.showFullReleaseDate
                 )
                 SettingsToggleCard(
-                    title: "Trailer button",
-                    subtitle: "Show the Trailer button on the details page",
+                    title: "Bouton Bande-annonce",
+                    subtitle: "Afficher le bouton Bande-annonce sur les fiches",
                     isOn: $settings.detailPageTrailerButtonEnabled
                 )
             }
 
-            SettingsGroupCard(title: "Details Page",
-                              subtitle: "Which sections appear below a title's artwork") {
+            SettingsGroupCard(title: "Fiches des titres",
+                              subtitle: "Sections affichées sous l’illustration") {
                 SettingsToggleCard(
-                    title: "Creator and Cast",
-                    subtitle: "The row of directors, writers and cast members.",
+                    title: "Créateurs et distribution",
+                    subtitle: "Réalisateurs, auteurs et acteurs",
                     isOn: $settings.detailShowCast
                 )
                 SettingsToggleCard(
                     title: "Collection",
-                    subtitle: "The “part of…” row for a title that belongs to a series of films, listing the others in it.",
+                    subtitle: "Afficher les autres titres de la même collection",
                     isOn: $settings.detailShowCollection
                 )
                 SettingsToggleCard(
-                    title: "More Like This",
-                    subtitle: "Recommended titles based on the one you're looking at.",
+                    title: "Titres similaires",
+                    subtitle: "Suggestions liées au titre consulté",
                     isOn: $settings.detailShowMoreLikeThis
                 )
                 SettingsToggleCard(
                     title: "Production",
-                    subtitle: "The studios and production companies behind the title.",
+                    subtitle: "Studios et sociétés de production du titre",
                     isOn: $settings.detailShowProduction
                 )
                 SettingsToggleCard(
-                    title: "Comments",
-                    subtitle: "Viewer comments from Trakt.",
+                    title: "Commentaires",
+                    subtitle: "Commentaires des utilisateurs de Trakt",
                     isOn: $settings.detailShowComments
                 )
             }
 
-            SettingsGroupCard(title: "Continue Watching", subtitle: "How the resume row behaves") {
+            SettingsGroupCard(title: "Continuer à regarder", subtitle: "Organisation de la reprise de lecture") {
                 OrivioDropdown(
-                    title: "Sort order",
+                    title: "Ordre de tri",
                     subtitle: settings.continueWatchingSortMode.summary,
                     icon: "arrow.up.arrow.down",
                     selection: settings.continueWatchingSortMode.rawValue,
@@ -230,32 +230,32 @@ struct LayoutSettingsDetail: View {
                 ) { settings.continueWatchingSortMode = ContinueWatchingSortMode(rawValue: $0) ?? .recentlyWatched }
 
                 SettingsToggleCard(
-                    title: "Episode thumbnails",
-                    subtitle: "Show the episode still on Continue Watching cards instead of the show poster",
+                    title: "Images des épisodes",
+                    subtitle: "Utiliser une image de l’épisode sur les cartes de reprise",
                     isOn: $settings.useEpisodeThumbnailsInCw
                 )
 
                 SettingsToggleCard(
-                    title: "Next up from furthest episode",
-                    subtitle: "Resume a series after the furthest episode you've watched, not the most recently played one",
+                    title: "Reprendre après le dernier épisode vu",
+                    subtitle: "Reprendre après l’épisode le plus avancé que vous avez vu",
                     isOn: $settings.nextUpFromFurthestEpisode
                 )
 
                 SettingsToggleCard(
-                    title: "Show unaired next up",
-                    subtitle: "Keep a show in Continue Watching with its next episode before it airs. Off hides the show until that episode is out",
+                    title: "Afficher les prochains épisodes non diffusés",
+                    subtitle: "Garder une série dans la reprise avant la diffusion de son prochain épisode",
                     isOn: $settings.showUnairedNextUp
                 )
 
                 SettingsToggleCard(
-                    title: "Blur unwatched episodes",
-                    subtitle: "Spoiler-blur episode thumbnails you haven't watched (focus a card to reveal it)",
+                    title: "Flouter les épisodes non vus",
+                    subtitle: "Masquer les images des épisodes non vus. Sélectionnez une carte pour la dévoiler.",
                     isOn: $settings.blurUnwatchedEpisodes
                 )
 
                 SettingsToggleCard(
-                    title: "Blur Continue Watching next up",
-                    subtitle: "Spoiler-blur art for barely-started next-up episodes on the home row",
+                    title: "Flouter les images des prochains épisodes",
+                    subtitle: "Éviter les révélations dans les images des épisodes à reprendre",
                     isOn: $settings.blurContinueWatchingNextUp
                 )
             }
@@ -336,10 +336,10 @@ struct CatalogOrderSection: View {
                 ? collectionsEnabled : settings.isEnabled(key: row.key)
         }.count
         let cap = AddonSweepLimits.maxHomeRows
-        guard enabled > cap else { return "Reorder, rename and hide your catalog rows" }
-        return "Reorder, rename and hide your catalog rows. Home builds the first \(cap) "
+        guard enabled > cap else { return "Ordonner, renommer ou masquer les rangées" }
+        return "Organisez vos catalogues. L’accueil affiche les \(cap) premières rangées ; les suivantes restent "
             + "of your \(enabled) shown rows — the rest keep their place here and stay "
-            + "reachable from Discover."
+            + "accessibles depuis Découvrir."
     }
 
     /// Keep a just-moved row in view (runs after the reorder re-lays-out).
@@ -414,7 +414,7 @@ struct CatalogOrderSection: View {
         // move we scroll the row back into view — otherwise moving up pushed
         // the row off the top of the screen.
         ScrollViewReader { proxy in
-            SettingsGroupCard(title: "Home Rows", subtitle: rowsSubtitle(rows)) {
+            SettingsGroupCard(title: "Rangées de l’accueil", subtitle: rowsSubtitle(rows)) {
                 ForEach(rows) { row in
                     let isCollectionsUnit = row.key == HomeCatalogSettingsStore.collectionsUnit
                     LayoutRowView(
@@ -447,7 +447,7 @@ struct CatalogOrderSection: View {
                 }
 
                 if rows.isEmpty {
-                    Text("No home rows yet — install a catalog add-on first.")
+                    Text("Installez un addon de catalogues pour afficher vos rangées.")
                         .font(.system(size: 21))
                         .foregroundStyle(theme.palette.textSecondary)
                 }
@@ -676,18 +676,18 @@ private struct RenameRowView: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.xl) {
-                Text("Rename \"\(title)\"")
+                Text("Renommer « \(title) »")
                     .font(.system(size: 38, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
 
-                TextField("Custom title", text: $text)
+                TextField("Titre personnalisé", text: $text)
                     .font(.system(size: 26))
                     .frame(maxWidth: 700)
 
                 HStack(spacing: OrivioSpacing.lg) {
-                    Button("Save", action: onSave)
-                    Button("Use Default", action: onClear)
-                    Button("Cancel", role: .cancel, action: onCancel)
+                    Button("Enregistrer", action: onSave)
+                    Button("Rétablir le titre d’origine", action: onClear)
+                    Button("Annuler", role: .cancel, action: onCancel)
                 }
                 .font(.system(size: 24, weight: .semibold))
             }
@@ -716,7 +716,7 @@ struct CollectionsSettingsDetail: View {
     @State private var creating = false
 
     var body: some View {
-        DetailScaffold(title: "Collections", subtitle: "Group TMDB and Trakt sources into custom home rows") {
+        DetailScaffold(title: "Collections", subtitle: "Regrouper les contenus TMDB et Trakt dans vos rangées") {
             if !providers.any {
                 // Collections resolve from TMDB and Trakt and nothing else.
                 // They still show on Home with neither connected — every
@@ -728,12 +728,12 @@ struct CollectionsSettingsDetail: View {
                         .font(.system(size: 30))
                         .foregroundStyle(theme.palette.secondary)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Connect TMDB or Trakt")
+                        Text("Connecter TMDB ou Trakt")
                             .font(.system(size: 25, weight: .semibold))
                             .foregroundStyle(theme.palette.textPrimary)
-                        Text("Collections need one of them to load anything — just one is enough. "
-                             + "Add your free TMDB API key in Settings → Integrations → TMDB for the "
-                             + "full range of sources, or sign in to Trakt in Settings → Trakt for your lists.")
+                        Text("Connectez TMDB ou Trakt pour afficher les contenus des collections. "
+                             + "Ajoutez votre clé TMDB gratuite dans Réglages → Intégrations pour accéder aux "
+                             + "catalogues, ou connectez Trakt pour retrouver vos listes.")
                             .font(.system(size: 20))
                             .foregroundStyle(theme.palette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -752,7 +752,7 @@ struct CollectionsSettingsDetail: View {
 
             Button { creating = true } label: {
                 SettingsActionRow(
-                    title: "New Collection",
+                    title: "Nouvelle collection",
                     subtitle: "A custom home row of catalog folders",
                     leadingIcon: "plus.circle.fill"
                 )
@@ -787,7 +787,7 @@ struct CollectionsSettingsDetail: View {
             }
 
             if collections.library.isEmpty {
-                Text("No collections yet. A collection appears as its own home row of folder tiles — like \"Marvel\" with folders for each phase.")
+                Text("Une collection crée une rangée de dossiers sur l’accueil, par exemple les différentes phases de Marvel.")
                     .font(.system(size: 21))
                     .foregroundStyle(theme.palette.textSecondary)
                     .frame(maxWidth: 900, alignment: .leading)
@@ -815,7 +815,7 @@ private struct CollectionLayoutModePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-            Text("Layout for all collections")
+            Text("Disposition de toutes les collections")
                 .font(.system(size: 26, weight: .semibold))
                 .foregroundStyle(theme.palette.textPrimary)
             HStack(spacing: OrivioSpacing.md) {
@@ -876,27 +876,27 @@ struct CollectionEditorView: View {
             ATVBackground()
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
-                    Text(isNew ? "New Collection" : "Edit Collection")
+                    Text(isNew ? "Nouvelle collection" : "Modifier la collection")
                         .font(.system(size: 40, weight: .bold))
                         .foregroundStyle(theme.palette.textPrimary)
 
-                    TextField("Collection name", text: $title)
+                    TextField("Nom de la collection", text: $title)
                         .font(.system(size: 26))
                         .frame(maxWidth: 700)
 
                     SettingsToggleCard(
-                        title: "Pin to top of Home",
-                        subtitle: "Show this collection's row before the catalogs",
+                        title: "Épingler en haut de l’accueil",
+                        subtitle: "Afficher cette collection avant les catalogues",
                         isOn: $pinToTop
                     )
                     SettingsToggleCard(
-                        title: "Focus glow",
-                        subtitle: "Highlight tiles with a soft glow when focused",
+                        title: "Halo de sélection",
+                        subtitle: "Éclairer doucement la carte sélectionnée",
                         isOn: $focusGlowEnabled
                     )
                     SettingsToggleCard(
-                        title: "\"All\" tab",
-                        subtitle: "Show a combined tab alongside each folder's tab in the browser",
+                        title: "Onglet Tous",
+                        subtitle: "Afficher un onglet regroupant tous les dossiers",
                         isOn: $showAllTab
                     )
                     // The per-collection layout only means anything while the
@@ -906,7 +906,7 @@ struct CollectionEditorView: View {
                         CollectionLayoutPicker(viewMode: $viewMode)
                     } else {
                         VStack(alignment: .leading, spacing: OrivioSpacing.sm) {
-                            Text("Layout")
+                            Text("Disposition")
                                 .font(.system(size: 26, weight: .semibold))
                                 .foregroundStyle(theme.palette.textPrimary)
                             Text("All collections are set to \(collections.globalLayoutMode.displayName) in Settings → Collections. Switch that to Custom to give this one its own layout.")
@@ -916,14 +916,14 @@ struct CollectionEditorView: View {
                         }
                     }
 
-                    Text("Folders")
+                    Text("Dossiers")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(theme.palette.textPrimary)
 
                     Button { addingFolder = true } label: {
                         SettingsActionRow(
-                            title: "Add Folder",
-                            subtitle: "Pick TMDB or Trakt sources to fill it",
+                            title: "Ajouter un dossier",
+                            subtitle: "Choisir les contenus TMDB ou Trakt à y afficher",
                             leadingIcon: "folder.badge.plus"
                         )
                     }
@@ -945,7 +945,7 @@ struct CollectionEditorView: View {
 
                             Button { editingFolder = folder } label: {
                                 SettingsActionRow(
-                                    title: folder.title.isEmpty ? "Untitled folder" : folder.title,
+                                    title: folder.title.isEmpty ? "Dossier sans nom" : folder.title,
                                     subtitle: collections.isFolderGloballyVisible(folder.id)
                                         ? folderSubtitle(folder)
                                         : "Off for all profiles — " + folderSubtitle(folder),
@@ -967,7 +967,7 @@ struct CollectionEditorView: View {
                     // Changes autosave — no Save button. "Done" flushes any
                     // debounced title edit, then dismisses.
                     HStack(spacing: OrivioSpacing.lg) {
-                        Button("Done") {
+                        Button("Terminé") {
                             titlePersistTask?.cancel()
                             persist(finalizing: true)
                             onDone()
@@ -976,7 +976,7 @@ struct CollectionEditorView: View {
                         // collection switched off for all profiles is exactly
                         // the one with no other way to be deleted.
                         if collections.library.contains(where: { $0.id == collectionID }) {
-                            Button("Delete Collection", role: .destructive) {
+                            Button("Supprimer la collection", role: .destructive) {
                                 // Cancel the debounced title autosave FIRST: it
                                 // would otherwise fire after the delete, find no
                                 // existing collection, and re-add the one just
@@ -1096,7 +1096,7 @@ struct CollectionEditorView: View {
     private func folderSubtitle(_ folder: OrivioCollectionFolder) -> String {
         let liveCount = folder.effectiveSources.count - folder.addonSources.count
         guard liveCount > 0 else {
-            guard !folder.addonSources.isEmpty else { return "No sources" }
+            guard !folder.addonSources.isEmpty else { return "Aucune source" }
             // An add-on-only folder — which is every folder of an imported
             // pack — fills itself from its add-on's catalogs, so say which,
             // by the SAME rule the browse screen resolves by. "No TMDB/Trakt
@@ -1106,7 +1106,7 @@ struct CollectionEditorView: View {
             let live = folder.addonSources.filter {
                 CollectionResolver.addonCatalog(for: $0, addons: addonManager.addons) != nil
             }.count
-            guard live > 0 else { return "Add-on not installed on this profile" }
+            guard live > 0 else { return "Addon non installé sur ce profil" }
             return "\(live) add-on catalog\(live == 1 ? "" : "s")"
         }
         return "\(liveCount) TMDB/Trakt source\(liveCount == 1 ? "" : "s")"
@@ -1139,29 +1139,29 @@ private struct FolderEditorView: View {
     @State private var saveError: String?
 
     private static let shapes: [(id: String, label: String)] =
-        [("SQUARE", "Square"), ("POSTER", "Poster"), ("LANDSCAPE", "Landscape")]
+        [("SQUARE", "Carré"), ("POSTER", "Affiche"), ("LANDSCAPE", "Horizontal")]
 
     var body: some View {
         ZStack {
             ATVBackground()
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
-                    Text(folder == nil ? "New Folder" : "Edit Folder")
+                    Text(folder == nil ? "Nouveau dossier" : "Modifier le dossier")
                         .font(.system(size: 40, weight: .bold))
                         .foregroundStyle(theme.palette.textPrimary)
 
-                    TextField("Folder name", text: $title)
+                    TextField("Nom du dossier", text: $title)
                         .font(.system(size: 26))
                         .frame(maxWidth: 700)
 
-                    Text("TMDB / Trakt Sources")
+                    Text("Contenus TMDB et Trakt")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(theme.palette.textPrimary)
 
                     Button { showSourcePicker = true } label: {
                         SettingsActionRow(
-                            title: "Add TMDB / Trakt Source",
-                            subtitle: "Studios, networks, people, discover feeds, or a Trakt list",
+                            title: "Ajouter un contenu TMDB ou Trakt",
+                            subtitle: "Studios, chaînes, personnes, découvertes ou liste Trakt",
                             leadingIcon: "plus.circle.fill"
                         )
                     }
@@ -1180,8 +1180,8 @@ private struct FolderEditorView: View {
                         } label: {
                             HStack(spacing: OrivioSpacing.md) {
                                 SettingsActionRow(
-                                    title: source.title?.isEmpty == false ? source.title! : (source.tmdbSourceType ?? "Trakt List"),
-                                    subtitle: (source.isTraktSource ? "Trakt list" : "TMDB \((source.tmdbSourceType ?? "").capitalized)")
+                                    title: source.title?.isEmpty == false ? source.title! : (source.tmdbSourceType ?? "Liste Trakt"),
+                                    subtitle: (source.isTraktSource ? "Liste Trakt" : "TMDB \((source.tmdbSourceType ?? "").capitalized)")
                                         + " — select to remove",
                                     leadingIcon: source.isTraktSource ? "checkmark.seal.fill" : "film.fill"
                                 )
@@ -1194,7 +1194,7 @@ private struct FolderEditorView: View {
                     }
 
                     // Tile shape — Square / Poster / Landscape.
-                    Text("Tile Shape")
+                    Text("Forme de la carte")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(theme.palette.textPrimary)
                     HStack(spacing: OrivioSpacing.md) {
@@ -1208,7 +1208,7 @@ private struct FolderEditorView: View {
 
                     // Cover image — a high-quality picture used on the tile and
                     // as the collection's background.
-                    Text("Cover Image URL")
+                    Text("Lien de l’image de couverture")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(theme.palette.textPrimary)
                     TextField("https://…/image.jpg", text: $coverURL)
@@ -1227,8 +1227,8 @@ private struct FolderEditorView: View {
                         // which is the "can't scroll down to save" report. The
                         // name is derived from the first source instead, and
                         // `save()` explains itself if there is nothing to name.
-                        Button("Save", action: save)
-                        Button("Cancel", role: .cancel) { onDone(nil) }
+                        Button("Enregistrer", action: save)
+                        Button("Annuler", role: .cancel) { onDone(nil) }
                     }
                     .font(.system(size: 24, weight: .semibold))
                     .padding(.top, OrivioSpacing.lg)
@@ -1275,7 +1275,7 @@ private struct FolderEditorView: View {
             }.first ?? ""
         }
         guard !trimmed.isEmpty else {
-            saveError = "Give the folder a name, or add a source to name it after."
+            saveError = "Donnez un nom au dossier ou ajoutez un contenu pour le nommer automatiquement."
             return
         }
         saveError = nil

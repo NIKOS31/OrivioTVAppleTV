@@ -324,11 +324,11 @@ private struct PlayManuallyMenu: ViewModifier {
             // is off.
             let _ = HoldProbe.log("MENU BUILT — detail Play")
             Button(action: action) {
-                Label("Play Manually", systemImage: "list.and.film")
+                Label("Choisir une source", systemImage: "list.and.film")
             }
             if let infuse {
                 Button(action: infuse) {
-                    Label("Play in Infuse", systemImage: "arrow.up.forward.app.fill")
+                    Label("Lire avec Infuse", systemImage: "arrow.up.forward.app.fill")
                 }
             }
         }
@@ -636,7 +636,7 @@ struct DetailView: View {
             ) { newRating in
                 ratings.setRating(newRating, for: viewModel.meta.id, type: viewModel.meta.type)
                 showRatingPicker = false
-                ToastCenter.shared.show("Rating Saved", icon: "star.fill")
+                ToastCenter.shared.show("Note enregistrée", icon: "star.fill")
             } onCancel: { showRatingPicker = false }
             .environmentObject(theme)
         }
@@ -927,7 +927,7 @@ struct DetailView: View {
             actionRow
 
             if let director = viewModel.director {
-                Text("\(isNTV ? "Réalisation" : "Director"): \(director)")
+                Text("\(isNTV ? "Réalisation" : "Réalisation"): \(director)")
                     .font(FusionType.metadata(theme.font))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -967,7 +967,7 @@ struct DetailView: View {
                     // — the visible jump. Pressing it early is not lost either:
                     // `pendingSeriesPlay` fires it as soon as the target lands.
                     let target = seriesPlayTarget
-                    PlayActionButton(title: target.map(seriesPlayTitle) ?? (isNTV ? "Regarder" : "Play")) {
+                    PlayActionButton(title: target.map(seriesPlayTitle) ?? (isNTV ? "Regarder" : "Lecture")) {
                         if let target {
                             onPlay(viewModel.meta, target)
                         } else {
@@ -1048,7 +1048,7 @@ struct DetailView: View {
                 ) {
                     let wasSaved = library.contains(viewModel.meta)
                     library.toggle(viewModel.meta)
-                    ToastCenter.shared.show(wasSaved ? "Removed from Library" : "Added to Library",
+                    ToastCenter.shared.show(wasSaved ? "Retiré de la bibliothèque" : "Ajouté à la bibliothèque",
                                             icon: wasSaved ? "bookmark.slash" : "checkmark")
                 }
                 .focused($actionFocus, equals: .library)
@@ -1060,7 +1060,7 @@ struct DetailView: View {
                     ) {
                         let wasWatched = watched.isWatched(viewModel.meta)
                         watched.toggleMovie(viewModel.meta)
-                        ToastCenter.shared.show(wasWatched ? "Marked Unwatched" : "Marked Watched",
+                        ToastCenter.shared.show(wasWatched ? "Marqué comme non vu" : "Marqué comme vu",
                                                 icon: "eye.fill")
                     }
                     .focused($actionFocus, equals: .watched)
@@ -1084,7 +1084,7 @@ struct DetailView: View {
                         let pool = viewModel.allEpisodesInPlayOrder
                             .filter { ($0.season ?? 0) > 0 && $0.hasAired }
                         guard let episode = pool.randomElement() else {
-                            ToastCenter.shared.show("Episodes are still loading", icon: "dice")
+                            ToastCenter.shared.show("Chargement des épisodes en cours", icon: "dice")
                             return
                         }
                         onShuffle(viewModel.meta, episode)
@@ -1190,9 +1190,9 @@ struct DetailView: View {
     private var playButtonTitle: String {
         let key = ProgressStore.key(metaID: viewModel.meta.id, video: nil)
         if let progress = progressStore.progress(for: key), progress.fraction > 0.02 {
-            return "Resume"
+            return "Reprendre"
         }
-        return "Play"
+        return "Lecture"
     }
 
     /// Whether this episode has saved progress worth restarting from 0.
@@ -1259,7 +1259,7 @@ struct DetailView: View {
     private func seriesPlayTitle(_ episode: MetaVideo) -> String {
         let inProgress = progressStore.progress(for: episode.id).map { $0.fraction > 0.02 } ?? false
         let sxe = "S\(episode.season ?? 1):E\(episode.episode ?? 1)"
-        let action = isNTV ? (inProgress ? "Reprendre" : "Regarder") : (inProgress ? "Resume" : "Play")
+        let action = isNTV ? (inProgress ? "Reprendre" : "Regarder") : (inProgress ? "Reprendre" : "Lecture")
         return "\(action) \(sxe)"
     }
 
@@ -1285,7 +1285,7 @@ struct DetailView: View {
 
             if let season = viewModel.selectedSeason {
                 HStack(alignment: .firstTextBaseline) {
-                    RowHeader(title: season == 0 ? (isNTV ? "Épisodes spéciaux" : "Specials") : "\(isNTV ? "Saison" : "Season") \(season)")
+                    RowHeader(title: season == 0 ? (isNTV ? "Épisodes spéciaux" : "Spéciaux") : "\(isNTV ? "Saison" : "Saison") \(season)")
                     // How many AIRED episodes are still unwatched. The count
                     // deliberately excludes anything that has not aired — a
                     // season listed through to next month's finale is not
@@ -1316,7 +1316,7 @@ struct DetailView: View {
                             watched.mark(meta: viewModel.meta, video: episode)
                         }
                     } label: {
-                        SeeAllLabel(text: isNTV ? "Marquer la saison comme vue" : "Mark Season Watched")
+                        SeeAllLabel(text: isNTV ? "Marquer la saison comme vue" : "Marquer la saison comme vue")
                     }
                     .buttonStyle(PlainCardButtonStyle())
                     .padding(.trailing, OrivioSpacing.huge)
@@ -1376,7 +1376,7 @@ struct DetailView: View {
                 // Play, the episodes are.
                 .focusSection()
             } else if viewModel.isLoading {
-                OrivioLoadingView(label: isNTV ? "Chargement des épisodes" : "Loading episodes")
+                OrivioLoadingView(label: isNTV ? "Chargement des épisodes" : "Chargement des épisodes")
                     .frame(height: 260)
             }
         }
@@ -1426,12 +1426,12 @@ struct DetailView: View {
     private func episodeTitle(_ episode: MetaVideo) -> String {
         var label = ""
         if let number = episode.episode { label = "\(number). " }
-        return label + (episode.title ?? "Episode")
+        return label + (episode.title ?? "Épisode")
     }
 
     private func episodeCastLine(_ cast: [TMDBService.CastMember]?) -> String? {
         guard let names = cast?.prefix(3).map(\.name), !names.isEmpty else { return nil }
-        return "Cast: \(names.joined(separator: ", "))"
+        return "Distribution : \(names.joined(separator: ", "))"
     }
 
     // MARK: - Cast
@@ -1443,7 +1443,7 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
                 // The trailer lives only in the action row above; the cast
                 // header is just a title (removed the duplicate trailer tab).
-                RowHeader(title: isNTV ? "Création et distribution" : "Creator and Cast")
+                RowHeader(title: isNTV ? "Création et distribution" : "Créateurs et distribution")
 
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: OrivioSpacing.lg) {
@@ -1500,7 +1500,7 @@ struct DetailView: View {
     private var moreLikeThisSection: some View {
         if layout.detailShowMoreLikeThis, !viewModel.moreLikeThis.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-                RowHeader(title: isNTV ? "À découvrir aussi" : "More Like This")
+                RowHeader(title: isNTV ? "À découvrir aussi" : "Titres similaires")
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: OrivioSpacing.lg) {
                         ForEach(viewModel.moreLikeThis) { item in
@@ -1555,7 +1555,7 @@ struct DetailView: View {
     private var commentsSection: some View {
         if layout.detailShowComments, !viewModel.comments.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-                RowHeader(title: isNTV ? "Commentaires" : "Comments")
+                RowHeader(title: isNTV ? "Commentaires" : "Commentaires")
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
                         ForEach(viewModel.comments) { comment in
@@ -1642,11 +1642,11 @@ private struct EpisodeCell: View {
             .contextMenu {
                 if let onPlayManually {
                     Button(action: onPlayManually) {
-                        Label("Play Manually", systemImage: "list.and.film")
+                        Label("Choisir une source", systemImage: "list.and.film")
                     }
                 }
                 Button(action: onToggleWatched) {
-                    Label(isWatched ? "Mark as Unwatched" : "Mark as Watched",
+                    Label(isWatched ? "Marquer comme non vu" : "Marquer comme vu",
                           systemImage: isWatched ? "eye.slash" : "checkmark.circle")
                 }
             }
@@ -1752,7 +1752,7 @@ struct CommentCard: View {
                 .foregroundStyle(theme.palette.textTertiary)
             }
             if comment.spoiler && !isFocused {
-                Text("Spoiler — focus to reveal")
+                Text("Image masquée : sélectionner pour afficher")
                     .font(.system(size: 19, weight: .medium))
                     .foregroundStyle(theme.palette.secondary)
             } else {
@@ -1945,7 +1945,7 @@ struct SeasonChip: View {
     let selected: Bool
 
     var body: some View {
-        Text(season == 0 ? (theme.palette.id == NTVDesign.palette.id ? "Spéciaux" : "Specials") : "\(theme.palette.id == NTVDesign.palette.id ? "Saison" : "Season") \(season)")
+        Text(season == 0 ? (theme.palette.id == NTVDesign.palette.id ? "Spéciaux" : "Spéciaux") : "\(theme.palette.id == NTVDesign.palette.id ? "Saison" : "Saison") \(season)")
             .font(.system(size: 23, weight: .semibold))
             .foregroundStyle(isFocused ? .black
                              : (selected ? theme.palette.onAccentTint : theme.palette.textSecondary))
@@ -2105,8 +2105,8 @@ private struct DescriptionOverlay: View {
                 }
                 .clipped()
 
-                Text(maxOffset > 0 ? "Swipe up/down to scroll · press Back to close"
-                                   : "Press Back to close")
+                Text(maxOffset > 0 ? "Glisser pour défiler · Retour pour fermer"
+                                   : "Retour pour fermer")
                     .font(.system(size: 18))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -2147,7 +2147,7 @@ private struct RatingPickerOverlay: View {
             Color.black.opacity(0.7).ignoresSafeArea()
                 .onTapGesture { onCancel() }
             VStack(spacing: OrivioSpacing.xl) {
-                Text("Rate")
+                Text("Noter")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
                 Text(title)
@@ -2180,7 +2180,7 @@ private struct RatingPickerOverlay: View {
 
                 if current != nil {
                     Button { onRate(nil) } label: {
-                        Text("Clear rating")
+                        Text("Effacer la note")
                             .font(.system(size: 24, weight: .semibold))
                             .foregroundStyle(OrivioPrimitives.error)
                             .padding(.horizontal, 28).padding(.vertical, 12)
@@ -2191,7 +2191,7 @@ private struct RatingPickerOverlay: View {
                     .focused($focus, equals: 0)
                 }
 
-                Text("Press Menu to cancel")
+                Text("Retour pour annuler")
                     .font(.system(size: 18))
                     .foregroundStyle(theme.palette.textTertiary)
             }

@@ -81,6 +81,7 @@ struct OrivioTVApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .environment(\.locale, Locale(identifier: "fr_FR"))
                 .fontDesign(theme.rootFontDesign)   // app-wide font family (Fusion routes serif to headings only)
                 .environmentObject(theme)
                 .environmentObject(stores.addonManager)
@@ -1268,15 +1269,13 @@ struct RootView: View {
                 // is text rather than bleed.
                 .padding(.leading, !navIsTop && showSidebar && selectedTab != 0
                          ? GlassSidebar.collapsedWidth : 0)
-                // nTV Home includes a title above its spotlight, so it needs
-                // the same clearance as the other tabs. The backdrop still
-                // extends underneath the glass. Fusion's full-bleed hero keeps
-                // its existing floating layout. Apply a SAFE-AREA inset
-                // rather than a plain one — see `topBarClearance`: plain
-                // padding cut the page off under the bar, so scrolled rows hit
-                // a black band instead of sliding under the glass.
-                .safeAreaPadding(.top, navIsTop && showSidebar
-                                 && (selectedTab != 0 || theme.palette.id == NTVDesign.palette.id)
+                // Reserve physical space for nTV's top menu before offering a
+                // viewport to each NavigationStack. Safe-area-only padding was
+                // not honoured consistently by the inherited full-screen pages.
+                .padding(.top, navIsTop && showSidebar && theme.palette.id == NTVDesign.palette.id
+                         ? NTVDesign.topChromeClearance : 0)
+                .safeAreaPadding(.top, navIsTop && showSidebar && selectedTab != 0
+                                 && theme.palette.id != NTVDesign.palette.id
                                  ? GlassSidebar.topBarClearance : 0)
                 // The expanded panel draws OVER the page and the page does
                 // not move. There was an `.offset` here (plus an animation

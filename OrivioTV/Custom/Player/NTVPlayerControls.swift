@@ -49,7 +49,7 @@ struct NTVPlayerControls: View {
                 .buttonStyle(PlainCardButtonStyle())
                 .focused($focus, equals: .timeline)
                 .accessibilityLabel("Parcourir la vidéo")
-                .accessibilityHint("Droite ou gauche pour choisir une position. OK pour reprendre, Retour pour annuler.")
+                .accessibilityHint("Glissez sur le pavé tactile pour parcourir la vidéo. Un geste rapide avance plus loin. OK pour reprendre, Retour pour annuler.")
                 .accessibilityIdentifier("ntv.player.timeline")
                 .onMoveCommand { direction in
                     guard !viewModel.moveSuppressed else { return }
@@ -269,7 +269,7 @@ struct NTVPlayerSeekOverlay: View {
                 NTVPlayerTimeValue(viewModel: viewModel, clock: viewModel.clock, totalDuration: true)
             }
             .frame(height: 42)
-            Text(scrubbing ? "← → Choisir la position   ·   OK Reprendre   ·   Retour Annuler" : "← → Sauts rapides")
+            Text(scrubbing ? "Glisser pour parcourir   ·   OK Reprendre   ·   Retour Annuler" : "← → Sauts rapides")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
                 .frame(height: 52, alignment: .leading)

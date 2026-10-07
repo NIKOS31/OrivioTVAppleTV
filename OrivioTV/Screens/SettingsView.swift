@@ -15,31 +15,31 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .account: return "Account"
-        case .appearance: return "Appearance"
-        case .layout: return "Layout"
-        case .contentDiscovery: return "Content & Discovery"
-        case .integration: return "Integrations"
+        case .account: return "Compte"
+        case .appearance: return "Apparence"
+        case .layout: return "Disposition"
+        case .contentDiscovery: return "Contenu et découverte"
+        case .integration: return "Intégrations"
         case .plugins: return "Plugins"
-        case .playback: return "Playback"
-        case .performance: return "Performance"
+        case .playback: return "Lecture"
+        case .performance: return "Performances"
         case .trakt: return "Trakt & SIMKL"
-        case .about: return "About"
+        case .about: return "À propos"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .account: return "Orivio account and profiles"
-        case .appearance: return "Theme, accent color, and font"
-        case .layout: return "Home structure and poster styles"
-        case .contentDiscovery: return "Add-ons, catalogs, and collections"
-        case .integration: return "Manage available integrations"
-        case .plugins: return "Scraper repositories and plugins"
-        case .playback: return "Auto-play and next-episode behavior"
-        case .performance: return "Turn effects off for a faster UI on older Apple TVs"
-        case .trakt: return "Scrobble and sync your watch history, or connect SIMKL"
-        case .about: return "App information, updates, and legal links"
+        case .account: return "Comptes et profils"
+        case .appearance: return "Thème, couleur et police"
+        case .layout: return "Organisation de l’accueil et des affiches"
+        case .contentDiscovery: return "Addons, catalogues et collections"
+        case .integration: return "Gérer les services connectés"
+        case .plugins: return "Dépôts et plugins de sources"
+        case .playback: return "Lecture automatique et épisodes suivants"
+        case .performance: return "Adapter les effets pour une navigation plus fluide"
+        case .trakt: return "Synchroniser votre historique avec Trakt ou SIMKL"
+        case .about: return "Informations, mises à jour et licences"
         }
     }
 
@@ -65,7 +65,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     /// Shorter label for the narrow rail (the detail header still uses `title`).
     var railTitle: String {
         switch self {
-        case .contentDiscovery: return "Content"
+        case .contentDiscovery: return "Contenu"
         default: return title
         }
     }
@@ -409,7 +409,7 @@ struct SettingsActionRow: View {
             }
             Spacer(minLength: OrivioSpacing.lg)
             if let value, !value.isEmpty {
-                Text(value)
+                Text(NTVFrench.label(value))
                     .font(.system(size: 21, weight: .semibold))
                     .foregroundStyle(theme.palette.secondary)
             }
@@ -479,7 +479,7 @@ struct AppearanceDetail: View {
 
     var body: some View {
         DetailScaffold(title: SettingsCategory.appearance.title, subtitle: SettingsCategory.appearance.subtitle) {
-            SettingsGroupCard(title: "Accent Color", subtitle: "The highlight color used across the app") {
+            SettingsGroupCard(title: "Couleur d’accent", subtitle: "Couleur des éléments sélectionnés") {
                 ScrollView(.horizontal) {
                     HStack(spacing: OrivioSpacing.md) {
                         ForEach(OrivioThemes.all) { palette in
@@ -496,13 +496,13 @@ struct AppearanceDetail: View {
                 }
 
                 SettingsToggleCard(
-                    title: "Black Background",
-                    subtitle: "Flat black stage with no wash or accent glow",
+                    title: "Fond noir",
+                    subtitle: "Utiliser un fond noir uni",
                     isOn: Binding(get: { theme.amoled }, set: { theme.amoled = $0 })
                 )
             }
 
-            SettingsGroupCard(title: "Font", subtitle: "Typeface used across the app") {
+            SettingsGroupCard(title: "Police", subtitle: "Police utilisée dans l’app") {
                 HStack(spacing: OrivioSpacing.md) {
                     ForEach(AppFont.allCases) { font in
                         Button { theme.font = font } label: {
@@ -514,7 +514,7 @@ struct AppearanceDetail: View {
                 }
             }
 
-            SettingsGroupCard(title: "Experience Mode", subtitle: theme.experienceMode.summary) {
+            SettingsGroupCard(title: "Mode d’utilisation", subtitle: theme.experienceMode.summary) {
                 HStack(spacing: OrivioSpacing.md) {
                     ForEach(ExperienceMode.allCases) { mode in
                         Button { theme.experienceMode = mode } label: {
@@ -523,12 +523,12 @@ struct AppearanceDetail: View {
                         .buttonStyle(PlainCardButtonStyle())
                     }
                 }
-                Text("Essential hides the Plugins section and the advanced Playback cards (auto-play source, player engine, on-screen display and audio).")
+                Text("Le mode Essentiel affiche les réglages courants. Le mode Avancé donne aussi accès aux plugins et aux options du lecteur.")
                     .font(.system(size: 17))
                     .foregroundStyle(theme.palette.textTertiary)
             }
 
-            SettingsGroupCard(title: "Settings Style", subtitle: theme.settingsUiStyle.summary) {
+            SettingsGroupCard(title: "Style des réglages", subtitle: theme.settingsUiStyle.summary) {
                 HStack(spacing: OrivioSpacing.md) {
                     ForEach(SettingsUiStyle.allCases) { style in
                         Button { theme.settingsUiStyle = style } label: {
@@ -537,7 +537,7 @@ struct AppearanceDetail: View {
                         .buttonStyle(PlainCardButtonStyle())
                     }
                 }
-                Text("Reshapes settings cards and rows — Classic rounded, Zen pill, Horizon squared.")
+                Text("Choisissez la forme des cartes et des lignes de réglages.")
                     .font(.system(size: 17))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -555,7 +555,7 @@ struct SelectableChip: View {
     let selected: Bool
 
     var body: some View {
-        Text(title)
+        Text(NTVFrench.label(title))
             .font(.system(size: 22, weight: .semibold))
             .foregroundStyle(isFocused ? theme.palette.onSecondary : (selected ? theme.palette.onAccentTint : theme.palette.textSecondary))
             .frame(maxWidth: .infinity)
@@ -708,7 +708,7 @@ struct SettingsValueCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: OrivioSpacing.lg)
-            Text(value).font(.system(size: 24, weight: .bold))
+            Text(NTVFrench.label(value)).font(.system(size: 24, weight: .bold))
                 .foregroundStyle(theme.palette.secondary)
             Image(systemName: "chevron.right").font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(isFocused ? theme.palette.textSecondary : theme.palette.textTertiary)
@@ -749,10 +749,10 @@ struct AccountSettingsDetail: View {
             SettingsGroupCard(title: "") {
                 Button { showAccount = true } label: {
                     SettingsValueCard(
-                        title: "Accounts",
+                        title: "Comptes",
                         subtitle: account.authState.isSignedIn
-                            ? "Manage Orivio, Stremio, sync status and backups"
-                            : "Sign in to Orivio, Stremio, or both",
+                            ? "Comptes, synchronisation et sauvegardes"
+                            : "Connecter votre compte ou Stremio",
                         value: accountStatus
                     )
                 }
@@ -760,8 +760,8 @@ struct AccountSettingsDetail: View {
 
                 Button { showProfiles = true } label: {
                     SettingsActionRow(
-                        title: "Manage Profiles",
-                        subtitle: "Add, rename, recolor, PIN-lock and remove profiles",
+                        title: "Personnaliser les profils",
+                        subtitle: "Choisir un avatar, renommer et gérer vos profils",
                         value: "\(profiles.profiles.count)",
                         leadingIcon: "person.2.fill"
                     )
@@ -779,8 +779,8 @@ struct AccountSettingsDetail: View {
             // its own pane next to the logins it governs.
             if profiles.profiles.count > 1 {
                 SettingsGroupCard(
-                    title: "Separate per profile",
-                    subtitle: "On: each profile keeps its own. Off: one shared copy for the whole device. Turning one off falls back to the shared copy; turning it back on finds each profile's own state where it was."
+                    title: "Réglages propres à chaque profil",
+                    subtitle: "Activé : chaque profil garde ses propres réglages. Désactivé : les réglages sont partagés sur cette TV. Les anciennes préférences restent conservées."
                 ) {
                     separationToggles
                 }
@@ -814,10 +814,10 @@ struct AccountSettingsDetail: View {
 
     private var accountStatus: String {
         switch account.authState {
-        case .signedIn(_, let email): return email.isEmpty ? "Orivio connected" : email
+        case .signedIn(_, let email): return email.isEmpty ? "Compte nTV connecté" : email
         case .loading: return "..."
         case .signedOut:
-            return stremio.isSignedIn ? (stremio.email ?? "Stremio connected") : ""
+            return stremio.isSignedIn ? (stremio.email ?? "Stremio connecté") : ""
         }
     }
 
@@ -826,8 +826,8 @@ struct AccountSettingsDetail: View {
     @ViewBuilder
     private var separationToggles: some View {
         SettingsToggleCard(
-            title: "Add-ons",
-            subtitle: "Each profile installs and orders its own add-ons",
+            title: "Addons",
+            subtitle: "Chaque profil choisit et organise ses addons",
             isOn: Binding(
                 get: { addonManager.perProfileEnabled },
                 set: { addonManager.setPerProfile($0); resyncAfterScopeChange() }
@@ -835,23 +835,23 @@ struct AccountSettingsDetail: View {
         )
         SettingsToggleCard(
             title: "Plugins",
-            subtitle: "Each profile keeps its own plugin repositories and scrapers",
+            subtitle: "Chaque profil garde ses dépôts et plugins",
             isOn: Binding(
                 get: { plugins.perProfileEnabled },
                 set: { plugins.setPerProfile($0); resyncAfterScopeChange() }
             )
         )
         SettingsToggleCard(
-            title: "Debrid logins",
-            subtitle: "Each profile connects its own Real-Debrid / Premiumize / TorBox and picks its own preferred service",
+            title: "Comptes de débridage",
+            subtitle: "Chaque profil choisit ses comptes et son service de débridage préféré",
             isOn: Binding(
                 get: { debrid.perProfileEnabled },
                 set: { debrid.setPerProfile($0); resyncAfterScopeChange() }
             )
         )
         SettingsToggleCard(
-            title: "Player & subtitles",
-            subtitle: "Each profile keeps its own playback and caption settings",
+            title: "Lecteur et sous-titres",
+            subtitle: "Chaque profil garde ses réglages de lecture et de sous-titres",
             isOn: Binding(
                 get: { playerSettings.perProfileEnabled },
                 set: { playerSettings.setPerProfile($0) }
@@ -859,23 +859,23 @@ struct AccountSettingsDetail: View {
         )
         SettingsToggleCard(
             title: "TMDB",
-            subtitle: "Each profile brings its own TMDB key, language and enrichment choices",
+            subtitle: "Chaque profil choisit sa clé TMDB, sa langue et ses métadonnées",
             isOn: Binding(
                 get: { tmdbSettings.perProfileEnabled },
                 set: { tmdbSettings.setPerProfile($0) }
             )
         )
         SettingsToggleCard(
-            title: "Theme & appearance",
-            subtitle: "Each profile keeps its own accent, font and settings style",
+            title: "Thème et apparence",
+            subtitle: "Chaque profil choisit ses couleurs, sa police et son style",
             isOn: Binding(
                 get: { theme.perProfileEnabled },
                 set: { theme.setPerProfile($0) }
             )
         )
         SettingsToggleCard(
-            title: "Stream badges",
-            subtitle: "Each profile keeps its own badge pack and size",
+            title: "Badges des sources",
+            subtitle: "Chaque profil choisit ses badges et leur taille",
             isOn: Binding(
                 get: { streamBadges.perProfileEnabled },
                 set: { streamBadges.setPerProfile($0) }
@@ -917,30 +917,30 @@ struct ContentDiscoveryDetail: View {
                 Button { showAddons = true } label: {
                     SettingsValueCard(
                         title: "Addons",
-                        subtitle: "Manage add-ons, catalog order, and collections",
+                        subtitle: "Gérer les addons, l’ordre des catalogues et les collections",
                         value: "\(addonManager.addons.count)"
                     )
                 }
                 .buttonStyle(PlainCardButtonStyle())
             }
-            SettingsGroupCard(title: "Catalogs") {
+            SettingsGroupCard(title: "Catalogues") {
                 OrivioDropdown(
-                    title: "Auto-refresh",
-                    subtitle: "Re-fetch Home catalogs on a timer while the app is open, so new releases appear without relaunching",
+                    title: "Actualisation automatique",
+                    subtitle: "Actualiser les catalogues pendant que l’app est ouverte",
                     icon: "arrow.triangle.2.circlepath",
                     selection: String(homeCatalogSettings.autoRefreshMinutes),
                     options: [
-                        OrivioDropdownOption("0", "Off"),
-                        OrivioDropdownOption("15", "Every 15 minutes"),
-                        OrivioDropdownOption("30", "Every 30 minutes"),
-                        OrivioDropdownOption("60", "Every hour")
+                        OrivioDropdownOption("0", "Désactivé"),
+                        OrivioDropdownOption("15", "Toutes les 15 minutes"),
+                        OrivioDropdownOption("30", "Toutes les 30 minutes"),
+                        OrivioDropdownOption("60", "Toutes les heures")
                     ]
                 ) { homeCatalogSettings.autoRefreshMinutes = Int($0) ?? 0 }
             }
-            SettingsGroupCard(title: "Live TV", subtitle: "The Live TV tab, and where its channels come from") {
+            SettingsGroupCard(title: "TV en direct", subtitle: "Affichage et sources des chaînes en direct") {
                 SettingsToggleCard(
-                    title: "Live TV tab",
-                    subtitle: "Show the Live TV tab in the sidebar. Off: it's hidden until you turn this back on.",
+                    title: "Onglet TV en direct",
+                    subtitle: "Afficher l’onglet TV en direct dans le menu",
                     isOn: $liveTV.enabled
                 )
 
@@ -952,16 +952,16 @@ struct ContentDiscoveryDetail: View {
                     // hide rather than sit there doing nothing.
                     if !liveTV.usesCustomPlaylist {
                         OrivioDropdown(
-                            title: "Location",
-                            subtitle: "Load channels for this country. All countries = the full global list.",
+                            title: "Pays",
+                            subtitle: "Choisir le pays des chaînes intégrées",
                             icon: "globe",
                             selection: liveTV.countryCode,
                             options: LiveTVSettingsStore.countries.map { OrivioDropdownOption($0.code, $0.name) }
                         ) { liveTV.countryCode = $0 }
 
                         OrivioDropdown(
-                            title: "Preferred language",
-                            subtitle: "Only show channels in this language, wherever they're from. Location is used only when no language is set.",
+                            title: "Langue préférée",
+                            subtitle: "Filtrer les chaînes intégrées par langue",
                             icon: "character.bubble",
                             selection: liveTV.languageCode,
                             options: LiveTVSettingsStore.languages.map { OrivioDropdownOption($0.code, $0.name) }
@@ -969,7 +969,7 @@ struct ContentDiscoveryDetail: View {
                     }
                 }
             }
-            SettingsGroupCard(title: "Badges", subtitle: "Badge packs from Badger (nintle.github.io/Badger) shown on source rows") {
+            SettingsGroupCard(title: "Badges", subtitle: "Afficher les badges Badger dans les listes de sources") {
                 badgeControls
             }
         }
@@ -999,7 +999,7 @@ struct ContentDiscoveryDetail: View {
                     .font(.system(size: 28))
                     .foregroundStyle(theme.palette.secondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Custom playlist active")
+                    Text("Liste personnalisée active")
                         .font(.system(size: 24, weight: .medium))
                         .foregroundStyle(theme.palette.textPrimary)
                     Text(liveTV.customPlaylistDisplayURL)
@@ -1008,14 +1008,14 @@ struct ContentDiscoveryDetail: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Button("Remove") {
+                Button("Supprimer") {
                     liveTV.customPlaylistURL = ""
                     iptvStatus = nil
                 }
                 .font(.system(size: 22, weight: .semibold))
             }
             .padding(.vertical, 4)
-            Text("Live TV shows the channels from your playlist instead of the built-in list. Remove it to bring the built-in list back.")
+            Text("La TV en direct utilise votre liste personnalisée. Supprimez-la pour retrouver la liste intégrée.")
                 .font(.system(size: 18))
                 .foregroundStyle(theme.palette.textTertiary)
         } else {
@@ -1024,8 +1024,8 @@ struct ContentDiscoveryDetail: View {
             // stays for short URLs and boxes with no phone handy.
             Button { showIPTVPhoneAdd = true } label: {
                 SettingsActionRow(
-                    title: "Add from Phone",
-                    subtitle: "Scan a QR code and paste your playlist URL from your phone's browser",
+                    title: "Ajouter avec mon téléphone",
+                    subtitle: "Scanner le code QR puis coller le lien de la liste sur votre téléphone",
                     leadingIcon: "qrcode"
                 )
             }
@@ -1036,7 +1036,7 @@ struct ContentDiscoveryDetail: View {
             }
 
             HStack(spacing: OrivioSpacing.md) {
-                TextField("Custom M3U playlist URL", text: $iptvURLInput)
+                TextField("Lien de votre liste M3U", text: $iptvURLInput)
                     .font(.system(size: 22))
                 Button {
                     guard !iptvImporting else { return }
@@ -1048,7 +1048,7 @@ struct ContentDiscoveryDetail: View {
                     Task {
                         let channels = await M3UService.channels(from: url)
                         if channels.isEmpty {
-                            iptvStatus = "No channels found at that URL — check it points to an M3U/M3U8 playlist."
+                            iptvStatus = "Aucune chaîne trouvée. Vérifiez que le lien correspond à une liste M3U ou M3U8."
                         } else {
                             liveTV.customPlaylistURL = url
                             iptvStatus = nil
@@ -1060,7 +1060,7 @@ struct ContentDiscoveryDetail: View {
                     if iptvImporting {
                         ProgressView()
                     } else {
-                        Text("Add")
+                        Text("Ajouter")
                             .font(.system(size: 22, weight: .semibold))
                     }
                 }
@@ -1070,7 +1070,7 @@ struct ContentDiscoveryDetail: View {
                     .font(.system(size: 19))
                     .foregroundStyle(theme.palette.textSecondary)
             }
-            Text("Paste the URL of your own IPTV playlist (M3U/M3U8) to use it instead of the built-in channel list. The location and language filters below apply only to the built-in list.")
+            Text("Collez le lien de votre liste M3U ou M3U8. Les filtres de pays et de langue concernent seulement la liste intégrée.")
                 .font(.system(size: 18))
                 .foregroundStyle(theme.palette.textTertiary)
 
@@ -1084,21 +1084,21 @@ struct ContentDiscoveryDetail: View {
     /// exactly like a pasted one, so nothing downstream changes.
     @ViewBuilder
     private var iptvProviderLogin: some View {
-        Text("Or sign in with your IPTV provider")
+        Text("Ou connecter votre fournisseur de chaînes")
             .font(.system(size: 24, weight: .medium))
             .foregroundStyle(theme.palette.textPrimary)
             .padding(.top, OrivioSpacing.sm)
-        TextField("Server URL (e.g. http://provider.tv:8080)", text: $providerServer)
+        TextField("Adresse du serveur, par exemple http://provider.tv:8080", text: $providerServer)
             .font(.system(size: 22))
             .textContentType(.URL)
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
-        TextField("Username", text: $providerUsername)
+        TextField("Nom d’utilisateur", text: $providerUsername)
             .font(.system(size: 22))
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
         HStack(spacing: OrivioSpacing.md) {
-            SecureField("Password", text: $providerPassword)
+            SecureField("Mot de passe", text: $providerPassword)
                 .font(.system(size: 22))
             Button {
                 guard !providerImporting else { return }
@@ -1107,7 +1107,7 @@ struct ContentDiscoveryDetail: View {
                       let url = LiveTVSettingsStore.providerPlaylistURL(
                           server: providerServer, username: providerUsername,
                           password: providerPassword) else {
-                    providerStatus = "Enter the server address, username and password your provider gave you."
+                    providerStatus = "Saisissez l’adresse du serveur et les identifiants fournis par votre service."
                     return
                 }
                 providerImporting = true
@@ -1115,7 +1115,7 @@ struct ContentDiscoveryDetail: View {
                 Task {
                     let channels = await M3UService.channels(from: url)
                     if channels.isEmpty {
-                        providerStatus = "Couldn't load channels with that login — check the server address, username and password."
+                        providerStatus = "Chargement des chaînes impossible. Vérifiez le serveur et vos identifiants."
                     } else {
                         liveTV.customPlaylistURL = url
                         providerStatus = nil
@@ -1129,7 +1129,7 @@ struct ContentDiscoveryDetail: View {
                 if providerImporting {
                     ProgressView()
                 } else {
-                    Text("Sign In")
+                    Text("Se connecter")
                         .font(.system(size: 22, weight: .semibold))
                 }
             }
@@ -1139,7 +1139,7 @@ struct ContentDiscoveryDetail: View {
                 .font(.system(size: 19))
                 .foregroundStyle(theme.palette.textSecondary)
         }
-        Text("For services that give you a server, username and password (Xtream Codes) rather than a playlist link. Your channels replace the built-in list, the same as a pasted playlist.")
+        Text("Pour les services utilisant une adresse de serveur et des identifiants Xtream Codes. Vos chaînes remplacent la liste intégrée.")
             .font(.system(size: 18))
             .foregroundStyle(theme.palette.textTertiary)
     }
@@ -1155,7 +1155,7 @@ struct ContentDiscoveryDetail: View {
                     .font(.system(size: 28))
                     .foregroundStyle(theme.palette.secondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(streamBadges.filterCount) badge filters active")
+                    Text("\(streamBadges.filterCount) filtres de badges actifs")
                         .font(.system(size: 24, weight: .medium))
                         .foregroundStyle(theme.palette.textPrimary)
                     Text(streamBadges.sourceURL)
@@ -1164,11 +1164,11 @@ struct ContentDiscoveryDetail: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Button("Sync from Account") {
+                Button("Récupérer depuis mon compte") {
                     Task { await streamBadges.syncFromAccount() }
                 }
                 .font(.system(size: 22, weight: .semibold))
-                Button("Remove") { streamBadges.removeConfig() }
+                Button("Supprimer") { streamBadges.removeConfig() }
                     .font(.system(size: 22, weight: .semibold))
             }
             .padding(.vertical, 4)
@@ -1180,7 +1180,7 @@ struct ContentDiscoveryDetail: View {
             }
         } else {
             HStack(spacing: OrivioSpacing.md) {
-                TextField("Badge config URL or Pastebin link", text: $badgeURLInput)
+                TextField("Lien de configuration des badges ou lien Pastebin", text: $badgeURLInput)
                     .font(.system(size: 22))
                 Button {
                     guard !badgeImporting, !badgeURLInput.isEmpty else { return }
@@ -1194,12 +1194,12 @@ struct ContentDiscoveryDetail: View {
                     if badgeImporting {
                         ProgressView()
                     } else {
-                        Text("Import")
+                        Text("Importer")
                             .font(.system(size: 22, weight: .semibold))
                     }
                 }
             }
-            Button("Sync from Account") {
+            Button("Récupérer depuis mon compte") {
                 Task { await streamBadges.syncFromAccount() }
             }
             .font(.system(size: 22, weight: .semibold))
@@ -1220,7 +1220,7 @@ struct ContentDiscoveryDetail: View {
     @ViewBuilder
     private var badgeExtraControls: some View {
         OrivioDropdown(
-            title: "Badge size",
+            title: "Taille des badges",
             icon: "textformat.size",
             selection: streamBadges.sizeRawUI,
             options: StreamBadgeStore.sizeOptions.map { OrivioDropdownOption($0.0, $0.1) }
@@ -1230,7 +1230,7 @@ struct ContentDiscoveryDetail: View {
         // run Sync from Account once to discover them.
         if !streamBadges.remoteProfiles.isEmpty {
             OrivioDropdown(
-                title: "Badge profile",
+                title: "Profil de badges",
                 icon: "person.2",
                 selection: streamBadges.preferredRemoteProfileID.isEmpty
                     ? streamBadges.remoteProfiles[0].id
@@ -1679,15 +1679,15 @@ struct AboutDetail: View {
                 .padding(.vertical, OrivioSpacing.md)
 
                 Button { info = .privacy } label: {
-                    SettingsValueCard(title: "Privacy Policy", subtitle: "View our privacy policy", value: "", icon: "hand.raised.fill")
+                    SettingsValueCard(title: "Confidentialité", subtitle: "Consulter notre politique de confidentialité", value: "", icon: "hand.raised.fill")
                 }.buttonStyle(PlainCardButtonStyle())
                 Button { info = .licenses } label: {
-                    SettingsValueCard(title: "Licenses & Attributions", subtitle: "Open-source components used in this app", value: "", icon: "doc.text.fill")
+                    SettingsValueCard(title: "Licences et crédits", subtitle: "Composants libres utilisés dans l’app", value: "", icon: "doc.text.fill")
                 }.buttonStyle(PlainCardButtonStyle())
             }
 
-            SettingsGroupCard(title: "Diagnostics", subtitle: "Device information and storage") {
-                SettingsValueCard(title: "System", subtitle: DiagnosticsService.deviceModel, value: DiagnosticsService.systemVersion, icon: "appletv.fill")
+            SettingsGroupCard(title: "Diagnostic", subtitle: "Informations sur l’appareil et le stockage") {
+                SettingsValueCard(title: "Système", subtitle: DiagnosticsService.deviceModel, value: DiagnosticsService.systemVersion, icon: "appletv.fill")
                 Button {
                     guard !clearing else { return }
                     clearing = true
@@ -1703,8 +1703,8 @@ struct AboutDetail: View {
                     }
                 } label: {
                     SettingsValueCard(
-                        title: "Clear cache",
-                        subtitle: "Remove cached source lists, metadata and images",
+                        title: "Vider le cache",
+                        subtitle: "Supprimer les sources, métadonnées et images en cache",
                         value: clearing ? "…" : cacheLabel,
                         icon: "trash.fill"
                     )
@@ -1736,17 +1736,17 @@ private enum AboutInfo: String, Identifiable {
 
     var title: String {
         switch self {
-        case .privacy: return "Privacy Policy"
-        case .licenses: return "Licenses & Attributions"
+        case .privacy: return "Confidentialité"
+        case .licenses: return "Licences et crédits"
         }
     }
 
     var body: String {
         switch self {
         case .privacy:
-            return "Orivio does not collect, store, or share any personal data. All playback, library, and account information stays on your device or with the third-party services you explicitly connect (such as TMDB, Trakt, or your debrid provider). No analytics or tracking is performed by this app."
+            return "nTV conserve vos réglages, votre bibliothèque et vos sessions sur cette TV. Les services que vous connectez gèrent leurs propres données. Les liens d’addons et sauvegardes peuvent contenir des accès privés. Aucun suivi publicitaire n’est ajouté par nTV."
         case .licenses:
-            return "This app uses open-source components including SwiftUI, KSPlayer, and metadata provided by TMDB. TMDB is used under their API terms; this product uses the TMDB API but is not endorsed or certified by TMDB. Full license texts for bundled components are available in the source repository."
+            return "nTV utilise notamment KSPlayer, FFmpeg et VLC, ainsi que les métadonnées TMDB lorsque ce service est configuré. Ce produit utilise l’API TMDB sans être approuvé ou certifié par TMDB. Les licences et crédits des composants sont disponibles dans le dépôt source ; les licences FFmpeg sont aussi embarquées dans l’app."
         }
     }
 }

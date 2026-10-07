@@ -227,7 +227,7 @@ struct AddonDiscoverView: View {
                 // free hosting went down) rather than anything wrong on our
                 // end — say so plainly instead of leaving Install as the only
                 // visible state, which reads as "nothing happened."
-                errorsByURL[url] = "Couldn't install: \(error.localizedDescription). This add-on's server may be down."
+                errorsByURL[url] = "Installation impossible : \(error.localizedDescription). Le serveur de l’addon peut être indisponible."
             }
             installingID = nil
         }

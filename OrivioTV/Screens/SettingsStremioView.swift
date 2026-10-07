@@ -34,7 +34,7 @@ struct StremioConnectPage: View {
                     .foregroundStyle(theme.palette.textTertiary)
             }
 
-            Text("Press Menu to cancel")
+            Text("Retour pour annuler")
                 .font(.system(size: 20))
                 .foregroundStyle(theme.palette.textTertiary)
             // Nothing else here is focusable; without this Menu never reaches

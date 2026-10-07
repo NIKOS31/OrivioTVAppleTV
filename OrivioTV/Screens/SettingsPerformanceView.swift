@@ -24,55 +24,55 @@ struct PerformanceSettingsDetail: View {
             if store.reduceMotion { reduceMotionBanner }
 
             SettingsGroupCard(
-                title: "Quick setup",
-                subtitle: "One-tap tuning for this Apple TV"
+                title: "Configuration rapide",
+                subtitle: "Réglages adaptés à cette Apple TV"
             ) {
                 PerfToggleRow(
                     icon: "bolt.fill",
-                    title: "Performance mode",
-                    subtitle: "Turns every visual effect below OFF at once for the smoothest, lightest experience — best on older Apple TVs. Turn it off to restore the full look. You can still fine-tune individual effects afterward.",
+                    title: "Mode performances",
+                    subtitle: "Désactiver les effets visuels pour alléger la navigation. Vous pouvez ensuite ajuster chaque effet séparément.",
                     isOn: maxPerformance
                 )
                 PerfActionRow(
                     icon: "arrow.counterclockwise",
-                    title: "Reset to recommended",
-                    subtitle: "Restore the tuned defaults for \(PerformanceProfile.tierLabel).",
+                    title: "Rétablir les réglages recommandés",
+                    subtitle: "Rétablir les réglages adaptés à \(PerformanceProfile.tierLabel).",
                     action: { store.resetToRecommended() }
                 )
             }
 
             SettingsGroupCard(
-                title: "Home billboard",
-                subtitle: "The hero area at the top of the Home screen"
+                title: "Illustration de l’accueil",
+                subtitle: "Présentation du titre sélectionné sur l’accueil"
             ) {
                 PerfToggleRow(
                     icon: "photo.tv",
-                    title: "Hero backdrop artwork",
-                    subtitle: "Full-screen art behind Home that changes with every card you focus — the single heaviest effect on older Apple TVs. Off: flat background; the title, info and rows are unchanged.",
+                    title: "Illustration en fond",
+                    subtitle: "Adapter le fond au titre sélectionné. Désactivé : utiliser un fond uni, plus léger sur les anciens appareils.",
                     isOn: s.heroBackdrop
                 )
                 PerfToggleRow(
                     icon: "square.stack.3d.forward.dottedline",
-                    title: "Hero crossfade",
-                    subtitle: "Dissolve when the hero art and info change: blends two full-screen images and rebuilds the title/synopsis panel on every card you focus. The main reason browsing rows feels heavier on Modern than on the other layouts. Off: art and text switch instantly — much lighter, recommended on older Apple TVs.",
+                    title: "Fondu des illustrations",
+                    subtitle: "Afficher un fondu lorsque le titre change. Désactivé : changer le fond instantanément pour alléger la navigation.",
                     isOn: s.heroCrossfade
                 )
             }
 
             SettingsGroupCard(
-                title: "Cards & rows",
-                subtitle: "Posters and the rows they live in"
+                title: "Cartes et rangées",
+                subtitle: "Affichage des affiches et des rangées"
             ) {
                 PerfToggleRow(
                     icon: "rectangle.fill.on.rectangle.fill",
-                    title: "Card shadows",
-                    subtitle: "Soft drop shadows under posters and behind a focused card. Each is an offscreen blur that re-renders on every focus move — the biggest scroll cost on older boxes. Off: flat cards with just the focus border, same layout.",
+                    title: "Ombres des cartes",
+                    subtitle: "Afficher des ombres sous les cartes. Désactivez-les pour alléger le défilement.",
                     isOn: s.cardShadows
                 )
                 PerfToggleRow(
                     icon: "arrow.up.left.and.arrow.down.right",
-                    title: "Focus zoom",
-                    subtitle: "The focused card springs slightly larger. Off: only the highlight ring marks focus — the cheapest possible focus effect.",
+                    title: "Zoom de sélection",
+                    subtitle: "Agrandir légèrement la carte sélectionnée",
                     isOn: s.focusZoom
                 )
                 // No longer gated on `theme.isAppleTVTheme`: that flag is a
@@ -85,54 +85,54 @@ struct PerformanceSettingsDetail: View {
                 // OFF because of this hidden flag.
                 PerfToggleRow(
                     icon: "move.3d",
-                    title: "Card wiggle & lift",
-                    subtitle: "The native Apple TV card effect: the focused poster raises and tilts/parallaxes as you move on the trackpad, like a Home-screen icon. The system re-composites the whole focused card as your finger moves — the heaviest per-frame focus cost, and rough on older Apple TVs. Off: cards do a light scale on focus instead, no tilt.",
+                    title: "Inclinaison des cartes",
+                    subtitle: "Incliner la carte avec le pavé tactile. Cet effet est plus coûteux sur les anciens appareils.",
                     isOn: s.cardParallax
                 )
             }
 
             SettingsGroupCard(
                 title: "Animations",
-                subtitle: "Motion across the app's chrome"
+                subtitle: "Mouvements de l’interface"
             ) {
                 PerfToggleRow(
                     icon: "sidebar.left",
-                    title: "Sidebar animation",
-                    subtitle: "The sidebar's expand/collapse spring and the dim it casts over the content — a full-screen fade composited on every open/close. Off: the sidebar and dim appear/disappear instantly.",
+                    title: "Animation du menu",
+                    subtitle: "Animer l’ouverture et la fermeture du menu",
                     isOn: s.sidebarAnimation
                 )
                 PerfToggleRow(
                     icon: "hand.tap",
-                    title: "Button & pill effects",
-                    subtitle: "Small controls (See All, tab pills, filter chips, button presses) scale and spring when focused or clicked. Off: they highlight instantly with no motion.",
+                    title: "Animation des boutons",
+                    subtitle: "Animer les boutons lorsqu’ils sont sélectionnés ou activés",
                     isOn: s.buttonAnimations
                 )
             }
 
             SettingsGroupCard(
-                title: "Artwork loading",
-                subtitle: "How poster images arrive on screen"
+                title: "Chargement des images",
+                subtitle: "Affichage des images à leur arrivée"
             ) {
                 PerfToggleRow(
                     icon: "square.and.arrow.down.on.square",
-                    title: "Preload row artwork",
-                    subtitle: "Downloads posters for rows below the fold in the background so they're ready when you scroll. Off: less background work while browsing, but posters load as they appear.",
+                    title: "Précharger les affiches",
+                    subtitle: "Charger les affiches des rangées suivantes à l’avance. Désactivé : les charger à leur apparition.",
                     isOn: s.artworkPrefetch
                 )
                 PerfToggleRow(
                     icon: "circle.lefthalf.filled",
-                    title: "Artwork fade-in",
-                    subtitle: "Posters fade in when they finish loading; each fade re-renders its card for the duration. Off: artwork pops in instantly.",
+                    title: "Fondu au chargement des images",
+                    subtitle: "Afficher les images avec un fondu au lieu de les faire apparaître instantanément",
                     isOn: s.artworkFadeIn
                 )
             }
 
             SettingsGroupCard(
                 title: "Collections",
-                subtitle: "Focus artwork on collection folder tiles"
+                subtitle: "Images des dossiers de collections"
             ) {
                 OrivioDropdown(
-                    title: "Collection focus artwork",
+                    title: "Illustration du dossier sélectionné",
                     subtitle: store.settings.collectionGifQuality.summary,
                     icon: "sparkles.tv",
                     selection: store.settings.collectionGifQuality.rawValue,
@@ -146,27 +146,27 @@ struct PerformanceSettingsDetail: View {
             }
 
             SettingsGroupCard(
-                title: "Developer",
-                subtitle: "Diagnostics — safe to leave off"
+                title: "Diagnostic avancé",
+                subtitle: "Options de diagnostic, désactivées par défaut"
             ) {
                 PerfToggleRow(
                     icon: "speedometer",
-                    title: "Show FPS overlay",
-                    subtitle: "Overlay a live frames-per-second read-out on the whole app (green = smooth, amber = some drops, red = janky), so you can see the effect of these switches while you browse. Off by default.",
+                    title: "Afficher la cadence d’images",
+                    subtitle: "Afficher la cadence pendant la navigation pour observer la fluidité",
                     isOn: s.showFPSOverlay
                 )
 
                 PerfToggleRow(
                     icon: "hand.tap",
-                    title: "Hold menu probe",
-                    subtitle: "Trace hold-Select on screen: whether a card takes focus, whether the press reaches the app, whether a long press is recognised, and whether tvOS actually builds the menu. For diagnosing hold menus that do nothing.",
+                    title: "Diagnostic de l’appui long",
+                    subtitle: "Afficher les étapes de reconnaissance de l’appui long pour diagnostiquer les menus",
                     isOn: s.showHoldProbe
                 )
 
                 PerfToggleRow(
                     icon: "waveform.path.ecg",
-                    title: "Playback diagnostics HUD",
-                    subtitle: "Live engine, fps, dropped frames, A/V drift, bitrate and buffer depth over the video. For chasing stutter on this box.",
+                    title: "Diagnostic pendant la lecture",
+                    subtitle: "Afficher cadence, images perdues, décalage audio, débit et tampon pendant la lecture",
                     isOn: s.showPlayerDiagnostics
                 )
 
@@ -174,15 +174,15 @@ struct PerformanceSettingsDetail: View {
                 // it belongs with the other two.
                 PerfToggleRow(
                     icon: "photo.stack",
-                    title: "Scrub preview frames",
-                    subtitle: "Decode a frame every 30s so the progress bar can show the scene you're seeking to. Costs a second connection and decoder alongside playback — turn off if a stream stutters.",
+                    title: "Aperçus sur la barre de lecture",
+                    subtitle: "Préparer les images d’aperçu pour parcourir la vidéo. Désactivez cette option si elle gêne la fluidité.",
                     isOn: Binding(get: { playerStore.settings.scrubPreviewsEnabled },
                                   set: { playerStore.settings.scrubPreviewsEnabled = $0 })
                 )
                 PerfToggleRow(
                     icon: "ladybug.fill",
-                    title: "Show input debug",
-                    subtitle: "Overlay the last trackpad/remote event in the player, for tuning gestures on a real Apple TV.",
+                    title: "Diagnostic de la télécommande",
+                    subtitle: "Afficher les derniers gestes et boutons reçus par le lecteur",
                     isOn: Binding(get: { playerStore.settings.showInputDebug },
                                   set: { playerStore.settings.showInputDebug = $0 })
                 )
@@ -192,8 +192,8 @@ struct PerformanceSettingsDetail: View {
                 // then pull the log with scripts/record.sh (or probe.sh).
                 PerfToggleRow(
                     icon: "dot.radiowaves.left.and.right",
-                    title: "Capture diagnostics (LAN log server)",
-                    subtitle: "Record app and playback events (navigation, buffering, stalls, seeks, source picks, errors, memory) and serve a live plain-text log at http://<this Apple TV's IP>:8123. Use scripts/record.sh <ip> to save a session. Off by default; costs a little CPU while on.",
+                    title: "Partager les diagnostics sur le réseau local",
+                    subtitle: "Enregistrer les événements de navigation et de lecture et les rendre accessibles sur votre réseau local. Désactivé par défaut.",
                     isOn: Binding(
                         get: { ProbeGate.isEnabled },
                         set: { on in
@@ -206,7 +206,7 @@ struct PerformanceSettingsDetail: View {
                 )
             }
 
-            Text("Everything ON is the app's full look. Turn things OFF top-to-bottom until the Home screen feels right — each switch only removes visual polish, never content or features. These switches are per-device and don't sync to your account.")
+            Text("Ajustez les effets pour trouver la fluidité qui vous convient. Ces réglages sont propres à cette TV.")
                 .font(.system(size: 18))
                 .foregroundStyle(theme.palette.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -219,10 +219,10 @@ struct PerformanceSettingsDetail: View {
         HStack(spacing: OrivioSpacing.md) {
             SettingsIconTile(symbol: "figure.walk.motion")
             VStack(alignment: .leading, spacing: 4) {
-                Text("Reduce Motion is on")
+                Text("Réduire les animations est activé")
                     .font(.system(size: 23, weight: .semibold))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("Your system Accessibility setting is disabling the motion effects (card wiggle & lift, hero crossfade, focus zoom, sidebar and button animations, artwork fade-in) regardless of the switches below.")
+                Text("Le réglage d’accessibilité de la TV désactive les effets de mouvement, quels que soient les choix ci-dessous.")
                     .font(.system(size: 19))
                     .foregroundStyle(theme.palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

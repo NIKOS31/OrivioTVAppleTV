@@ -614,7 +614,7 @@ final class StreamsViewModel: ObservableObject {
         for addon in addonManager.addons where addon.enabled {
             let m = addon.manifest
             if m.isPlaceholder {
-                skipped.append((addon.id, m.name, "Not working — couldn't load this add-on. Check its URL or refresh add-ons."))
+                skipped.append((addon.id, m.name, "Addon indisponible. Vérifiez son lien ou actualisez vos addons."))
             } else if m.providesStreams, !addon.handles(id: fetchID) {
                 let prefixes = (m.idPrefixes ?? []).joined(separator: ", ")
                 skipped.append((addon.id, m.name, "Doesn't claim this title (id \(fetchID) vs prefixes [\(prefixes)])"))
@@ -963,7 +963,7 @@ struct StreamsView: View {
                     meta: viewModel.meta,
                     status: resolving
                         ? "Resolving via \(debrid.resolverProvider?.displayName ?? (torrent.settings.isConfigured ? "TorrServer" : "debrid"))"
-                        : (isNTV ? "Recherche de la meilleure source" : "Finding the best source")
+                        : (isNTV ? "Recherche de la meilleure source" : "Recherche de la meilleure source")
                 )
                 .transition(.opacity)
                 // Back during a slow sweep/resolve = "let me pick myself":
@@ -1020,7 +1020,7 @@ struct StreamsView: View {
                             holdsFocus: true
                         )
                         .frame(maxHeight: 220)
-                        Text(isNTV ? "Retour pour annuler et choisir une autre source" : "Press Back to cancel and pick another source")
+                        Text(isNTV ? "Retour pour annuler et choisir une autre source" : "Retour pour annuler et choisir une autre source")
                             .font(.system(size: 21))
                             .foregroundStyle(theme.palette.textTertiary)
                     }
@@ -1269,7 +1269,7 @@ struct StreamsView: View {
             for task in sweepTasks { task.cancel() }
             sweepTasks = []
         }
-        .alert(isNTV ? "Impossible d’ouvrir cette source" : "Couldn't resolve stream", isPresented: Binding(
+        .alert(isNTV ? "Impossible d’ouvrir cette source" : "Impossible d’ouvrir cette source", isPresented: Binding(
             get: { resolveError != nil },
             set: { if !$0 { resolveError = nil; autoLinkResolvingLatch = false } }
         )) {
@@ -1295,7 +1295,7 @@ struct StreamsView: View {
     @ViewBuilder
     private var sourcesPanel: some View {
         if autoLinkResolving {
-            OrivioLoadingView(label: isNTV ? "Recherche de la meilleure source…" : "Finding the best source…", holdsFocus: true)
+            OrivioLoadingView(label: isNTV ? "Recherche de la meilleure source…" : "Recherche de la meilleure source…", holdsFocus: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.groups.isEmpty {
             if viewModel.isLoading {
@@ -1305,8 +1305,8 @@ struct StreamsView: View {
                 VStack(spacing: OrivioSpacing.lg) {
                     OrivioEmptyState(
                         icon: "play.slash",
-                        title: isNTV ? "Aucune source disponible" : "No sources found",
-                        message: isNTV ? "Aucun addon n’a fourni de lien lisible pour ce titre. Ajoute un addon de sources ou vérifie sa configuration." : "None of your installed addons returned a playable link for this title. Install a stream addon in Settings."
+                        title: isNTV ? "Aucune source disponible" : "Aucune source disponible",
+                        message: isNTV ? "Aucun addon n’a fourni de lien lisible pour ce titre. Ajoute un addon de sources ou vérifie sa configuration." : "Aucun addon n’a fourni de source lisible pour ce titre. Ajoutez un addon de sources dans les réglages."
                     )
                     .accessibilityIdentifier("ntv.sources.empty")
                     // Explain any addon that wasn't even queried, so an addon
@@ -1386,7 +1386,7 @@ struct StreamsView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: OrivioSpacing.sm) {
                 AddonFilterChip(
-                    title: isNTV ? "Tous" : "All",
+                    title: isNTV ? "Tous" : "Tous",
                     selected: viewModel.selectedAddon == nil
                 ) { viewModel.selectAddon(nil) }
 
@@ -1493,7 +1493,7 @@ struct StreamsView: View {
             if torrent.settings.isConfigured {
                 resolveViaP2P(entry, all)
             } else {
-                resolveError = "Add a debrid API key, or turn on P2P (TorrServer) in Settings → Integrations, to play torrent sources."
+                resolveError = "Connectez un service de débridage ou TorrServer dans Réglages → Intégrations pour lire ces sources."
             }
             return
         }
@@ -1532,7 +1532,7 @@ struct StreamsView: View {
                 )
             }
             let (result, resolvedBy) = outcome
-                ?? (.failed("Timed out after \(Int(budget))s"), nil)
+                ?? (.failed("Délai dépassé après \(Int(budget)) s"), nil)
             // The viewer cancelled from the resolve spinner — a late success
             // must not shove the player over the list they went back to.
             guard !Task.isCancelled else { return }
@@ -1557,12 +1557,12 @@ struct StreamsView: View {
                 onSelect(resolvedEntry, all)
             case .missingKey:
                 if autoAdvance(after: entry, all) { return }
-                resolveError = "\(provider.displayName) API key is missing."
+                resolveError = "La clé API de \(provider.displayName) est manquante."
             case .notCached:
                 if autoAdvance(after: entry, all) { return }
                 resolveError = debrid.orderedResolvers.count > 1
-                    ? "This torrent isn't cached on any of your debrid services. Try another source."
-                    : "This torrent isn't cached on \(provider.displayName). Try another source."
+                    ? "Cette source n’est disponible dans aucun de vos services de débridage. Essayez-en une autre."
+                    : "Cette source n’est pas disponible chez \(provider.displayName). Essayez-en une autre."
             case .failed(let message):
                 if autoAdvance(after: entry, all) { return }
                 resolveError = "\(provider.displayName): \(message)"
@@ -1662,8 +1662,8 @@ struct StreamsView: View {
             guard viewModel.totalAddons > 0 else { return "Recherche dans les addons" }
             return "Recherche dans les addons \(viewModel.finishedAddons)/\(viewModel.totalAddons)"
         }
-        guard viewModel.totalAddons > 0 else { return "Searching addons" }
-        return "Searching addons \(viewModel.finishedAddons)/\(viewModel.totalAddons)"
+        guard viewModel.totalAddons > 0 else { return "Recherche dans les addons" }
+        return "Recherche dans les addons \(viewModel.finishedAddons)/\(viewModel.totalAddons)"
     }
 
     private var backdrop: some View {
@@ -1750,13 +1750,13 @@ struct StreamsView: View {
                         // still working, failed, or answered with nothing.
                         if group.entries.isEmpty,
                            !viewModel.finishedAddonNames.contains(group.addonName) {
-                            Text("Searching…")
+                            Text("Recherche…")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(theme.palette.textTertiary)
                                 .padding(.leading, 8)
                         } else if group.entries.isEmpty,
                            let reason = viewModel.failedAddons[group.addonName] {
-                            Text("Not working — \(reason)")
+                            Text("Indisponible : \(reason)")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(theme.palette.textSecondary)
                                 .padding(.leading, 8)
@@ -1831,7 +1831,7 @@ struct StreamsView: View {
                 Button {
                     ExternalPlayers.openInInfuse(urlString: streamURL)
                 } label: {
-                    Label("Play in Infuse", systemImage: "arrow.up.forward.app.fill")
+                    Label("Lire avec Infuse", systemImage: "arrow.up.forward.app.fill")
                 }
             }
         }
@@ -1886,7 +1886,7 @@ struct StreamRowView: View {
             // cached links sort first.
             if entry.stream.isTorrent, entry.isInstant {
                 MetaBadge(
-                    text: "⚡︎ Cached",
+                    text: "⚡︎ Disponible",
                     tint: OrivioPrimitives.success.opacity(0.22),
                     textColor: OrivioPrimitives.success
                 )

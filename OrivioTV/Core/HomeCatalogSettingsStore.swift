@@ -13,17 +13,17 @@ enum HomeLayout: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .modern: return "Modern View"
-        case .classic: return "Classic View"
-        case .grid: return "Grid View"
+        case .modern: return "Vue moderne"
+        case .classic: return "Vue classique"
+        case .grid: return "Vue en grille"
         }
     }
 
     var summary: String {
         switch self {
-        case .modern: return "Cinematic hero that follows focus, with rows below"
-        case .classic: return "Traditional rows with a subtle focus backdrop"
-        case .grid: return "Dense poster grids for fast browsing"
+        case .modern: return "Le fond suit le titre sélectionné au-dessus des rangées"
+        case .classic: return "Rangées classiques avec un fond discret"
+        case .grid: return "Grilles d’affiches pour parcourir rapidement les titres"
         }
     }
 }
@@ -48,20 +48,20 @@ enum HeroLayout: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .rolling:     return "Rolling Hero"
-        case .pinnedFocus: return "Pinned Focus"
-        case .hybrid:      return "Hybrid"
+        case .rolling:     return "Sélection défilante"
+        case .pinnedFocus: return "Sélection fixe"
+        case .hybrid:      return "Hybride"
         }
     }
 
     var summary: String {
         switch self {
         case .rolling:
-            return "A banner that cycles the top titles on its own. Browsing doesn't change it."
+            return "Faire défiler les titres à découvrir indépendamment de la navigation"
         case .pinnedFocus:
-            return "A fixed header showing whichever card you're on. Never cycles."
+            return "Afficher le titre sélectionné dans une zone fixe"
         case .hybrid:
-            return "Cycles at the top, then follows what you're browsing once you move down into the rows."
+            return "Faire défiler la sélection, puis suivre le titre parcouru dans les rangées"
         }
     }
 
@@ -123,9 +123,9 @@ enum PosterSize: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .small: return "Small"
-        case .medium: return "Medium"
-        case .large: return "Large"
+        case .small: return "Petit"
+        case .medium: return "Moyen"
+        case .large: return "Grand"
         }
     }
     /// Portrait poster width (points). Height is width × 3/2.
@@ -145,14 +145,14 @@ enum ContinueWatchingSortMode: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .recentlyWatched: return "Recently watched"
-        case .streamingStyle: return "Streaming style"
+        case .recentlyWatched: return "Dernière lecture"
+        case .streamingStyle: return "Ordre de reprise"
         }
     }
     var summary: String {
         switch self {
-        case .recentlyWatched: return "Most recently played first"
-        case .streamingStyle: return "Titles you're mid-episode on first, then the rest"
+        case .recentlyWatched: return "Afficher les titres lus le plus récemment en premier"
+        case .streamingStyle: return "Afficher les épisodes en cours avant les autres titres"
         }
     }
 }

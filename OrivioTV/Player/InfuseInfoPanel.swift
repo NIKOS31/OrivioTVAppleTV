@@ -738,15 +738,15 @@ struct InfuseInfoPanel: View {
     }
 
     private func fontLabel(_ name: String) -> String {
-        PlayerSettings.subtitleFontOptions.first { $0.0 == name }?.1 ?? "Default"
+        PlayerSettings.subtitleFontOptions.first { $0.0 == name }?.1 ?? "Par défaut"
     }
 
     private func colorLabel(_ hex: String) -> String {
-        PlayerSettings.subtitleColorOptions.first { $0.0.caseInsensitiveCompare(hex) == .orderedSame }?.1 ?? "White"
+        PlayerSettings.subtitleColorOptions.first { $0.0.caseInsensitiveCompare(hex) == .orderedSame }?.1 ?? "Blanc"
     }
 
     private func offsetLabel(_ value: Int) -> String {
-        value == 0 ? "Default" : (value > 0 ? "Up \(value)" : "Down \(-value)")
+        value == 0 ? "Par défaut" : (value > 0 ? "Plus haut de \(value)" : "Plus bas de \(-value)")
     }
 
     // MARK: Layout helpers
@@ -1117,7 +1117,7 @@ struct InfusePickerScreen: View {
         case .episodes:
             return rows.isEmpty ? "La liste des épisodes n’est pas encore chargée" : nil
         case .items(let items):
-            return items.isEmpty ? "Nothing to choose" : nil
+            return items.isEmpty ? "Aucun choix disponible" : nil
         }
     }
 

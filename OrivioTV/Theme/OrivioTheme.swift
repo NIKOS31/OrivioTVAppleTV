@@ -154,7 +154,7 @@ enum OrivioThemes {
         backgroundCard: Color(hex: 0x241A1F)
     )
     static let white = ThemePalette(
-        id: "white", displayName: "White",
+        id: "white", displayName: "Blanc",
         secondary: OrivioPrimitives.neutral100,
         secondaryVariant: OrivioPrimitives.neutral200,
         onSecondary: OrivioPrimitives.neutral925,
@@ -214,9 +214,9 @@ enum ATVAppearance: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .system: return "Automatic"
+        case .system: return "Automatique"
         case .light: return "Light"
-        case .dark: return "Dark"
+        case .dark: return "Sombre"
         }
     }
     /// Value handed to `.preferredColorScheme` (nil = follow the system).
@@ -235,10 +235,10 @@ enum AppFont: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .system: return "System"
-        case .rounded: return "Rounded"
-        case .serif: return "Serif"
-        case .monospaced: return "Monospaced"
+        case .system: return "Système"
+        case .rounded: return "Arrondie"
+        case .serif: return "Avec empattements"
+        case .monospaced: return "Chasse fixe"
         }
     }
     var design: Font.Design {
@@ -258,14 +258,14 @@ enum ExperienceMode: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .essential: return "Essential"
-        case .advanced: return "Advanced"
+        case .essential: return "Essentiel"
+        case .advanced: return "Avancé"
         }
     }
     var summary: String {
         switch self {
-        case .essential: return "A simpler settings screen with just the everyday options"
-        case .advanced: return "Every option, including engine, OSD and tuning controls"
+        case .essential: return "Les réglages utiles au quotidien"
+        case .advanced: return "Tous les réglages, y compris les options avancées du lecteur"
         }
     }
     var isAdvanced: Bool { self == .advanced }
@@ -278,16 +278,16 @@ enum SettingsUiStyle: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .classic: return "Classic"
+        case .classic: return "Classique"
         case .zen: return "Zen"
         case .horizon: return "Horizon"
         }
     }
     var summary: String {
         switch self {
-        case .classic: return "Soft rounded cards"
-        case .zen: return "Pill-shaped rows"
-        case .horizon: return "Sharp, squared edges"
+        case .classic: return "Cartes aux angles arrondis"
+        case .zen: return "Lignes en forme de capsule"
+        case .horizon: return "Angles droits"
         }
     }
     /// Corner radius for settings rows in this style.
@@ -338,7 +338,7 @@ enum PlayerLayout: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .classic: return "Classic"
+        case .classic: return "Classique"
         case .fusion: return "Fusion"
         }
     }

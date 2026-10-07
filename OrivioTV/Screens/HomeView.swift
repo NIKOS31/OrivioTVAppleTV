@@ -466,7 +466,7 @@ final class HomeViewModel: ObservableObject {
         if isLoading {
             // No artificial pause — go straight to fetching so the first-run
             // load is as fast as the network allows.
-            loadingStep = "Loading catalogs…"
+            loadingStep = "Chargement des catalogues…"
         }
 
         // REVALIDATE: fetch the catalogs, a bounded number at a time.
@@ -587,7 +587,7 @@ final class HomeViewModel: ObservableObject {
         // republishing this run's (older) row list over it.
         guard isCurrent() else { return }
 
-        if isLoading { loadingStep = "Loading artwork…" }
+        if isLoading { loadingStep = "Chargement des illustrations…" }
 
         let ordered = fetched.sorted { $0.index < $1.index }
         // Per-row fallback, so one dead catalog can't blank its row and an
@@ -616,7 +616,7 @@ final class HomeViewModel: ObservableObject {
         // cached ones, and an already-cached URL costs a `fileExists` here.
         warmSpotlightArt()
         if entries.isEmpty {
-            loadError = "No catalogs available. Check your addons and network connection."
+            loadError = "Aucun catalogue disponible. Vérifiez vos addons et votre connexion."
         }
         isLoading = false
         loadingStep = nil
@@ -646,8 +646,8 @@ final class HomeViewModel: ObservableObject {
         // APK row header format: "{Catalog Name} - {Type}" (e.g. "Trending Movies - Movie").
         let typeLabel: String
         switch request.catalog.type {
-        case "series", "tv": typeLabel = "Series"
-        case "movie": typeLabel = "Movie"
+        case "series", "tv": typeLabel = "Séries"
+        case "movie": typeLabel = "Film"
         default: typeLabel = request.catalog.type.capitalized
         }
         let baseName = request.catalog.name ?? request.catalog.id.capitalized
@@ -1576,9 +1576,11 @@ struct HomeView: View {
                         .font(.system(size: 38, weight: .semibold))
                         .foregroundStyle(NTVDesign.textPrimary)
                         .accessibilityIdentifier("ntv.home.heading")
+                        .padding(.horizontal, OrivioSpacing.huge)
                     if perf.settings.heroBackdrop {
                         NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
                                          onSelect: heroSelect, onBack: onHomeBack)
+                            .padding(.horizontal, OrivioSpacing.huge)
                             .focusSection()
                     }
                     if viewModel.entries.isEmpty && !viewModel.isLoading {
@@ -1589,16 +1591,15 @@ struct HomeView: View {
                             onOpenSettings: onOpenSettings,
                             onRetry: { Task { await reload() } }
                         )
+                        .padding(.horizontal, OrivioSpacing.huge)
                     } else {
                         rowsContent
                     }
                 }
-                .modifier(RailClearingLeading(withRail: 120, withoutRail: OrivioSpacing.huge))
-                .padding(.trailing, OrivioSpacing.huge)
+                .modifier(RailClearingLeading(withRail: 120, withoutRail: 0))
                 .padding(.top, OrivioSpacing.lg)
                 .padding(.bottom, 120)
             }
-            .scrollClipDisabled()
         }
     }
 
@@ -1758,7 +1759,7 @@ struct HomeView: View {
                 .frame(height: 460)
         } else if let error = viewModel.loadError, viewModel.entries.isEmpty {
             VStack(spacing: OrivioSpacing.lg) {
-                OrivioEmptyState(icon: "antenna.radiowaves.left.and.right.slash", title: "Nothing to show", message: error)
+                OrivioEmptyState(icon: "antenna.radiowaves.left.and.right.slash", title: "Aucun contenu à afficher", message: error)
                 Button {
                     Task { await reload() }
                 } label: {
@@ -1856,7 +1857,7 @@ struct HomeView: View {
         let pinned = liveFavorites.homeChannels
         if !pinned.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-                RowHeader(title: "Live Channels")
+                RowHeader(title: "Chaînes en direct")
                     .padding(.leading, OrivioSpacing.sm)
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
@@ -2739,7 +2740,7 @@ private struct ContinueWatchingRow: View {
         // Focus model mirrors HomePosterRow (plain @FocusState, no .focusScope /
         // .focusSection).
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-            RowHeader(title: "Continue Watching")
+            RowHeader(title: "Continuer à regarder")
             ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 // Wider gap than the poster rows (.xl, not .lg): these cards
@@ -2906,7 +2907,7 @@ private struct HomeLoadingBackdrop: View {
     @EnvironmentObject private var theme: ThemeManager
     let step: String?
 
-    private let steps = ["Loading add-ons…", "Loading catalogs…", "Loading artwork…"]
+    private let steps = ["Chargement des addons…", "Chargement des catalogues…", "Chargement des illustrations…"]
     private var activeIndex: Int { steps.firstIndex(of: step ?? "") ?? 0 }
 
     var body: some View {
@@ -2967,7 +2968,7 @@ struct RetryLabel: View {
         HStack(spacing: OrivioSpacing.sm) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 20, weight: .semibold))
-            Text("Try Again")
+            Text("Réessayer")
                 .font(.system(size: 24, weight: .semibold))
         }
         .foregroundStyle(isFocused ? theme.palette.onSecondary : theme.palette.textPrimary)
@@ -2986,7 +2987,7 @@ struct RetryLabel: View {
 struct SeeAllLabel: View {
     @EnvironmentObject private var theme: ThemeManager
     @Environment(\.isFocused) private var isFocused
-    var text: String = "See All"
+    var text: String = "Tout voir"
 
     var body: some View {
         HStack(spacing: 6) {

@@ -20,33 +20,41 @@ struct ATVSettingsView: View {
     }
 
     var body: some View {
+        if theme.palette.id == NTVDesign.palette.id {
+            NTVSettingsWorkspace(onOpenProfiles: onOpenProfiles)
+        } else {
+            legacyBody
+        }
+    }
+
+    private var legacyBody: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
-                Text("Settings")
+                Text("Réglages")
                     .font(FusionType.pageTitle(theme.font))
                     .foregroundStyle(theme.palette.textPrimary)
                     .padding(.top, OrivioSpacing.xl)
 
-                ATVSettingsSection(title: "Appearance") {
+                ATVSettingsSection(title: "Apparence") {
                     NavigationLink(value: SettingsCategory.appearance) {
-                        ATVRowLabel(title: "Appearance", value: theme.palette.displayName)
+                        ATVRowLabel(title: "Apparence", value: theme.palette.displayName)
                     }
                     .buttonStyle(ATVRowButtonStyle())
                 }
 
-                ATVSettingsSection(title: "Users & Accounts") {
+                ATVSettingsSection(title: "Profils et comptes") {
                     NavigationLink(value: SettingsCategory.account) {
-                        ATVRowLabel(title: "Account")
+                        ATVRowLabel(title: "Compte")
                     }
                     .buttonStyle(ATVRowButtonStyle())
 
                     Button(action: onOpenProfiles) {
-                        ATVRowLabel(title: "Switch Profile", showChevron: false)
+                        ATVRowLabel(title: "Changer de profil", showChevron: false)
                     }
                     .buttonStyle(ATVRowButtonStyle())
                 }
 
-                ATVSettingsSection(title: "General") {
+                ATVSettingsSection(title: "Général") {
                     ForEach(generalCategories) { category in
                         NavigationLink(value: category) {
                             ATVRowLabel(title: category.title)

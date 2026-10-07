@@ -2,6 +2,27 @@ import XCTest
 @testable import OrivioTV
 
 final class NTVCoreTests: XCTestCase {
+    func testTouchScrubSlowDragKeepsScenePrecision() {
+        let delta = NTVScrubMotion.delta(points: 2, elapsed: 0.1, duration: 7200)
+        XCTAssertGreaterThan(delta, 0)
+        XCTAssertLessThanOrEqual(delta, 10, "A small slow drag must remain within a few seconds of the scene.")
+    }
+
+    func testTouchScrubFastSwipeTraversesLongFilm() {
+        let slow = NTVScrubMotion.delta(points: 100, elapsed: 1, duration: 7200)
+        let fast = NTVScrubMotion.delta(points: 100, elapsed: 0.1, duration: 7200)
+        XCTAssertGreaterThan(fast, 600, "A fast swipe must travel more than ten minutes in a two-hour film.")
+        XCTAssertGreaterThan(fast, slow * 4)
+        XCTAssertEqual(NTVScrubMotion.delta(points: -100, elapsed: 0.1, duration: 7200), -fast)
+    }
+
+    func testTouchScrubRejectsUnknownDurationAndInvalidSamples() {
+        XCTAssertEqual(NTVScrubMotion.delta(points: 100, elapsed: 0.1, duration: 0), 0)
+        XCTAssertEqual(NTVScrubMotion.delta(points: .nan, elapsed: 0.1, duration: 7200), 0)
+        XCTAssertEqual(NTVScrubMotion.delta(points: 100, elapsed: 0, duration: 7200), 0)
+        XCTAssertTrue(NTVScrubMotion.delta(points: .greatestFiniteMagnitude, elapsed: 0.001, duration: .greatestFiniteMagnitude).isFinite)
+    }
+
     func testOldProfileDecodePreservesSettings() throws {
         let data = Data(##"{"id":3,"name":"Invité","avatarColorHex":"#123456","avatarURL":"https://example.invalid/old.png","pinEnabled":true}"##.utf8)
         let profile = try JSONDecoder().decode(UserProfile.self, from: data)

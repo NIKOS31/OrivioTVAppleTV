@@ -10,14 +10,14 @@ enum AppTab: Int, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .home: return "Home"
-        case .movies: return "Movies"
-        case .series: return "Series"
-        case .addons: return "Add-ons"
-        case .search: return "Search"
-        case .library: return "Library"
-        case .liveTV: return "Live TV"
-        case .settings: return "Settings"
+        case .home: return "Accueil"
+        case .movies: return "Films"
+        case .series: return "Séries"
+        case .addons: return "Addons"
+        case .search: return "Recherche"
+        case .library: return "Bibliothèque"
+        case .liveTV: return "TV en direct"
+        case .settings: return "Réglages"
         }
     }
 

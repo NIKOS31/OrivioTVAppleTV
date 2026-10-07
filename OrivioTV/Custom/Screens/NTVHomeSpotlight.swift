@@ -44,7 +44,7 @@ struct NTVCatalogSpotlight: View {
                     .font(.system(size: 40, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
-                Text([item.year, item.genres?.prefix(2).joined(separator: " · ")]
+                Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.system(size: 20))
                     .foregroundStyle(NTVDesign.textSecondary)
@@ -81,7 +81,7 @@ struct NTVHomeSpotlight: View {
                         .font(.system(size: 44, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                    Text([item.year, item.genres?.prefix(2).joined(separator: " · ")]
+                    Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
                         .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.system(size: 20))
                         .foregroundStyle(NTVDesign.textSecondary)
@@ -104,7 +104,6 @@ struct NTVHomeSpotlight: View {
                 }
                 .foregroundStyle(NTVDesign.textPrimary)
                 .frame(maxWidth: 760, alignment: .leading)
-                .padding(28)
             }
             .frame(height: 310)
             .clipShape(RoundedRectangle(cornerRadius: NTVDesign.cardRadius))

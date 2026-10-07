@@ -540,17 +540,6 @@ struct ProfileEditView: View {
                             .onSubmit { commitName() }
                     }
 
-                    sectionLabel("Couleur")
-                    HStack(spacing: OrivioSpacing.md) {
-                        ForEach(ProfileStore.avatarColors, id: \.self) { hex in
-                            Button { profiles.setColor(id: profile.id, hex: hex) } label: {
-                                ColorSwatchLabel(hex: hex, selected: current.avatarColorHex == hex)
-                            }
-                            .buttonStyle(PlainCardButtonStyle())
-                        }
-                    }
-                    .focusSection()
-
                     sectionLabel("Personnage")
                     LazyVGrid(columns: characterColumns, alignment: .center, spacing: 24) {
                         Button { profiles.setAvatar(id: profile.id, avatarID: nil) } label: {
@@ -592,6 +581,17 @@ struct ProfileEditView: View {
                     .foregroundStyle(theme.palette.textPrimary)
                     .frame(maxWidth: 1440, alignment: .center)
                     .frame(maxWidth: .infinity, alignment: .center)
+                    .focusSection()
+
+                    sectionLabel("Couleur")
+                    HStack(spacing: OrivioSpacing.md) {
+                        ForEach(ProfileStore.avatarColors, id: \.self) { hex in
+                            Button { profiles.setColor(id: profile.id, hex: hex) } label: {
+                                ColorSwatchLabel(hex: hex, selected: current.avatarColorHex == hex)
+                            }
+                            .buttonStyle(PlainCardButtonStyle())
+                        }
+                    }
                     .focusSection()
 
                     if !profiles.avatarCatalog.isEmpty {

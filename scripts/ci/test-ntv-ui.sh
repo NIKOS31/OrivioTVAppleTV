@@ -80,7 +80,9 @@ sleep 1
 xcrun simctl launch "$simulator" "$preview_bundle" > "$output/logs/launch-preview.log"
 sleep 5
 kill -INT "$record_pid"
-wait "$record_pid"
+record_status=0
+wait "$record_pid" || record_status=$?
+if ((record_status != 0 && record_status != 130)); then exit "$record_status"; fi
 trap - EXIT
 [[ -s "$output/screenshots/ntv-launch.mp4" ]]
 

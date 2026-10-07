@@ -20,6 +20,13 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.select)
         remote.press(.right)
         let entry = app.buttons["ntv.integration.twitch"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        // Entering a two-column pane preserves the remote's vertical position.
+        // Reach the first service naturally instead of assuming Right lands there.
+        for _ in 0..<7 {
+            if entry.hasFocus { break }
+            remote.press(.up)
+        }
         XCTAssertTrue(focused(entry, timeout: 5))
         remote.press(.select)
         let connect = app.buttons["ntv.twitch.connect"]

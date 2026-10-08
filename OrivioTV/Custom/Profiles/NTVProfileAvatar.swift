@@ -34,18 +34,18 @@ enum NTVProfileAvatar: String, CaseIterable, Identifiable {
     }
     var title: String {
         switch self {
-        case .glasses: return "Lunettes"
-        case .curls: return "Boucles"
-        case .ginger: return "Roux"
-        case .bob: return "Carré"
-        case .silver: return "Argent"
-        case .braids: return "Tresses"
-        case .cap: return "Casquette"
-        case .beard: return "Barbe"
-        case .freckles: return "Rousse"
-        case .ponytail: return "Cheveux attachés"
-        case .shortCurls: return "Boucles courtes"
-        case .roundGlasses: return "Lunettes rondes"
+        case .glasses: return "Niko"
+        case .curls: return "Lina"
+        case .ginger: return "Émile"
+        case .bob: return "Zoé"
+        case .silver: return "Gabriel"
+        case .braids: return "Inès"
+        case .cap: return "Noé"
+        case .beard: return "Adam"
+        case .freckles: return "Lou"
+        case .ponytail: return "Emma"
+        case .shortCurls: return "Sacha"
+        case .roundGlasses: return "Milo"
         }
     }
 }

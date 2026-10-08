@@ -506,7 +506,8 @@ struct ProfileEditView: View {
     @State private var pinError: String?
     @State private var confirmingDelete = false
     @State private var editingCollection: OrivioCollection?
-    @FocusState private var avatarFocus: String?
+    private enum EditorFocus: Hashable { case avatar(String), name, done }
+    @FocusState private var editorFocus: EditorFocus?
     private let characterColumns = [GridItem(.adaptive(minimum: 184, maximum: 184), spacing: 24, alignment: .top)]
 
     private var current: UserProfile {
@@ -518,17 +519,26 @@ struct ProfileEditView: View {
     var body: some View {
         ZStack {
             ATVBackground()
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
+            VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Text("Personnaliser le profil").font(.system(size: 40, weight: .bold))
                             .foregroundStyle(theme.palette.textPrimary)
                             .accessibilityIdentifier("ntv.profile.edit.heading")
                         Spacer()
                         Button("Terminé") { commitName(); onDone() }
+                            .buttonStyle(NTVActionButtonStyle())
+                            .focused($editorFocus, equals: .done)
                             .accessibilityIdentifier("ntv.profile.done")
+                            .onMoveCommand { direction in
+                                if direction == .down { editorFocus = .name }
+                            }
                     }
+                    .padding(.horizontal, OrivioSpacing.huge)
+                    .padding(.vertical, OrivioSpacing.lg)
+                    .focusSection()
 
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
                     HStack(spacing: OrivioSpacing.lg) {
                         ProfileAvatarView(profile: current, size: 120)
                         TextField("Nom", text: $name)
@@ -537,7 +547,15 @@ struct ProfileEditView: View {
                             .padding(.vertical, OrivioSpacing.md)
                             .background(theme.palette.field, in: RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous))
                             .frame(maxWidth: 560)
+                            .focused($editorFocus, equals: .name)
+                            .accessibilityIdentifier("ntv.profile.name")
                             .onSubmit { commitName() }
+                            .onMoveCommand { direction in
+                                if direction == .up { editorFocus = .done }
+                                else if direction == .down {
+                                    editorFocus = .avatar(current.localAvatarID ?? "initial")
+                                }
+                            }
                     }
 
                     sectionLabel("Personnage")
@@ -555,7 +573,8 @@ struct ProfileEditView: View {
                         }
                         .buttonStyle(PlainCardButtonStyle())
                         .accessibilityIdentifier("ntv.profile.avatar.initial")
-                        .focused($avatarFocus, equals: "initial")
+                        .focused($editorFocus, equals: .avatar("initial"))
+                        .onMoveCommand { moveFromAvatar($0, id: "initial") }
                         ForEach(NTVProfileAvatar.allCases) { avatar in
                             Button { profiles.setLocalAvatar(id: profile.id, avatar: avatar) } label: {
                                 VStack(spacing: 12) {
@@ -575,7 +594,8 @@ struct ProfileEditView: View {
                             .accessibilityLabel(avatar.title)
                             .accessibilityValue(current.localAvatarID == avatar.id ? "Sélectionné" : "")
                             .accessibilityIdentifier("ntv.profile.avatar.\(avatar.id)")
-                            .focused($avatarFocus, equals: avatar.id)
+                            .focused($editorFocus, equals: .avatar(avatar.id))
+                            .onMoveCommand { moveFromAvatar($0, id: avatar.id) }
                         }
                     }
                     .foregroundStyle(theme.palette.textPrimary)
@@ -663,14 +683,14 @@ struct ProfileEditView: View {
                 }
                 .padding(OrivioSpacing.huge)
             }
-            .scrollClipDisabled()
+            }
         }
         // The preference belongs to the entire editor. A preference limited
         // to the character row lets the earlier Name field take initial focus.
-        .defaultFocus($avatarFocus, current.localAvatarID ?? "initial")
+        .defaultFocus($editorFocus, .avatar(current.localAvatarID ?? "initial"))
         .onAppear {
             name = current.name
-            avatarFocus = current.localAvatarID.flatMap(NTVProfileAvatar.init(rawValue:))?.id ?? "initial"
+            editorFocus = .avatar(current.localAvatarID.flatMap(NTVProfileAvatar.init(rawValue:))?.id ?? "initial")
         }
         // Same as pressing Done: commit the pending name edit, then dismiss.
         .onExitCommand { commitName(); onDone() }
@@ -891,6 +911,13 @@ struct ProfileEditView: View {
             }
         }
         .padding(.top, OrivioSpacing.lg)
+    }
+
+    private func moveFromAvatar(_ direction: MoveCommandDirection, id: String) {
+        // Horizontal moves and second-row Up retain native grid navigation.
+        // From the top row, Up reaches Name, then Up reaches the pinned Done.
+        let topRow = ["initial"] + NTVProfileAvatar.allCases.prefix(6).map(\.id)
+        if direction == .up, topRow.contains(id) { editorFocus = .name }
     }
 
     private func sectionLabel(_ text: String) -> some View {

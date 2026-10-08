@@ -2,6 +2,21 @@ import XCTest
 @testable import OrivioTV
 
 final class NTVSecurityTests: XCTestCase {
+    @MainActor
+    func testUnconfiguredAccountDoesNotStartLoginOrShowAnError() async {
+        let session = stubSession()
+        defer { session.invalidateAndCancel(); AccountRequestGate.reset() }
+        let request = expectation(description: "An unconfigured account cannot send a request")
+        request.isInverted = true
+        AccountRequestGate.started = { request.fulfill() }
+        let manager = OrivioAccountManager(urlSession: session, baseURL: "", fallbackURL: "", restore: false)
+        manager.startQRLogin()
+        await fulfillment(of: [request], timeout: 0.1)
+        XCTAssertNil(manager.qrLogin)
+        XCTAssertNil(manager.errorMessage)
+        XCTAssertEqual(manager.authState, .signedOut)
+    }
+
     func testAddonDiagnosticsNeverEchoPrivateURLsOrErrorContents() {
         let sentinel = "PRIVATE-ADDON-SENTINEL"
         for raw in ["https://user:\(sentinel)@private.invalid/\(sentinel)/manifest.json?key=\(sentinel)",

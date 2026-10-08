@@ -68,7 +68,9 @@ struct WelcomeView: View {
             guard signedIn, step == .choose || step == .email else { return }
             onFinished()
         }
-        .onAppear { if account.qrLogin == nil { account.startQRLogin() } }
+        .onAppear {
+            if OrivioConfig.isConfigured, account.qrLogin == nil { account.startQRLogin() }
+        }
         .onDisappear { account.cancelQRLogin() }
     }
 
@@ -116,7 +118,7 @@ struct WelcomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let error = account.errorMessage {
+            if OrivioConfig.isConfigured, let error = account.errorMessage {
                 Text(error)
                     .font(.system(size: 20))
                     .foregroundStyle(OrivioPrimitives.red300)

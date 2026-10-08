@@ -92,6 +92,17 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(app.staticTexts["ntv.profile.edit.heading"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["ntv.profile.avatar.ntv.glasses"].exists)
         capture("ntv-profile-real-entry")
+        let done = app.buttons["ntv.profile.done"]
+        for _ in 0..<3 {
+            if done.hasFocus { break }
+            remote.press(.up)
+        }
+        XCTAssertTrue(focused(done, timeout: 5), "Done must be reachable from the avatar grid.")
+        XCTAssertTrue(screen.contains(done.frame), "The Done control remains visible above scrolling settings.")
+        capture("ntv-profile-done-focused")
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["Gérer les profils"].waitForExistence(timeout: 5), "Selecting Done must close the editor.")
+        XCTAssertFalse(app.staticTexts["ntv.profile.edit.heading"].exists)
         app.terminate()
     }
 
@@ -128,6 +139,18 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.left)
         XCTAssertTrue(focused(initial, timeout: 5))
         remote.press(.select)
+        let done = app.buttons["ntv.profile.done"]
+        for _ in 0..<3 {
+            if done.hasFocus { break }
+            remote.press(.up)
+        }
+        XCTAssertTrue(focused(done, timeout: 5))
+        remote.press(.down)
+        XCTAssertTrue(focused(app.textFields["ntv.profile.name"], timeout: 5))
+        remote.press(.up)
+        XCTAssertTrue(focused(done, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 10))
         app.terminate()
         app.launch()
         XCTAssertTrue(initial.waitForExistence(timeout: 20))

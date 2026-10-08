@@ -78,7 +78,7 @@ record_pid=$!
 trap 'kill -INT "$record_pid" 2>/dev/null || true' EXIT
 sleep 1
 xcrun simctl launch "$simulator" "$preview_bundle" > "$output/logs/launch-preview.log"
-sleep 5
+sleep 7
 kill -INT "$record_pid"
 record_status=0
 wait "$record_pid" || record_status=$?

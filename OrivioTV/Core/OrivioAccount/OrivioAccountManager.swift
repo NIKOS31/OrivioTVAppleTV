@@ -87,6 +87,9 @@ final class OrivioAccountManager: ObservableObject {
         let generation = beginAuthentication()
         errorMessage = nil
         qrLogin = nil
+        // A build with no account server can be used locally. Do not start
+        // a doomed request or surface a configuration error at first launch.
+        guard !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let nonce = Self.generateDeviceNonce()
         let deviceName = Self.deviceLabel
 
@@ -421,7 +424,7 @@ final class OrivioAccountManager: ObservableObject {
     private func postAttempt(base: String, endpoint: String, body: [String: String]) async throws -> Data {
         guard let url = URL(string: base.trimmedTrailingSlash + endpoint),
               NTVAuthenticatedSession.permits(url) else {
-            throw OrivioAuthError.message("Bad backend URL.")
+            throw OrivioAuthError.message("La connexion au compte est indisponible pour le moment.")
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

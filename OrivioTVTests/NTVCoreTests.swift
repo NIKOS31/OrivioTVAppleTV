@@ -2,6 +2,15 @@ import XCTest
 @testable import OrivioTV
 
 final class NTVCoreTests: XCTestCase {
+    @MainActor
+    func testLaunchPresentationIsClaimedOnlyOncePerProcessSession() {
+        let process = NTVLaunchSession()
+        XCTAssertTrue(process.claim())
+        XCTAssertFalse(process.claim(), "Returning from the background cannot replay the introduction.")
+        XCTAssertFalse(process.claim(), "Rebuilding a scene cannot replay it either.")
+        XCTAssertTrue(NTVLaunchSession().claim(), "A fresh app process can present its own introduction.")
+    }
+
     func testPosterColumnsUseAvailableWidthAtDifferentTVSizes() {
         for width in [CGFloat(1280), 1920, 2560] {
             for preferred in [CGFloat(180), 210, 260] {

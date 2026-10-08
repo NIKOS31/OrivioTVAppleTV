@@ -4,6 +4,32 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testLaunchLogoIsCenteredAndDoesNotReplayOnForeground() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvLaunchTest"]
+        app.launch()
+        let logo = app.images["ntv.launch.logo"]
+        XCTAssertTrue(logo.waitForExistence(timeout: 5))
+        let screen = app.windows.firstMatch.frame
+        XCTAssertEqual(logo.frame.midX, screen.midX, accuracy: 2)
+        XCTAssertEqual(logo.frame.midY, screen.midY, accuracy: 2)
+        XCTAssertGreaterThan(logo.frame.width, 250)
+        XCTAssertTrue(screen.contains(logo.frame))
+        XCTAssertFalse(app.staticTexts["Bienvenue sur nTV"].exists,
+                       "Onboarding must not obscure the launch mark.")
+        capture("ntv-launch-centered")
+        XCUIRemote.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        XCTAssertFalse(logo.exists, "Returning to the foreground cannot replay the introduction.")
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(logo.waitForExistence(timeout: 5), "A fresh process presents the mark again.")
+        app.terminate()
+    }
+
     func testTwitchConnectionAndFollowedChannelsFromSettings() {
         continueAfterFailure = false
         let app = XCUIApplication()

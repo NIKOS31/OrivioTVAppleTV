@@ -17,51 +17,75 @@ import SwiftUI
     @Environment(\.scenePhase) private var scenePhase
     @State private var visible = false
     @State private var entered = false
+    @State private var settled = false
     @State private var departing = false
 
+    init() {
+        var enabled = true
+        #if DEBUG
+        enabled = !ProcessInfo.processInfo.arguments.contains(where: {
+            $0.contains("Demo") || $0.contains("Probe")
+        })
+        #endif
+        _visible = State(initialValue: enabled && NTVLaunchSession.shared.claim())
+    }
+
     func body(content: Content) -> some View {
-        content.overlay {
+        // Mount the root after the introduction. Its onboarding/profile covers
+        // otherwise present over a root overlay and hide the mark on first use.
+        Group {
             if visible {
                 ZStack {
                     NTVDesign.background.ignoresSafeArea()
                     RadialGradient(colors: [Color.blue.opacity(0.24), Color.cyan.opacity(0.05), .clear],
                         center: .center, startRadius: 12, endRadius: 150)
                         .frame(width: 300, height: 300)
-                        .scaleEffect(entered ? 1 : 0.7)
+                        .scaleEffect(settled ? 1.12 : entered ? 1 : 0.7)
                         .opacity(entered ? 1 : 0)
                     NTVWordmark(size: 156)
-                        .scaleEffect(reduceMotion ? 1 : departing ? 1.07 : entered ? 1 : 0.74)
+                        .scaleEffect(reduceMotion ? 1 : departing ? 1.12 : settled ? 1.025 : entered ? 1 : 0.74)
                         .rotation3DEffect(.degrees(reduceMotion || entered ? 0 : -12),
                                           axis: (x: 0, y: 1, z: 0))
                         .offset(y: reduceMotion || entered ? 0 : 16)
                         .opacity(entered ? 1 : 0)
+                        .accessibilityIdentifier("ntv.launch.logo")
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .ignoresSafeArea()
                 .opacity(departing ? 0 : 1)
                 .allowsHitTesting(false)
-                .accessibilityHidden(true)
+            } else {
+                content
             }
         }
-        .task(id: scenePhase) {
-            // Cancellation when the app leaves the foreground hides the logo.
-            // Its process-wide claim is consumed, so returning never replays it.
-            guard scenePhase == .active else { visible = false; return }
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains(where: { $0.contains("Demo") || $0.contains("Probe") }) {
-                return
-            }
-            #endif
-            guard NTVLaunchSession.shared.claim() else { return }
-            visible = true
-            await Task.yield()
-            guard !Task.isCancelled else { visible = false; return }
-            withAnimation(reduceMotion ? nil : .spring(response: 0.72, dampingFraction: 0.76)) {
-                entered = true
-            }
+        .onChange(of: scenePhase) { _, phase in
+            // Ignore the transient inactive phase during scene creation.
+            // Going home consumes this launch; activation cannot replay it.
+            if phase == .background { visible = false }
+        }
+        .task {
+            guard visible else { return }
             do {
-                try await Task.sleep(nanoseconds: reduceMotion ? 1_600_000_000 : 1_900_000_000)
+                // Give the initial pose a rendered frame before animating it.
+                try await Task.sleep(nanoseconds: 80_000_000)
+                guard visible else { return }
+                withAnimation(reduceMotion ? nil : .spring(response: 0.8, dampingFraction: 0.78)) {
+                    entered = true
+                }
+                try await Task.sleep(nanoseconds: reduceMotion ? 1_600_000_000 : 800_000_000)
                 if reduceMotion { visible = false; return }
-                withAnimation(.easeInOut(duration: 0.4)) { departing = true }
-                try await Task.sleep(nanoseconds: 400_000_000)
+                guard visible else { return }
+                withAnimation(.easeInOut(duration: 1.1)) { settled = true }
+                var hold: UInt64 = 1_550_000_000
+                #if DEBUG
+                // XCTest needs time to inspect the settled pose. The exported
+                // launch movie uses no flag and records the normal 3s timing.
+                if ProcessInfo.processInfo.arguments.contains("-ntvLaunchTest") { hold = 20_000_000_000 }
+                #endif
+                try await Task.sleep(nanoseconds: hold)
+                guard visible else { return }
+                withAnimation(.easeInOut(duration: 0.6)) { departing = true }
+                try await Task.sleep(nanoseconds: 600_000_000)
                 visible = false
             } catch { visible = false }
         }

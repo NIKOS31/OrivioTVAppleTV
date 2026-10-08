@@ -5,12 +5,16 @@ enum StremioAPIError: LocalizedError {
     case badURL(String)
     case badResponse(Int)
     case emptyBody
+    case responseTooLarge
+    case invalidResponse
 
     var errorDescription: String? {
         switch self {
         case .badURL: return "Le lien d’installation de l’addon est invalide."
         case .badResponse(let code): return "L’addon a répondu avec une erreur HTTP \(code)."
         case .emptyBody: return "L’addon a envoyé une réponse vide."
+        case .responseTooLarge: return "La réponse de cet addon est trop volumineuse."
+        case .invalidResponse: return "L’addon a envoyé une réponse invalide."
         }
     }
 }
@@ -20,32 +24,48 @@ enum StremioAPIError: LocalizedError {
 /// this fills the gap so repeat catalog/meta fetches inside a session (e.g.
 /// navigating away and back) are instant instead of another round-trip.
 final class StremioResponseCache: @unchecked Sendable {
-    private struct Entry { let data: Data; let time: Date }
+    private struct Entry { let data: Data; let time: Date; let order: UInt64 }
     private var store: [String: Entry] = [:]
     private let lock = NSLock()
+    private var byteCount = 0
+    private var nextOrder: UInt64 = 0
+    private let byteLimit: Int
+    private var warningObserver: NSObjectProtocol?
     /// Raw response bodies add up (a catalog page is easily 100s of KB) —
     /// uncapped, a long browse session keeps every response ever fetched in
     /// RAM. Eviction is invisible: a dropped entry is just one round-trip
     /// again. Also emptied outright on a memory warning, same policy as the
     /// image cache (cheapest bytes to give back). Tier-scaled: 96 bodies can
     /// be tens of MB, which the 2–3 GB boxes can't idle on.
-    private let entryLimit = PerformanceProfile.isLowPower ? 32
-        : PerformanceProfile.isMidPower ? 64 : 96
+    private let entryLimit: Int
 
-    init() {
-        NotificationCenter.default.addObserver(
+    init(entryLimit: Int = PerformanceProfile.isLowPower ? 32 : PerformanceProfile.isMidPower ? 64 : 96,
+         byteLimit: Int = PerformanceProfile.isLowPower ? 16 << 20 : PerformanceProfile.isMidPower ? 24 << 20 : 32 << 20) {
+        self.entryLimit = max(1, entryLimit)
+        self.byteLimit = max(1, byteLimit)
+        warningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil, queue: nil
         ) { [weak self] _ in
             guard let self else { return }
             self.lock.lock(); defer { self.lock.unlock() }
             self.store.removeAll()
+            self.byteCount = 0
         }
+    }
+
+    deinit {
+        if let warningObserver { NotificationCenter.default.removeObserver(warningObserver) }
     }
 
     func data(for key: String, ttl: TimeInterval) -> Data? {
         lock.lock(); defer { lock.unlock() }
-        guard let entry = store[key], Date().timeIntervalSince(entry.time) < ttl else { return nil }
+        guard let entry = store[key] else { return nil }
+        guard Date().timeIntervalSince(entry.time) < ttl else {
+            store.removeValue(forKey: key)
+            byteCount -= entry.data.count
+            return nil
+        }
         return entry.data
     }
 
@@ -55,17 +75,23 @@ final class StremioResponseCache: @unchecked Sendable {
     /// answering 200 with an empty list, which is how those fail transiently.
     func remove(_ key: String) {
         lock.lock(); defer { lock.unlock() }
-        store.removeValue(forKey: key)
+        if let removed = store.removeValue(forKey: key) { byteCount -= removed.data.count }
     }
 
     func store(_ data: Data, for key: String) {
         lock.lock(); defer { lock.unlock() }
-        store[key] = Entry(data: data, time: Date())
-        guard store.count > entryLimit else { return }
-        // Drop the oldest half so eviction is amortized, not per-insert.
-        let sorted = store.sorted { $0.value.time < $1.value.time }
-        for (key, _) in sorted.prefix(store.count - entryLimit / 2) {
+        if let removed = store.removeValue(forKey: key) { byteCount -= removed.data.count }
+        guard data.count <= byteLimit else { return }
+        nextOrder &+= 1
+        store[key] = Entry(data: data, time: Date(), order: nextOrder)
+        byteCount += data.count
+        guard store.count > entryLimit || byteCount > byteLimit else { return }
+        // Budget the actual bytes as well as the number of responses.
+        let sorted = store.sorted { $0.value.order < $1.value.order }
+        for (key, entry) in sorted {
+            if store.count <= entryLimit && byteCount <= byteLimit { break }
             store.removeValue(forKey: key)
+            byteCount -= entry.data.count
         }
     }
 }
@@ -88,13 +114,11 @@ enum StremioAPI {
     static let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
-        config.requestCachePolicy = .useProtocolCachePolicy
-        // Memory side tier-scaled — 32 MB of response bodies pinned in RAM is
-        // a real bite out of the 2 GB box; disk stays generous.
-        config.urlCache = URLCache(
-            memoryCapacity: PerformanceProfile.isLowPower ? (8 << 20)
-                : PerformanceProfile.isMidPower ? (16 << 20) : (32 << 20),
-            diskCapacity: 256 << 20)
+        config.timeoutIntervalForResource = 60
+        // The bounded cache below stores only successfully decoded responses.
+        // Avoid a second cache that can retain malformed JSON/private URL keys.
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
         // A single addon (Cinemeta, Torrentio…) usually serves every catalog /
         // stream request from one host; the default cap of 6 makes a Home load
         // fetch its rows 6-at-a-time. Let them all fire in parallel.
@@ -122,19 +146,9 @@ enum StremioAPI {
     /// `ttl` = how long a cached body stays fresh (0 disables caching for this
     /// request — used for streams, whose links can be short-lived).
     ///
-    /// `ttl == 0` MUST ALSO OPT OUT OF THE URL LOADING SYSTEM'S OWN CACHE, or
-    /// the "don't cache this" above is only half true. The session runs
-    /// `.useProtocolCachePolicy` over a 256 MB DISK `URLCache`, so a stream
-    /// response the app deliberately refused to cache was still stored and
-    /// replayed by URLSession underneath — for whatever freshness the addon's
-    /// headers allow, and (being on disk) across app launches. An addon that
-    /// answered badly once then kept answering badly from disk without the
-    /// request ever reaching the server, and the short-lived links in a stale
-    /// body were already dead, so the sources that did come back failed to
-    /// play. That is a self-hosted aggregator "failing" while it is demonstrably
-    /// up, staying broken across a relaunch, and coming right only once the
-    /// entry expired. Requests with a real `ttl` are unaffected: the app's own
-    /// cache is the one that serves them.
+    /// The HTTP cache is disabled. Only bounded, successfully decoded bodies
+    /// enter our memory cache. Streams with ttl=0 always go to the network;
+    /// neither short-lived source links nor malformed JSON persist there.
     /// `bypassCache` skips the cache READ (and the coalescer, so a health
     /// check times its own request rather than joining one in flight) but
     /// still stores the response for later callers.
@@ -169,7 +183,9 @@ enum StremioAPI {
         _ urlString: String, ttl: TimeInterval = 0, timeout: TimeInterval = 0,
         bypassCache: Bool = false
     ) async throws -> T {
+        let limit = responseByteLimit(for: urlString)
         if !bypassCache, ttl > 0, let cached = cache.data(for: urlString, ttl: ttl) {
+            guard cached.count <= limit else { cache.remove(urlString); throw StremioAPIError.responseTooLarge }
             return try JSONDecoder().decode(T.self, from: cached)
         }
         if bypassCache {
@@ -180,12 +196,10 @@ enum StremioAPI {
             // health check. Same reasoning as the ttl == 0 case below.
             request.cachePolicy = .reloadIgnoringLocalCacheData
             request.setValue("application/json", forHTTPHeaderField: "Accept")
-            let (data, response) = try await session.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw StremioAPIError.badResponse(http.statusCode)
-            }
+            let data = try await boundedData(request, limit: limit)
+            let value = try JSONDecoder().decode(T.self, from: data)
             if ttl > 0 { cache.store(data, for: urlString) }
-            return try JSONDecoder().decode(T.self, from: data)
+            return value
         }
         // Coalesce concurrent identical fetches into ONE network round-trip —
         // overlapping requests for the same URL (Home rows, prefetch, back-nav)
@@ -196,14 +210,29 @@ enum StremioAPI {
             if timeout > 0 { request.timeoutInterval = timeout }
             if ttl == 0 { request.cachePolicy = .reloadIgnoringLocalCacheData }
             request.setValue("application/json", forHTTPHeaderField: "Accept")
-            let (data, response) = try await session.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw StremioAPIError.badResponse(http.statusCode)
-            }
-            if ttl > 0 { cache.store(data, for: urlString) }
-            return data
+            return try await boundedData(request, limit: limit)
         }
-        return try JSONDecoder().decode(T.self, from: data)
+        let value = try JSONDecoder().decode(T.self, from: data)
+        if ttl > 0 { cache.store(data, for: urlString) }
+        return value
+    }
+
+    static func responseByteLimit(for raw: String) -> Int {
+        switch NTVAddonDiagnostics.requestName(raw) {
+        case "addon-manifest": return 1 << 20
+        case "addon-subtitles": return 2 << 20
+        case "addon-stream": return 4 << 20
+        default: return 8 << 20
+        }
+    }
+
+    private static func boundedData(_ request: URLRequest, limit: Int) async throws -> Data {
+        do {
+            let (data, http) = try await NTVBoundedResponse.data(for: request, session: session, maximumBytes: limit)
+            guard (200..<300).contains(http.statusCode) else { throw StremioAPIError.badResponse(http.statusCode) }
+            return data
+        } catch NTVBoundedResponse.Failure.tooLarge { throw StremioAPIError.responseTooLarge }
+        catch NTVBoundedResponse.Failure.invalidResponse { throw StremioAPIError.invalidResponse }
     }
 
     private static func encodePathComponent(_ value: String) -> String {

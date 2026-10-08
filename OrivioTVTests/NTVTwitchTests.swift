@@ -1,7 +1,109 @@
 import XCTest
+import AVFoundation
 @testable import OrivioTV
 
 final class NTVTwitchTests: XCTestCase {
+    func testNativePlaybackUsesOnlyAnonymousVideoRequests() async throws {
+        let fixture = NTVTwitchPlaybackFixture()
+        let api = NTVTwitchPlayback(transport: { try await fixture.send($0, $1) }, now: { Date(timeIntervalSince1970: 1000) })
+        let url = try await api.resolve(channel: "FIXTURE_CHANNEL")
+        XCTAssertEqual(url.host, "usher.ttvnw.net")
+        XCTAssertEqual(url.path, "/api/v2/channel/hls/fixture_channel.m3u8")
+        let requests = await fixture.recorded()
+        XCTAssertEqual(requests.count, 2)
+        for request in requests {
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+            XCTAssertNil(request.value(forHTTPHeaderField: "Client-Integrity"))
+        }
+        XCTAssertNil(requests[1].value(forHTTPHeaderField: "Client-ID"), "Video-CDN requests need no account/app credentials")
+    }
+
+    func testDeniedExpiredAndWrongChannelVideoTicketsNeverReachThePlaylist() async throws {
+        for mode in [NTVTwitchPlaybackFixture.Mode.denied, .expired, .wrongChannel] {
+            let fixture = NTVTwitchPlaybackFixture(mode)
+            let api = NTVTwitchPlayback(transport: { try await fixture.send($0, $1) }, now: { Date(timeIntervalSince1970: 1000) })
+            do { _ = try await api.resolve(channel: "fixture_channel"); XCTFail("Invalid access cannot open video") }
+            catch { XCTAssertTrue(error is NTVTwitchPlayback.Failure) }
+            let sent = await fixture.recorded()
+            XCTAssertEqual(sent.count, 1)
+        }
+    }
+
+    func testInvalidPlaybackChannelCannotSendARequest() async throws {
+        let fixture = NTVTwitchPlaybackFixture()
+        let api = NTVTwitchPlayback(transport: { try await fixture.send($0, $1) })
+        for invalid in ["", "../private", "https://example.invalid", "name?token=private", String(repeating: "a", count: 26)] {
+            do { _ = try await api.resolve(channel: invalid); XCTFail("Invalid channel") }
+            catch NTVTwitchPlayback.Failure.invalidChannel {}
+        }
+        let sent = await fixture.recorded()
+        XCTAssertTrue(sent.isEmpty)
+    }
+
+    func testNativePlaybackFailuresNeverExposeServerContent() async throws {
+        for status in [401, 403, 404, 429, 500] {
+            let fixture = NTVTwitchPlaybackFixture(.http(status))
+            let api = NTVTwitchPlayback(transport: { try await fixture.send($0, $1) })
+            do { _ = try await api.resolve(channel: "fixture_channel"); XCTFail("Failed request") }
+            catch { XCTAssertFalse(error.localizedDescription.contains("PRIVATE-VIDEO-ERROR-SENTINEL")) }
+            let sent = await fixture.recorded()
+            XCTAssertEqual(sent.count, 1, "No automatic account/cookie/integrity fallback")
+        }
+    }
+
+    func testTwitchPlaylistRejectsUntrustedVariantsAndKeyOrigins() throws {
+        let base = try XCTUnwrap(URL(string: "https://usher.ttvnw.net/live.m3u8"))
+        for target in ["http://video.ttvnw.net/live.m3u8", "https://ttvnw.net.evil.invalid/live", "https://127.0.0.1/private", "file:///private", "https://user:secret@video.ttvnw.net/live"] {
+            XCTAssertThrowsError(try NTVTwitchPlayback.validatePlaylist(Data("#EXTM3U\n\(target)\n".utf8), base: base))
+            let keyed = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"\(target)\"\nhttps://video.ttvnw.net/valid.m3u8\n"
+            XCTAssertThrowsError(try NTVTwitchPlayback.validatePlaylist(Data(keyed.utf8), base: base))
+        }
+        XCTAssertNoThrow(try NTVTwitchPlayback.validatePlaylist(Data("#EXTM3U\nhttps://video.ttvnw.net/live.m3u8\n".utf8), base: base))
+    }
+
+    @MainActor
+    func testTwitchPlayerFailureDoesNotEchoSignedVideoURL() async {
+        let sentinel = "PRIVATE-VIDEO-URL-SENTINEL"
+        let model = NTVTwitchPlayerModel(resolve: { _ in
+            throw URLError(.timedOut, userInfo: [NSURLErrorFailingURLStringErrorKey: "https://video.ttvnw.net/\(sentinel)"])
+        })
+        defer { model.stop() }
+        await model.load(.init(login: "fixture_channel", name: "Fixture", title: "Fixture"))
+        XCTAssertNotNil(model.message)
+        XCTAssertFalse(model.message?.contains(sentinel) ?? true)
+        XCTAssertNil(model.player)
+    }
+
+    @MainActor
+    func testClosingTwitchPlayerRejectsALateVideoResponse() async {
+        let started = expectation(description: "Video resolution started")
+        let gate = NTVTwitchVideoGate(started: { started.fulfill() })
+        let model = NTVTwitchPlayerModel(resolve: { _ in await gate.wait() })
+        let pending = Task { await model.load(.init(login: "fixture_channel", name: "Fixture", title: "Fixture")) }
+        await fulfillment(of: [started], timeout: 3)
+        model.stop()
+        await gate.finish(URL(fileURLWithPath: "/tmp/ntv-cancelled-video-fixture.mp4"))
+        await pending.value
+        XCTAssertNil(model.player, "Leaving/switching profile cannot resurrect a prior video")
+        XCTAssertNil(model.message)
+    }
+
+    @MainActor
+    func testTheMostRecentTwitchChannelWinsOverALateResponse() async {
+        let started = expectation(description: "Old resolution started")
+        let gate = NTVTwitchVideoGate(started: { started.fulfill() })
+        let latest = URL(fileURLWithPath: "/tmp/ntv-latest-video-fixture.mp4")
+        let model = NTVTwitchPlayerModel(resolve: { login in login == "old" ? await gate.wait() : latest })
+        defer { model.stop() }
+        let pending = Task { await model.load(.init(login: "old", name: "Old", title: "Old")) }
+        await fulfillment(of: [started], timeout: 3)
+        await model.load(.init(login: "latest", name: "Latest", title: "Latest"))
+        await gate.finish(URL(fileURLWithPath: "/tmp/ntv-old-video-fixture.mp4"))
+        await pending.value
+        XCTAssertEqual((model.player?.currentItem?.asset as? AVURLAsset)?.url, latest)
+    }
+
     private let tokenJSON = #"{"access_token":"test-access","refresh_token":"test-refresh","expires_in":14400,"scope":["user:read:follows"],"token_type":"bearer"}"#
     private let identityJSON = #"{"client_id":"ntvtest","user_id":"42","login":"fixture","scopes":["user:read:follows"],"expires_in":14400}"#
     private let deviceJSON = #"{"device_code":"fixture-device","user_code":"ABCD","expires_in":1800,"interval":5,"verification_uri":"https://www.twitch.tv/activate?public=true&device-code=ABCD"}"#

@@ -1,7 +1,122 @@
 import XCTest
+import UIKit
 @testable import OrivioTV
 
 final class NTVSecurityTests: XCTestCase {
+    func testBoundedReceptionPreservesAuthenticatedRedirectProtection() async throws {
+        let destination = try NTVGzipHTTPFixture(payload: Data())
+        defer { destination.stop() }
+        let target = try await destination.start()
+        let redirect = try NTVGzipHTTPFixture(payload: Data("redirect".utf8), redirectTo: target)
+        defer { redirect.stop() }
+        let url = try await redirect.start()
+        let session = NTVAuthenticatedSession.make()
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer PRIVATE-REDIRECT-SENTINEL", forHTTPHeaderField: "Authorization")
+        let (_, response) = try await NTVBoundedResponse.data(for: request, session: session, maximumBytes: 1024)
+        XCTAssertEqual(response.statusCode, 302)
+        XCTAssertEqual(destination.requestsReceived, 0, "The chunk collector must not override the existing redirect guard")
+    }
+
+    func testGzipBodyIsBoundedAfterActualHTTPDecompression() async throws {
+        // 306 wire bytes expand into a 256KiB JSON value.
+        let gzip = try XCTUnwrap(Data(base64Encoded: "H4sIAAAAAAACCu3BMQkAIAAEwC4fwzaCIC7iKIjd3c1wdyertjZmT8kGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPjkPt8jZscOAAQA"))
+        XCTAssertLessThan(gzip.count, 1024)
+        let server = try NTVGzipHTTPFixture(payload: gzip)
+        defer { server.stop() }
+        let url = try await server.start()
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        do {
+            _ = try await NTVBoundedResponse.data(for: URLRequest(url: url), session: session, maximumBytes: 1024)
+            XCTFail("The decoded bytes, not just compressed Content-Length, must be bounded")
+        } catch NTVBoundedResponse.Failure.tooLarge {}
+    }
+
+    func testOversizedDeclaredResponseCancelsBeforeReadingItsBody() async throws {
+        let stopped = expectation(description: "Oversized transfer cancelled")
+        let probe = NTVBoundedHTTPProbe(declaredLength: 4096, stall: true, onStop: { stopped.fulfill() })
+        let (session, request) = NTVBoundedHTTPFixture.register(probe)
+        defer { session.invalidateAndCancel(); NTVBoundedHTTPFixture.remove(probe.id) }
+        do { _ = try await NTVBoundedResponse.data(for: request, session: session, maximumBytes: 512); XCTFail("Must reject the body") }
+        catch NTVBoundedResponse.Failure.tooLarge {}
+        await fulfillment(of: [stopped], timeout: 3)
+        XCTAssertEqual(probe.bytesSent, 0)
+    }
+
+    func testResponseWithoutContentLengthIsStoppedDuringReception() async throws {
+        let stopped = expectation(description: "Streaming transfer cancelled")
+        let body = Data(repeating: 120, count: 64 << 10)
+        let probe = NTVBoundedHTTPProbe(body: body, onStop: { stopped.fulfill() })
+        let (session, request) = NTVBoundedHTTPFixture.register(probe)
+        defer { session.invalidateAndCancel(); NTVBoundedHTTPFixture.remove(probe.id) }
+        do { _ = try await NTVBoundedResponse.data(for: request, session: session, maximumBytes: 1024); XCTFail("Must reject unknown-sized body") }
+        catch NTVBoundedResponse.Failure.tooLarge {}
+        await fulfillment(of: [stopped], timeout: 3)
+        XCTAssertLessThan(probe.bytesSent, body.count, "Cancel before downloading the full oversized response")
+    }
+
+    func testResponseAtTheLimitPreservesEveryByte() async throws {
+        let body = Data(repeating: 120, count: 4096)
+        let probe = NTVBoundedHTTPProbe(body: body, declaredLength: body.count)
+        let (session, request) = NTVBoundedHTTPFixture.register(probe)
+        defer { session.invalidateAndCancel(); NTVBoundedHTTPFixture.remove(probe.id) }
+        let result = try await NTVBoundedResponse.data(for: request, session: session, maximumBytes: body.count)
+        XCTAssertEqual(result.0, body)
+        XCTAssertEqual(result.1.statusCode, 200)
+    }
+
+    func testCancellingAStalledResponseCancelsItsNetworkTask() async throws {
+        let headers = expectation(description: "Headers received")
+        let stopped = expectation(description: "Network transfer cancelled")
+        let probe = NTVBoundedHTTPProbe(stall: true, onHeaders: { headers.fulfill() }, onStop: { stopped.fulfill() })
+        let (session, request) = NTVBoundedHTTPFixture.register(probe)
+        defer { session.invalidateAndCancel(); NTVBoundedHTTPFixture.remove(probe.id) }
+        let pending = Task { try await NTVBoundedResponse.data(for: request, session: session, maximumBytes: 512) }
+        await fulfillment(of: [headers], timeout: 3)
+        pending.cancel()
+        do { _ = try await pending.value; XCTFail("Cancellation must not return a body") }
+        catch { XCTAssertTrue(error is CancellationError || (error as? URLError)?.code == .cancelled) }
+        await fulfillment(of: [stopped], timeout: 3)
+    }
+
+    func testCacheBudgetUsesBytesInsteadOfOnlyEntryCount() {
+        let cache = StremioResponseCache(entryLimit: 20, byteLimit: 8)
+        cache.store(Data(repeating: 1, count: 6), for: "first")
+        cache.store(Data(repeating: 2, count: 6), for: "second")
+        XCTAssertNil(cache.data(for: "first", ttl: 60))
+        XCTAssertEqual(cache.data(for: "second", ttl: 60), Data(repeating: 2, count: 6))
+    }
+
+    func testReplacingCachedBodyReclaimsThePreviousBytes() {
+        let cache = StremioResponseCache(entryLimit: 20, byteLimit: 8)
+        cache.store(Data(repeating: 1, count: 6), for: "same")
+        cache.store(Data(repeating: 2, count: 2), for: "same")
+        cache.store(Data(repeating: 3, count: 6), for: "other")
+        XCTAssertEqual(cache.data(for: "same", ttl: 60), Data(repeating: 2, count: 2))
+        XCTAssertNotNil(cache.data(for: "other", ttl: 60))
+    }
+
+    func testOverBudgetEntryIsNotRetainedAndRemovalReclaimsBytes() {
+        let cache = StremioResponseCache(entryLimit: 20, byteLimit: 8)
+        cache.store(Data(repeating: 1, count: 9), for: "oversized")
+        XCTAssertNil(cache.data(for: "oversized", ttl: 60))
+        cache.store(Data(repeating: 1, count: 6), for: "removed")
+        cache.remove("removed")
+        cache.store(Data(repeating: 2, count: 8), for: "remaining")
+        XCTAssertNotNil(cache.data(for: "remaining", ttl: 60))
+    }
+
+    func testMemoryWarningClearsBodiesAndTheirByteBudget() {
+        let cache = StremioResponseCache(entryLimit: 20, byteLimit: 8)
+        cache.store(Data(repeating: 1, count: 6), for: "before")
+        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        XCTAssertNil(cache.data(for: "before", ttl: 60))
+        cache.store(Data(repeating: 2, count: 8), for: "after")
+        XCTAssertNotNil(cache.data(for: "after", ttl: 60))
+    }
+
     @MainActor
     func testUnconfiguredAccountDoesNotStartLoginOrShowAnError() async {
         let session = stubSession()

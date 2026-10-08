@@ -10,6 +10,7 @@ enum NTVAuthenticatedSession {
         configuration.httpShouldSetCookies = false
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = timeout
+        configuration.timeoutIntervalForResource = timeout
         return URLSession(configuration: configuration, delegate: RejectRedirects(), delegateQueue: nil)
     }
     static func permits(_ url: URL) -> Bool {

@@ -220,6 +220,21 @@ final class NTVTwitchViewModel: ObservableObject {
         }
     }
 
+    /// Returning from native playback keeps search results and pagination but
+    /// validates the account again before displaying private followed channels.
+    func resumeVisibleSession() async {
+        guard phase == .connected, let current = session else { return }
+        let expected = epoch, page = pageEpoch
+        do {
+            let user = try await current.validateSession()
+            guard epoch == expected, !Task.isCancelled else { return }
+            identity = user
+        } catch {
+            guard epoch == expected, !Task.isCancelled else { return }
+            finishFailure(error, epoch: expected, request: page)
+        }
+    }
+
     func leave() {
         epoch &+= 1; pageEpoch &+= 1
         flowTask?.cancel(); pageTask?.cancel()

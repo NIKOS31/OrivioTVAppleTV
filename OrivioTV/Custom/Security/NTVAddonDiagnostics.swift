@@ -20,6 +20,8 @@ enum NTVAddonDiagnostics {
             case .badURL: return "invalid-url"
             case .badResponse(let status): return "http-" + String(status)
             case .emptyBody: return "empty-body"
+            case .responseTooLarge: return "body-too-large"
+            case .invalidResponse: return "invalid-response"
             }
         }
         if error is DecodingError { return "invalid-json" }

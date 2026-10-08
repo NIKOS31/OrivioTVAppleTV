@@ -145,14 +145,16 @@ struct NTVTwitchAPI {
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil
         config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 40
         return URLSession(configuration: config, delegate: TwitchRedirectGuard(), delegateQueue: nil)
     }()
     private static func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw NTVTwitchError.invalidResponse }
-        return (data, http)
+        do {
+            return try await NTVBoundedResponse.data(for: request, session: session, maximumBytes: 1 << 20)
+        } catch is NTVBoundedResponse.Failure { throw NTVTwitchError.invalidResponse }
     }
 }
 

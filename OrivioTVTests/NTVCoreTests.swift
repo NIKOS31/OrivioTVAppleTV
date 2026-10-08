@@ -3,6 +3,45 @@ import XCTest
 
 final class NTVCoreTests: XCTestCase {
     @MainActor
+    func testBlockedTouchCannotBeAdoptedWhenAnOverlayCloses() {
+        let input = TouchHostView()
+        var active = false
+        var begins = 0, moves = 0, ends = 0
+        input.configure(isActive: { active }, onBegan: { begins += 1 },
+                        onMoved: { _, _ in moves += 1 }, onEnded: { _, _ in ends += 1 })
+        input.receivePan(state: .began, translation: .zero)
+        active = true
+        input.receivePan(state: .changed, translation: .init(x: 500, y: 0))
+        input.receivePan(state: .ended, translation: .init(x: 500, y: 0))
+        XCTAssertEqual(begins, 0)
+        XCTAssertEqual(moves, 0, "A gesture rejected at touch-down cannot move the playhead later")
+        XCTAssertEqual(ends, 1, "The existing unconditional end still clears transport state")
+        input.receivePan(state: .began, translation: .zero)
+        input.receivePan(state: .changed, translation: .init(x: 20, y: 0))
+        XCTAssertEqual(begins, 1)
+        XCTAssertEqual(moves, 1, "The next accepted contact remains usable")
+    }
+
+    @MainActor
+    func testOverlayOpeningDuringTouchStillDeliversCancellationCleanup() {
+        let input = TouchHostView()
+        var active = true
+        var moves = 0, ends = 0
+        input.configure(isActive: { active }, onBegan: {},
+                        onMoved: { _, _ in moves += 1 }, onEnded: { _, _ in ends += 1 })
+        input.receivePan(state: .began, translation: .zero)
+        input.receivePan(state: .changed, translation: .init(x: 20, y: 0))
+        active = false
+        input.receivePan(state: .changed, translation: .init(x: 80, y: 0))
+        input.receivePan(state: .cancelled, translation: .init(x: 80, y: 0))
+        XCTAssertEqual(moves, 1)
+        XCTAssertEqual(ends, 1, "An interrupted contact must clear pan-in-flight flags even while input is blocked")
+        active = true
+        input.receivePan(state: .changed, translation: .init(x: 150, y: 0))
+        XCTAssertEqual(moves, 1, "A late sample after cancellation is not a new contact")
+    }
+
+    @MainActor
     func testLaunchPresentationIsClaimedOnlyOncePerProcessSession() {
         let process = NTVLaunchSession()
         XCTAssertTrue(process.claim())

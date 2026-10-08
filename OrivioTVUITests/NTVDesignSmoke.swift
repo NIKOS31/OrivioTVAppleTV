@@ -69,6 +69,27 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(app.buttons["ntv.twitch.disconnect"].exists)
         capture("ntv-twitch-followed")
         XCTAssertTrue(focused(app.buttons["ntv.twitch.followed"], timeout: 5))
+        for _ in 0..<5 {
+            if stream.hasFocus { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(focused(stream, timeout: 5), "A followed channel must be selectable with the remote.")
+        remote.press(.select)
+        let video = app.descendants(matching: .any)["ntv.twitch.player.video"].firstMatch
+        XCTAssertTrue(video.waitForExistence(timeout: 20), "Selecting a channel opens the native player inside nTV.")
+        XCTAssertFalse(app.staticTexts["ntv.twitch.player.error"].exists)
+        capture("ntv-twitch-native-player")
+        for _ in 0..<3 {
+            remote.press(.menu)
+            if app.buttons["ntv.twitch.followed"].waitForExistence(timeout: 3) { break }
+        }
+        XCTAssertFalse(video.exists, "Back closes the native player and returns to the Twitch browser.")
+        let followed = app.buttons["ntv.twitch.followed"]
+        for _ in 0..<4 {
+            if followed.hasFocus { break }
+            remote.press(.up)
+        }
+        XCTAssertTrue(focused(followed, timeout: 5))
         remote.press(.right)
         XCTAssertTrue(focused(app.buttons["ntv.twitch.search"], timeout: 5))
         remote.press(.select)

@@ -7,7 +7,10 @@ struct NTVTwitchView: View {
     @StateObject private var model = NTVTwitchViewModel()
     @State private var searching = false
     @State private var query = ""
-    private enum Focus: Hashable { case connect, cancel, followed, search, query, submit }
+    @State private var playing: NTVTwitchPlaybackTarget?
+    @State private var preparedScope: String?
+    private enum Focus: Hashable { case connect, cancel, followed, search, query, submit, stream(String), channel(String) }
+    @State private var returnFocus: Focus?
     @FocusState private var focused: Focus?
     private var owner: String { account.currentUserID ?? "local" }
     private var scope: String { "\(owner).profile.\(profiles.activeProfileID)" }
@@ -50,7 +53,7 @@ struct NTVTwitchView: View {
                     .buttonStyle(NTVActionButtonStyle())
                     .focused($focused, equals: .connect)
                     .accessibilityIdentifier("ntv.twitch.connect")
-                Text("La consultation des chaînes est disponible. Leur lecture dans nTV sera ajoutée ensuite.")
+                Text("Les directs publics se lisent dans nTV. La lecture Twitch est expérimentale et peut être temporairement indisponible.")
                     .font(.system(size: 21)).foregroundStyle(NTVDesign.textSecondary)
                 Spacer()
             case .authorizing:
@@ -65,10 +68,27 @@ struct NTVTwitchView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NTVDesign.background.ignoresSafeArea())
         .defaultFocus($focused, .connect)
-        .task(id: scope) { await prepare(); await model.monitorSession() }
-        .onDisappear { model.leave() }
+        .task(id: scope) {
+            if preparedScope != scope {
+                await prepare()
+                guard !Task.isCancelled else { return }
+                preparedScope = scope
+            } else { await model.resumeVisibleSession() }
+            await model.monitorSession()
+        }
+        .onDisappear {
+            if playing == nil { model.leave(); preparedScope = nil; returnFocus = nil }
+        }
+        .fullScreenCover(item: $playing) { target in
+            NTVTwitchPlayer(target: target, scope: scope) { playing = nil }
+        }
+        .onChange(of: scope) { _, _ in returnFocus = nil; playing = nil; preparedScope = nil }
+        .onChange(of: playing?.id) { old, new in
+            if old != nil, new == nil, let returnFocus { focused = returnFocus }
+        }
         .onExitCommand {
-            if model.phase == .authorizing { model.cancelConnection() }
+            if playing != nil { playing = nil }
+            else if model.phase == .authorizing { model.cancelConnection() }
             else { dismiss() }
         }
         .onChange(of: model.phase) { _, phase in
@@ -120,7 +140,7 @@ struct NTVTwitchView: View {
                     .focused($focused, equals: .search)
                     .accessibilityIdentifier("ntv.twitch.search")
                 Spacer()
-                Text("Lecture des directs à venir")
+                Text("Directs publics · lecture expérimentale")
                     .font(.system(size: 19)).foregroundStyle(NTVDesign.textSecondary)
             }
             .buttonStyle(NTVActionButtonStyle())
@@ -141,15 +161,29 @@ struct NTVTwitchView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 340, maximum: 410), spacing: 24)], spacing: 28) {
                     if searching {
                         ForEach(model.channels) { channel in
-                            NTVTwitchCard(name: channel.displayName, title: channel.title,
-                                subtitle: channel.gameName, thumbnail: channel.thumbnailURL)
+                            Button {
+                                returnFocus = .channel(channel.id)
+                                playing = .init(login: channel.broadcasterLogin, name: channel.displayName, title: channel.title)
+                            } label: {
+                                NTVTwitchCard(name: channel.displayName, title: channel.title,
+                                    subtitle: channel.gameName, thumbnail: channel.thumbnailURL)
+                            }
+                                .buttonStyle(PlainCardButtonStyle())
+                                .focused($focused, equals: .channel(channel.id))
                                 .accessibilityIdentifier("ntv.twitch.channel.\(channel.id)")
                         }
                     } else {
                         ForEach(model.streams) { stream in
-                            NTVTwitchCard(name: stream.userName, title: stream.title,
-                                subtitle: "\(stream.gameName) · \(stream.viewerCount) spectateurs",
-                                thumbnail: stream.previewURL?.absoluteString ?? "")
+                            Button {
+                                returnFocus = .stream(stream.id)
+                                playing = .init(login: stream.userLogin, name: stream.userName, title: stream.title)
+                            } label: {
+                                NTVTwitchCard(name: stream.userName, title: stream.title,
+                                    subtitle: "\(stream.gameName) · \(stream.viewerCount) spectateurs",
+                                    thumbnail: stream.previewURL?.absoluteString ?? "")
+                            }
+                                .buttonStyle(PlainCardButtonStyle())
+                                .focused($focused, equals: .stream(stream.id))
                                 .accessibilityIdentifier("ntv.twitch.stream.\(stream.id)")
                         }
                     }
@@ -199,7 +233,6 @@ private struct NTVTwitchCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(NTVDesign.surface, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(focused ? NTVDesign.accent : .clear, lineWidth: 3))
-        .focusable()
         .accessibilityElement(children: .combine)
     }
 }

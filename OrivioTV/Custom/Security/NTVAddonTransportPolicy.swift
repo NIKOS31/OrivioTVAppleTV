@@ -23,6 +23,7 @@ enum NTVAddonTransportPolicy {
 
     static func permitsRedirect(from original: URL, to destination: URL, current: URL? = nil) -> Bool {
         let previous = current ?? original
+        if publicCinemetaCatalogAlias(from: original, to: destination, current: previous) { return true }
         guard permits(original), permits(previous), permits(destination),
               original.host?.lowercased() == previous.host?.lowercased(),
               original.host?.lowercased() == destination.host?.lowercased() else { return false }
@@ -37,6 +38,28 @@ enum NTVAddonTransportPolicy {
         // another host or another service port cannot receive the request.
         return sourceScheme == "http" && sourcePort == 80
             && targetScheme == "https" && targetPort == 443
+    }
+
+    /// The built-in, unconfigured Cinemeta catalogs redirect to this separate
+    /// publisher endpoint. No configured path/query or arbitrary addon host
+    /// can use the exception, and the original public resource path is kept.
+    private static func publicCinemetaCatalogAlias(from original: URL, to destination: URL, current: URL) -> Bool {
+        let urls = [original, destination, current]
+        guard urls.allSatisfy({ permits($0) && $0.scheme?.lowercased() == "https"
+            && ($0.port ?? 443) == 443 && $0.query == nil && $0.fragment == nil }),
+              original.host?.lowercased() == "v3-cinemeta.strem.io",
+              current.host?.lowercased() == original.host?.lowercased(),
+              destination.host?.lowercased() == "cinemeta-catalogs.strem.io",
+              let path = URLComponents(url: original, resolvingAgainstBaseURL: false)?.percentEncodedPath,
+              URLComponents(url: current, resolvingAgainstBaseURL: false)?.percentEncodedPath == path,
+              let targetPath = URLComponents(url: destination, resolvingAgainstBaseURL: false)?.percentEncodedPath else { return false }
+        let parts = path.split(separator: "/").map(String.init)
+        guard (3...4).contains(parts.count), parts[0] == "catalog",
+              ["movie", "series"].contains(parts[1]), parts.last?.hasSuffix(".json") == true else { return false }
+        let id = parts.count == 3 ? String(parts[2].dropLast(5)) : parts[2]
+        guard ["top", "year", "imdbRating", "last-videos", "calendar-videos"].contains(id) else { return false }
+        if targetPath == "/" + id + path { return true }
+        return parts.count == 4 && parts[3].hasPrefix("search=") && targetPath == "/search" + path
     }
 
     static func makeSession(configuration: URLSessionConfiguration) -> URLSession {

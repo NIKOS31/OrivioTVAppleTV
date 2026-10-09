@@ -3,6 +3,24 @@ import UIKit
 @testable import OrivioTV
 
 final class NTVSecurityTests: XCTestCase {
+    func testPublicCinemetaCatalogAliasDoesNotAcceptConfiguredURLs() throws {
+        let source = try XCTUnwrap(URL(string: "https://v3-cinemeta.strem.io/catalog/movie/top.json"))
+        let destination = try XCTUnwrap(URL(string: "https://cinemeta-catalogs.strem.io/top/catalog/movie/top.json"))
+        XCTAssertTrue(NTVAddonTransportPolicy.permitsRedirect(from: source, to: destination))
+        for raw in ["https://v3-cinemeta.strem.io/PRIVATE-KEY/catalog/movie/top.json",
+                    "https://v3-cinemeta.strem.io/catalog/movie/top.json?token=PRIVATE-KEY",
+                    "https://v3-cinemeta.strem.io/catalog/movie/PRIVATE-KEY.json",
+                    "https://other.invalid/catalog/movie/top.json",
+                    "https://v3-cinemeta.strem.io/meta/movie/tt123.json"] {
+            XCTAssertFalse(NTVAddonTransportPolicy.permitsRedirect(from: try XCTUnwrap(URL(string: raw)), to: destination))
+        }
+        for raw in ["http://cinemeta-catalogs.strem.io/top/catalog/movie/top.json",
+                    "https://cinemeta-catalogs.strem.io:8443/top/catalog/movie/top.json",
+                    "https://cinemeta-catalogs.strem.io/top/catalog/movie/top.json?token=PRIVATE-KEY",
+                    "https://cinemeta-catalogs.strem.io/unrelated/catalog/movie/top.json"] {
+            XCTAssertFalse(NTVAddonTransportPolicy.permitsRedirect(from: source, to: try XCTUnwrap(URL(string: raw))))
+        }
+    }
     func testAddonTargetsRejectCredentialsAndNonHTTPProtocols() {
         let rejected = ["https://user:PRIVATE-URL-SENTINEL@addon.invalid/manifest.json",
                         "https://user@addon.invalid/manifest.json", "file:///tmp/private.json",

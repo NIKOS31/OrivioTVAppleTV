@@ -49,7 +49,6 @@ struct NTVLiveHub: View {
         .foregroundStyle(NTVDesign.textPrimary)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NTVDesign.background.ignoresSafeArea())
-        .defaultFocus($sectionFocus, .television)
         .onAppear { if sectionFocus == nil { sectionFocus = section } }
         .onChange(of: scope) { _, _ in returnToTelevision() }
         .onExitCommand {

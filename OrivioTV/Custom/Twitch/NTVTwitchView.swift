@@ -78,7 +78,7 @@ struct NTVTwitchView: View {
         .padding(.vertical, embedded ? 20 : 60)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NTVDesign.background.ignoresSafeArea())
-        .defaultFocus($focused, .connect)
+        .defaultFocus($focused, model.phase == .connected ? .followed : model.phase == .authorizing ? .cancel : .connect)
         .task(id: scope) {
             if preparedScope != scope {
                 await prepare()

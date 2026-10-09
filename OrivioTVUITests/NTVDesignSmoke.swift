@@ -41,7 +41,12 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.select)
         let video = app.descendants(matching: .any)["ntv.twitch.player.video"].firstMatch
         XCTAssertTrue(video.waitForExistence(timeout: 20))
-        remote.press(.menu)
+        // The native AVPlayer controls can consume Back to hide their HUD first.
+        // Keep the same bounded return gesture as the standalone player test.
+        for _ in 0..<3 {
+            remote.press(.menu)
+            if followed.waitForExistence(timeout: 3) { break }
+        }
         XCTAssertTrue(followed.waitForExistence(timeout: 5))
         XCTAssertFalse(video.exists)
         XCTAssertTrue(heading.exists, "Back from the player preserves the embedded Twitch browser.")

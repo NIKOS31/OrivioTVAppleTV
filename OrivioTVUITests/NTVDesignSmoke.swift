@@ -4,6 +4,40 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testLiveTabSeparatesTelevisionAndTwitchWithoutATVAddon() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvTopMenuDemo", "-liveTVDemo", "-ntvTwitchDemo"]
+        app.launch()
+        let remote = XCUIRemote.shared
+        let heading = app.staticTexts["ntv.live.hub.heading"]
+        let television = app.buttons["ntv.live.section.television"]
+        let twitch = app.buttons["ntv.live.section.twitch"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 20))
+        XCTAssertTrue(focused(television, timeout: 5))
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(twitch.frame))
+        capture("ntv-live-hub-television")
+        remote.press(.right)
+        XCTAssertTrue(focused(twitch, timeout: 5))
+        remote.press(.select)
+        let connect = app.buttons["ntv.twitch.connect"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 10), "Twitch is reachable even with no TV channels configured.")
+        XCTAssertTrue(focused(connect, timeout: 5))
+        XCTAssertTrue(heading.exists, "The Twitch browser remains inside the Live TV page.")
+        XCTAssertFalse(app.buttons["ntv.twitch.close"].exists, "The embedded browser uses the common section navigation.")
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.twitch.code"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["ntv.twitch.followed"].waitForExistence(timeout: 20))
+        capture("ntv-live-hub-twitch")
+        remote.press(.menu)
+        XCTAssertTrue(focused(television, timeout: 5), "Back from Twitch returns to the television selector.")
+        XCTAssertTrue(heading.exists)
+        XCTAssertFalse(app.buttons["ntv.twitch.followed"].exists)
+        remote.press(.right)
+        XCTAssertTrue(focused(twitch, timeout: 5), "The viewer can reopen Twitch from the common section bar.")
+        app.terminate()
+    }
+
     func testLaunchLogoIsCenteredAndDoesNotReplayOnForeground() {
         continueAfterFailure = false
         let app = XCUIApplication()

@@ -269,6 +269,7 @@ struct LiveTVView: View {
     let onSelectChannel: (MetaItem) -> Void
     /// Direct (M3U) channel → play its URL immediately.
     let onPlayDirect: (LiveChannel) -> Void
+    var showsHeading: Bool = true
 
     @State private var searchText = ""
     @State private var sortMode: ChannelSort = .defaultOrder
@@ -341,7 +342,7 @@ struct LiveTVView: View {
         } else {
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: OrivioSpacing.xl) {
-                    header
+                    if showsHeading { header }
                     controls
                     if filtering {
                         gridContext

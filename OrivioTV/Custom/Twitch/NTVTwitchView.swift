@@ -1,6 +1,14 @@
 import SwiftUI
 
 struct NTVTwitchView: View {
+    private let embedded: Bool
+    private let onClose: (() -> Void)?
+
+    init(embedded: Bool = false, onClose: (() -> Void)? = nil) {
+        self.embedded = embedded
+        self.onClose = onClose
+    }
+
     @EnvironmentObject private var profiles: ProfileStore
     @EnvironmentObject private var account: OrivioAccountManager
     @Environment(\.dismiss) private var dismiss
@@ -30,9 +38,11 @@ struct NTVTwitchView: View {
                         .buttonStyle(NTVActionButtonStyle())
                         .accessibilityIdentifier("ntv.twitch.disconnect")
                 }
-                Button("Fermer") { dismiss() }
-                    .buttonStyle(NTVActionButtonStyle())
-                    .accessibilityIdentifier("ntv.twitch.close")
+                if !embedded {
+                    Button("Fermer") { close() }
+                        .buttonStyle(NTVActionButtonStyle())
+                        .accessibilityIdentifier("ntv.twitch.close")
+                }
             }
             if let message = model.message {
                 Text(message).font(.system(size: 22)).foregroundStyle(NTVDesign.textSecondary)
@@ -64,7 +74,8 @@ struct NTVTwitchView: View {
             }
         }
         .foregroundStyle(NTVDesign.textPrimary)
-        .padding(60)
+        .padding(.horizontal, embedded ? NTVViewport.horizontalInset : 60)
+        .padding(.vertical, embedded ? 20 : 60)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NTVDesign.background.ignoresSafeArea())
         .defaultFocus($focused, .connect)
@@ -89,7 +100,7 @@ struct NTVTwitchView: View {
         .onExitCommand {
             if playing != nil { playing = nil }
             else if model.phase == .authorizing { model.cancelConnection() }
-            else { dismiss() }
+            else { close() }
         }
         .onChange(of: model.phase) { _, phase in
             switch phase {
@@ -99,6 +110,11 @@ struct NTVTwitchView: View {
             default: break
             }
         }
+    }
+
+    private func close() {
+        if let onClose { onClose() }
+        else { dismiss() }
     }
 
     private func prepare() async {

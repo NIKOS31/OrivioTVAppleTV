@@ -1765,12 +1765,21 @@ struct RootView: View {
         .probeScreen("Library")
     }
 
+    @ViewBuilder
     private var liveTVRoot: some View {
-        LiveTVView(
-            onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
-            onPlayDirect: { channel in playLiveChannel(channel) }
-        )
-        .probeScreen("Live TV")
+        if theme.palette.id == NTVDesign.palette.id {
+            NTVLiveHub(
+                onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
+                onPlayDirect: { channel in playLiveChannel(channel) }
+            )
+            .probeScreen("Live TV")
+        } else {
+            LiveTVView(
+                onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
+                onPlayDirect: { channel in playLiveChannel(channel) }
+            )
+            .probeScreen("Live TV")
+        }
     }
 
     /// Shared navigation destinations. `path` is the binding for whichever

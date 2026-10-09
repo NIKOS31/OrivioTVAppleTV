@@ -99,7 +99,6 @@ struct NTVHomeSpotlight: View {
                 .frame(maxWidth: 760, alignment: .leading)
             }
             .frame(height: 310)
-            .clipShape(RoundedRectangle(cornerRadius: NTVDesign.cardRadius))
         }
     }
 }

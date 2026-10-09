@@ -97,11 +97,11 @@ struct NTVTwitchView: View {
         .onChange(of: playing?.id) { old, new in
             if old != nil, new == nil, let returnFocus { focused = returnFocus }
         }
-        .onExitCommand {
+        .modifier(NTVTwitchExitHandler(enabled: !embedded) {
             if playing != nil { playing = nil }
             else if model.phase == .authorizing { model.cancelConnection() }
             else { close() }
-        }
+        })
         .onChange(of: model.phase) { _, phase in
             switch phase {
             case .connected: focused = .followed
@@ -219,6 +219,17 @@ struct NTVTwitchView: View {
                 }
             }
         }
+    }
+}
+
+/// An embedded browser delegates Back to the live hub. A presented browser
+/// keeps its own dismissal and device-code cancellation behaviour.
+private struct NTVTwitchExitHandler: ViewModifier {
+    let enabled: Bool
+    let onExit: () -> Void
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { content.onExitCommand(perform: onExit) }
+        else { content }
     }
 }
 

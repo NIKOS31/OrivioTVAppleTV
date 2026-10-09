@@ -1492,7 +1492,6 @@ struct RootView: View {
         case 4:
             NavigationStack(path: $liveTVPath) {
                 liveTVRoot
-                    .onExitCommand { focusSidebar(4) }
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $liveTVPath) }
             }
         case 5:
@@ -1770,7 +1769,8 @@ struct RootView: View {
         if theme.palette.id == NTVDesign.palette.id {
             NTVLiveHub(
                 onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
-                onPlayDirect: { channel in playLiveChannel(channel) }
+                onPlayDirect: { channel in playLiveChannel(channel) },
+                onBackAtRoot: { focusSidebar(4) }
             )
             .probeScreen("Live TV")
         } else {
@@ -1778,6 +1778,7 @@ struct RootView: View {
                 onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
                 onPlayDirect: { channel in playLiveChannel(channel) }
             )
+            .onExitCommand { focusSidebar(4) }
             .probeScreen("Live TV")
         }
     }

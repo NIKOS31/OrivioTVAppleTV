@@ -28,7 +28,23 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.select)
         XCTAssertTrue(app.staticTexts["ntv.twitch.code"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["ntv.twitch.followed"].waitForExistence(timeout: 20))
+        let followed = app.buttons["ntv.twitch.followed"]
+        XCTAssertTrue(focused(followed, timeout: 5))
+        let stream = app.buttons["ntv.twitch.stream.fixture-live"]
+        XCTAssertTrue(stream.waitForExistence(timeout: 10))
         capture("ntv-live-hub-twitch")
+        for _ in 0..<5 {
+            if stream.hasFocus { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(focused(stream, timeout: 5))
+        remote.press(.select)
+        let video = app.descendants(matching: .any)["ntv.twitch.player.video"].firstMatch
+        XCTAssertTrue(video.waitForExistence(timeout: 20))
+        remote.press(.menu)
+        XCTAssertTrue(followed.waitForExistence(timeout: 5))
+        XCTAssertFalse(video.exists)
+        XCTAssertTrue(heading.exists, "Back from the player preserves the embedded Twitch browser.")
         remote.press(.menu)
         XCTAssertTrue(focused(television, timeout: 5), "Back from Twitch returns to the television selector.")
         XCTAssertTrue(heading.exists)

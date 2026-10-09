@@ -10,6 +10,7 @@ struct NTVLiveHub: View {
     @FocusState private var sectionFocus: Section?
     let onSelectChannel: (MetaItem) -> Void
     let onPlayDirect: (LiveChannel) -> Void
+    let onBackAtRoot: () -> Void
 
     private var scope: String { "\(account.currentUserID ?? "local").profile.\(profiles.activeProfileID)" }
 
@@ -51,6 +52,10 @@ struct NTVLiveHub: View {
         .defaultFocus($sectionFocus, .television)
         .onAppear { if sectionFocus == nil { sectionFocus = section } }
         .onChange(of: scope) { _, _ in returnToTelevision() }
+        .onExitCommand {
+            if section == .twitch { returnToTelevision() }
+            else { onBackAtRoot() }
+        }
     }
 
     private func returnToTelevision() {

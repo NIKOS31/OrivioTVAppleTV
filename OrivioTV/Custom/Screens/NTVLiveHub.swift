@@ -6,6 +6,8 @@ struct NTVLiveHub: View {
     private enum Section: String, CaseIterable { case television = "Télévision", twitch = "Twitch" }
     @EnvironmentObject private var profiles: ProfileStore
     @EnvironmentObject private var account: OrivioAccountManager
+    @Environment(\.resetFocus) private var resetFocus
+    @Namespace private var selectorScope
     @State private var section: Section = .television
     @FocusState private var sectionFocus: Section?
     let onSelectChannel: (MetaItem) -> Void
@@ -30,6 +32,7 @@ struct NTVLiveHub: View {
                     }
                     .buttonStyle(NTVActionButtonStyle())
                     .focused($sectionFocus, equals: choice)
+                    .prefersDefaultFocus(choice == section, in: selectorScope)
                     .accessibilityLabel(choice.rawValue)
                     .accessibilityValue(choice == section ? "Sélectionné" : "")
                     .accessibilityIdentifier(choice == .television ? "ntv.live.section.television" : "ntv.live.section.twitch")
@@ -38,9 +41,11 @@ struct NTVLiveHub: View {
             .padding(.horizontal, NTVViewport.horizontalInset)
             .padding(.top, 28)
             .focusSection()
+            .focusScope(selectorScope)
             .onMoveCommand { direction in
-                // Keep the two selectors adjacent after replacing the browser
-                // below them; the old browser's focus geometry can linger.
+                #if DEBUG
+                NSLog("[nTV Live] move=%@ focus=%@", String(describing: direction), sectionFocus?.rawValue ?? "none")
+                #endif
                 if direction == .right, sectionFocus == .television {
                     sectionFocus = .twitch
                 } else if direction == .left, sectionFocus == .twitch {
@@ -59,6 +64,11 @@ struct NTVLiveHub: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NTVDesign.background.ignoresSafeArea())
         .onAppear { if sectionFocus == nil { sectionFocus = section } }
+        .onChange(of: sectionFocus) { _, focused in
+            #if DEBUG
+            NSLog("[nTV Live] focus=%@ section=%@", focused?.rawValue ?? "none", section.rawValue)
+            #endif
+        }
         .onChange(of: scope) { _, _ in returnToTelevision() }
         .onExitCommand {
             if section == .twitch { returnToTelevision() }
@@ -68,6 +78,12 @@ struct NTVLiveHub: View {
 
     private func returnToTelevision() {
         section = .television
-        sectionFocus = .television
+        // Reevaluate the header's own focus scope after the Twitch hierarchy
+        // has been removed. Setting focus during that replacement can leave
+        // a visually selected button with stale remote command routing.
+        sectionFocus = nil
+        DispatchQueue.main.async {
+            resetFocus(in: selectorScope)
+        }
     }
 }

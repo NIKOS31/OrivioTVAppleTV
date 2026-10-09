@@ -55,7 +55,7 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(heading.exists)
         XCTAssertFalse(app.buttons["ntv.twitch.followed"].exists)
         remote.press(.right)
-        XCTAssertTrue(focused(twitch, timeout: 5), "The viewer can reopen Twitch from the common section bar.")
+        XCTAssertTrue(focused(twitch, timeout: 5), "The viewer can reopen Twitch from the common section bar.\n" + app.debugDescription)
         remote.press(.select)
         XCTAssertTrue(followed.waitForExistence(timeout: 20), "Reopening Twitch restores its saved connection.")
         XCTAssertTrue(focused(followed, timeout: 5))

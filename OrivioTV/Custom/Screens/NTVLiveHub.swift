@@ -38,6 +38,15 @@ struct NTVLiveHub: View {
             .padding(.horizontal, NTVViewport.horizontalInset)
             .padding(.top, 28)
             .focusSection()
+            .onMoveCommand { direction in
+                // Keep the two selectors adjacent after replacing the browser
+                // below them; the old browser's focus geometry can linger.
+                if direction == .right, sectionFocus == .television {
+                    sectionFocus = .twitch
+                } else if direction == .left, sectionFocus == .twitch {
+                    sectionFocus = .television
+                }
+            }
 
             switch section {
             case .television:

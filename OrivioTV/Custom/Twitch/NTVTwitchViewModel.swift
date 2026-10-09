@@ -41,8 +41,8 @@ final class NTVTwitchViewModel: ObservableObject {
             let fixture = NTVTwitchUIDemo()
             let api = try! NTVTwitchAPI(clientID: NTVTwitchConfiguration.clientID,
                 transport: { try await fixture.send($0) })
-            self.init(api: api, makeSession: { api, _, _ in
-                let memory = NTVTwitchDemoStorage()
+            self.init(api: api, makeSession: { api, profile, owner in
+                let memory = NTVTwitchDemoStorage.scoped(profile: profile, owner: owner)
                 return try NTVTwitchSession(api: api, storage: .init(
                     load: { memory.tokens }, save: { memory.tokens = $0 }, remove: { memory.tokens = nil }))
             })
@@ -246,7 +246,21 @@ final class NTVTwitchViewModel: ObservableObject {
 }
 
 #if DEBUG
-private final class NTVTwitchDemoStorage { var tokens: NTVTwitchTokens? }
+/// The offline UI fixture mirrors Keychain lifetime across section switches,
+/// without writing any synthetic credential to disk or sharing profile scopes.
+@MainActor
+private final class NTVTwitchDemoStorage {
+    private static var stores: [String: NTVTwitchDemoStorage] = [:]
+    var tokens: NTVTwitchTokens?
+
+    static func scoped(profile: Int, owner: String) -> NTVTwitchDemoStorage {
+        let key = "\(owner).profile.\(profile)"
+        if let memory = stores[key] { return memory }
+        let memory = NTVTwitchDemoStorage()
+        stores[key] = memory
+        return memory
+    }
+}
 private actor NTVTwitchUIDemo {
     private var polls = 0
     func send(_ request: URLRequest) throws -> (Data, HTTPURLResponse) {

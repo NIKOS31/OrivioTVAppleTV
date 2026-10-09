@@ -3,6 +3,91 @@ import UIKit
 @testable import OrivioTV
 
 final class NTVSecurityTests: XCTestCase {
+    func testAddonTargetsRejectCredentialsAndNonHTTPProtocols() {
+        let rejected = ["https://user:PRIVATE-URL-SENTINEL@addon.invalid/manifest.json",
+                        "https://user@addon.invalid/manifest.json", "file:///tmp/private.json",
+                        "javascript:alert(1)", "data:application/json,{}", "https:///manifest.json",
+                        "https://addon.invalid:0/manifest.json", "https://addon.invalid:65536/manifest.json",
+                        "https://addon.invalid/\nmanifest.json",
+                        "https://addon.invalid/" + String(repeating: "x", count: 16_384)]
+        for raw in rejected {
+            XCTAssertThrowsError(try NTVAddonTransportPolicy.target(raw)) { error in
+                XCTAssertFalse(error.localizedDescription.contains("PRIVATE-URL-SENTINEL"))
+                XCTAssertFalse(error.localizedDescription.contains("addon.invalid"))
+            }
+        }
+    }
+
+    func testAddonTargetsPreserveConfiguredPathAndQuery() throws {
+        for raw in ["https://addon.invalid/PRIVATE-PATH/manifest.json?token=PRIVATE-QUERY",
+                    "http://192.168.1.2:8099/config/manifest.json", "http://[::1]:8099/manifest.json"] {
+            XCTAssertEqual(try NTVAddonTransportPolicy.target(raw).absoluteString, raw)
+        }
+    }
+
+    func testAddonRedirectPolicyRejectsOtherOriginsAndDowngrades() throws {
+        let source = try XCTUnwrap(URL(string: "https://addon.invalid/PRIVATE-PATH/manifest.json"))
+        for raw in ["https://other.invalid/PRIVATE-PATH/manifest.json", "http://addon.invalid/manifest.json",
+                    "https://addon.invalid:8443/manifest.json", "https://user@addon.invalid/manifest.json",
+                    "file:///tmp/manifest.json"] {
+            XCTAssertFalse(NTVAddonTransportPolicy.permitsRedirect(from: source, to: try XCTUnwrap(URL(string: raw))))
+        }
+        XCTAssertTrue(NTVAddonTransportPolicy.permitsRedirect(from: source,
+            to: try XCTUnwrap(URL(string: "https://ADDON.invalid:443/next.json"))))
+        XCTAssertTrue(NTVAddonTransportPolicy.permitsRedirect(
+            from: try XCTUnwrap(URL(string: "http://addon.invalid/manifest.json")), to: source))
+        XCTAssertFalse(NTVAddonTransportPolicy.permitsRedirect(
+            from: try XCTUnwrap(URL(string: "http://addon.invalid/manifest.json")),
+            to: try XCTUnwrap(URL(string: "http://addon.invalid/next.json")), current: source),
+            "An HTTP entry point cannot permit a later HTTPS-to-HTTP downgrade.")
+    }
+
+    func testAddonSessionDoesNotShareCookiesCredentialsOrDiskCache() {
+        let session = NTVAddonTransportPolicy.makeSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        XCTAssertNil(session.configuration.httpCookieStorage)
+        XCTAssertFalse(session.configuration.httpShouldSetCookies)
+        XCTAssertNil(session.configuration.urlCredentialStorage)
+        XCTAssertNil(session.configuration.urlCache)
+        XCTAssertEqual(session.configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+    }
+
+    func testAddonCollectorDoesNotForwardConfiguredURLToAnotherService() async throws {
+        let destination = try NTVAddonHTTPFixture()
+        defer { destination.stop() }
+        let target = try await destination.start()
+        let redirect = try NTVAddonHTTPFixture(redirectTo: target.appendingPathComponent("PRIVATE-REDIRECT-SENTINEL"))
+        defer { redirect.stop() }
+        let source = try await redirect.start()
+        let session = NTVAddonTransportPolicy.makeSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let (_, response) = try await NTVBoundedResponse.data(
+            for: URLRequest(url: source), session: session, maximumBytes: 1024)
+        XCTAssertEqual(response.statusCode, 302)
+        XCTAssertEqual(destination.requests.count, 0, "A different service port must not receive the configured path.")
+    }
+
+    func testAddonCollectorFollowsSameOriginWithoutSharingCookies() async throws {
+        let server = try NTVAddonHTTPFixture(redirectWithinOrigin: true)
+        defer { server.stop() }
+        let source = try await server.start()
+        let cookie = try XCTUnwrap(HTTPCookie(properties: [.domain: "127.0.0.1", .path: "/",
+            .name: "ntv-security-fixture", .value: "PRIVATE-COOKIE-SENTINEL"]))
+        HTTPCookieStorage.shared.setCookies([cookie], for: source, mainDocumentURL: source)
+        defer { HTTPCookieStorage.shared.deleteCookie(cookie) }
+        XCTAssertTrue(HTTPCookieStorage.shared.cookies(for: source)?.contains {
+            $0.name == cookie.name && $0.value == "PRIVATE-COOKIE-SENTINEL"
+        } == true, "The shared-cookie sentinel must exist before checking isolation.")
+        let session = NTVAddonTransportPolicy.makeSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let (body, response) = try await NTVBoundedResponse.data(
+            for: URLRequest(url: source), session: session, maximumBytes: 1024)
+        XCTAssertEqual(response.statusCode, 200)
+        XCTAssertEqual(body, Data("{}".utf8))
+        XCTAssertEqual(server.requests.count, 2)
+        XCTAssertFalse(server.requests.contains { $0.contains("PRIVATE-COOKIE-SENTINEL") })
+    }
+
     func testBoundedReceptionPreservesAuthenticatedRedirectProtection() async throws {
         let destination = try NTVGzipHTTPFixture(payload: Data())
         defer { destination.stop() }

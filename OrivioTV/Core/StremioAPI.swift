@@ -112,7 +112,7 @@ enum PosterBannerPreference {
 
 enum StremioAPI {
     static let session: URLSession = {
-        let config = URLSessionConfiguration.default
+        let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 60
         // The bounded cache below stores only successfully decoded responses.
@@ -131,7 +131,7 @@ enum StremioAPI {
         config.httpAdditionalHeaders = [
             "User-Agent": "Mozilla/5.0 (AppleTV; CPU tvOS like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         ]
-        return URLSession(configuration: config)
+        return NTVAddonTransportPolicy.makeSession(configuration: config)
     }()
 
     private static let cache = StremioResponseCache()
@@ -183,14 +183,14 @@ enum StremioAPI {
         _ urlString: String, ttl: TimeInterval = 0, timeout: TimeInterval = 0,
         bypassCache: Bool = false
     ) async throws -> T {
+        let target = try NTVAddonTransportPolicy.target(urlString)
         let limit = responseByteLimit(for: urlString)
         if !bypassCache, ttl > 0, let cached = cache.data(for: urlString, ttl: ttl) {
             guard cached.count <= limit else { cache.remove(urlString); throw StremioAPIError.responseTooLarge }
             return try JSONDecoder().decode(T.self, from: cached)
         }
         if bypassCache {
-            guard let url = URL(string: urlString) else { throw StremioAPIError.badURL(urlString) }
-            var request = URLRequest(url: url)
+            var request = URLRequest(url: target)
             if timeout > 0 { request.timeoutInterval = timeout }
             // A health check that can be answered from the URL cache is not a
             // health check. Same reasoning as the ttl == 0 case below.
@@ -205,8 +205,7 @@ enum StremioAPI {
         // overlapping requests for the same URL (Home rows, prefetch, back-nav)
         // share a single call instead of each hitting the network.
         let data = try await coalescer.data(for: urlString) {
-            guard let url = URL(string: urlString) else { throw StremioAPIError.badURL(urlString) }
-            var request = URLRequest(url: url)
+            var request = URLRequest(url: target)
             if timeout > 0 { request.timeoutInterval = timeout }
             if ttl == 0 { request.cachePolicy = .reloadIgnoringLocalCacheData }
             request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -261,9 +260,6 @@ enum StremioAPI {
     /// must time the NETWORK, not a cached manifest (which reported "OK, 0 ms"
     /// for a host that had just gone down, and could never report "slow").
     static func manifest(url: String, bypassCache: Bool = false) async throws -> AddonManifest {
-        guard let target = URL(string: url),
-              ["http", "https"].contains(target.scheme?.lowercased() ?? ""),
-              !(target.host ?? "").isEmpty else { throw StremioAPIError.badURL("manifest") }
         return try await get(url, ttl: 300, bypassCache: bypassCache)
     }
 

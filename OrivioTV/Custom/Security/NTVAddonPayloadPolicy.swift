@@ -19,7 +19,10 @@ enum NTVAddonPayloadPolicy {
     static func checkedData(_ data: Data, resource: Resource, source: URL) throws -> Data {
         guard data.count <= resource.maximumBytes else { throw StremioAPIError.responseTooLarge }
         try preflight(data)
-        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        let decoded: Any
+        do { decoded = try JSONSerialization.jsonObject(with: data) }
+        catch { throw StremioAPIError.invalidResponse }
+        guard var object = decoded as? [String: Any] else {
             throw StremioAPIError.invalidResponse
         }
         var changed = false

@@ -29,7 +29,7 @@ enum NTVAddonLinkPolicy {
     private static func canonicalHost(_ host: String) -> String {
         var value = host.lowercased()
         if value.hasPrefix("["), value.hasSuffix("]") { value = String(value.dropFirst().dropLast()) }
-        if value.hasSuffix(".") { value.removeLast() }
+        while value.hasSuffix(".") { value.removeLast() }
         return value
     }
 

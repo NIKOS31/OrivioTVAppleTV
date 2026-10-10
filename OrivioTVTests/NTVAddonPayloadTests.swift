@@ -54,7 +54,7 @@ final class NTVAddonPayloadTests: XCTestCase {
         let encoded = try NTVAddonPayloadPolicy.pathComponent(text)
         let url = try XCTUnwrap(URL(string: "https://addon.invalid/meta/movie/\(encoded).json"))
         XCTAssertNil(url.query); XCTAssertNil(url.fragment)
-        XCTAssertEqual(url.pathComponents.count, 4)
+        XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath.split(separator: "/").count, 3)
         XCTAssertTrue(encoded.contains("%2F")); XCTAssertTrue(encoded.contains("%25"))
         for raw in ["", ".", "..", "movie\r\n", String(repeating: "x", count: 513)] {
             XCTAssertThrowsError(try NTVAddonPayloadPolicy.pathComponent(raw))
@@ -63,7 +63,7 @@ final class NTVAddonPayloadTests: XCTestCase {
 
     func testInternetAddonCannotSupplyLiteralPrivateOrAliasDestinations() {
         for host in ["127.0.0.1", "127.1", "2130706433", "0x7f000001", "0177.0.0.1", "10.0.0.1", "172.16.1.1", "192.168.1.1",
-                     "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "localhost.", "box.local", "printer",
+                     "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "localhost.", "localhost..", "127.0.0.1..", "box.local", "box.local..", "printer",
                      "[::1]", "[::]", "[::ffff:127.0.0.1]", "[::ffff:192.168.1.1]", "[fe80::1]", "[fd00::1]", "[64:ff9b::7f00:1]"] {
             XCTAssertFalse(NTVAddonLinkPolicy.permits("http://\(host)/private", source: addonSource), host)
         }

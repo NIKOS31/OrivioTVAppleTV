@@ -158,34 +158,35 @@ struct NTVSidebarLabel: View {
 }
 
 struct NTVActionButtonStyle: ButtonStyle {
+    var prominent = false
     func makeBody(configuration: Configuration) -> some View {
-        Chrome(configuration: configuration)
+        Chrome(configuration: configuration, prominent: prominent)
     }
 
     private struct Chrome: View {
         @Environment(\.isFocused) private var focused
         let configuration: ButtonStyle.Configuration
+        let prominent: Bool
 
         var body: some View {
             configuration.label
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(NTVDesign.textPrimary)
-                .padding(.horizontal, 26)
-                .frame(minHeight: 60)
+                .font(.system(size: 23, weight: .medium))
+                .foregroundStyle(focused || prominent ? NTVDesign.background : NTVDesign.textPrimary)
+                .padding(.horizontal, 28)
+                .frame(minHeight: 62)
                 .background {
-                    if focused {
-                        NTVGlassSurface(shape: RoundedRectangle(
-                            cornerRadius: NTVDesign.controlRadius, style: .continuous), emphasized: true)
+                    if focused || prominent {
+                        Capsule().fill(NTVDesign.textPrimary.opacity(focused ? 1 : 0.92))
                     } else {
-                        RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                            .fill(NTVDesign.raised)
+                        Capsule().fill(.black.opacity(0.28))
                     }
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                        .strokeBorder(focused ? NTVDesign.accent : .clear, lineWidth: 2)
+                    Capsule().strokeBorder(.white.opacity(focused ? 0 : 0.16), lineWidth: 1)
                 }
-                .focusLift(NTVDesign.controlFocusScale, focused)
+                // A single alpha fill is sufficient here. Glass refraction belongs
+                // to navigation, rather than every action in a scrolling page.
+                .focusLift(1.015, focused)
                 .cardPressDip(configuration.isPressed)
         }
     }

@@ -3,6 +3,22 @@ import XCTest
 
 final class NTVCoreTests: XCTestCase {
     @MainActor
+    func testDetailOpeningArtworkSurvivesLateProviderMetadata() {
+        let model = DetailViewModel(item: MetaItem(id: "fixture", type: "movie", name: "Opening", poster: "https://example.invalid/poster.jpg", background: "https://example.invalid/catalog.jpg", logo: "https://example.invalid/first-logo.png"))
+        model.meta = MetaItem(id: "fixture", type: "movie", name: "Enriched", poster: "https://example.invalid/new-poster.jpg", background: "https://example.invalid/alternate-crop.jpg", logo: "https://example.invalid/second-logo.png")
+        XCTAssertEqual(model.openingBackground, "https://example.invalid/catalog.jpg")
+        XCTAssertEqual(model.openingLogo, "https://example.invalid/first-logo.png")
+        XCTAssertEqual(model.meta.name, "Enriched", "Metadata enrichment remains available.")
+    }
+
+    @MainActor
+    func testDetailFallbackArtworkDoesNotSwitchFromPosterToBackdrop() {
+        let model = DetailViewModel(item: MetaItem(id: "fixture", type: "movie", name: "Opening", poster: "https://example.invalid/poster.jpg"))
+        model.meta = MetaItem(id: "fixture", type: "movie", name: "Enriched", background: "https://example.invalid/late.jpg", logo: "https://example.invalid/late-logo.png")
+        XCTAssertEqual(model.openingBackground, "https://example.invalid/poster.jpg")
+        XCTAssertNil(model.openingLogo)
+    }
+    @MainActor
     func testBlockedTouchCannotBeAdoptedWhenAnOverlayCloses() {
         let input = TouchHostView()
         var active = false

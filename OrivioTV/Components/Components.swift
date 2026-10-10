@@ -85,9 +85,24 @@ final class ImageCache: @unchecked Sendable {
     /// Kind, size and a URL digest have separate fields. A URL containing
     /// '#340' or '#blur60' cannot impersonate another rendition's cache key.
     static func artworkKey(_ url: String, budget: CGFloat?, kind: String = "sharp") -> String {
-        let digest = SHA256.hash(data: Data(url.utf8)).map { String(format: "%02x", $0) }.joined()
+        let digest: String
+        if let cached = urlDigests.object(forKey: url as NSString) { digest = cached as String }
+        else {
+            digest = SHA256.hash(data: Data(url.utf8)).map { String(format: "%02x", $0) }.joined()
+            urlDigests.setObject(digest as NSString, forKey: url as NSString, cost: url.utf8.count + 64)
+        }
         return "ntv-art:\(kind):\(budget.map { String(describing: $0) } ?? "display"):\(digest)"
     }
+
+    /// Focus changes rebuild view descriptions. Rehashing long image URLs on
+    /// the main thread every pass adds work while the underlying art is cached.
+    /// NSCache is thread-safe; this memory-only cache has no disk export.
+    private static let urlDigests: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 512
+        cache.totalCostLimit = 256 << 10
+        return cache
+    }()
 
     var loadActivity: (running: Int, queued: Int, waiters: Int) {
         get async { await loads.activity }

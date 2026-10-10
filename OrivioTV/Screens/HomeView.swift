@@ -1576,6 +1576,7 @@ struct HomeView: View {
                         .font(.system(size: 38, weight: .semibold))
                         .foregroundStyle(NTVDesign.textPrimary)
                         .accessibilityIdentifier("ntv.home.heading")
+                        .ntvHalloweenDecor(.heading)
                         .padding(.horizontal, NTVViewport.horizontalInset)
                     if perf.settings.heroBackdrop {
                         NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,

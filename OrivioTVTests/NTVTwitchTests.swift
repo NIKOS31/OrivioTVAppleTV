@@ -3,6 +3,55 @@ import AVFoundation
 @testable import OrivioTV
 
 final class NTVTwitchTests: XCTestCase {
+    func testQualityChoicesMatchAdvertisedVideoRenditions() throws {
+        let playlist = """
+        #EXTM3U
+        #EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=1920x1080,FRAME-RATE=59.94,CODECS="avc1.4d402a,mp4a.40.2",VIDEO="chunked"
+        https://video.ttvnw.net/source.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60,CODECS="avc1.4d401f,mp4a.40.2"
+        https://video.ttvnw.net/720.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=160000,CODECS="mp4a.40.2",VIDEO="audio_only"
+        https://video.ttvnw.net/audio.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=854x480,FRAME-RATE=30
+        https://video.ttvnw.net/480.m3u8
+        """
+        let choices = try NTVTwitchPlayback.qualities(in: Data(playlist.utf8), base: URL(string: "https://usher.ttvnw.net/master.m3u8")!)
+        XCTAssertEqual(choices.map(\.label), ["1080p60", "720p60", "480p"])
+        XCTAssertEqual(choices.count, Set(choices.map(\.id)).count)
+        XCTAssertFalse(choices.contains { $0.url.path.contains("audio") })
+    }
+
+    func testQualityChoicesRejectUnsafeURLsAndInvalidNumericValues() {
+        let base = URL(string: "https://usher.ttvnw.net/master.m3u8")!
+        for body in ["#EXT-X-STREAM-INF:BANDWIDTH=1\nhttps://evil.invalid/live", "#EXT-X-STREAM-INF:BANDWIDTH=nan,RESOLUTION=1280x720\nhttps://video.ttvnw.net/live", "#EXT-X-STREAM-INF:BANDWIDTH=1,FRAME-RATE=inf\nhttps://video.ttvnw.net/live"] {
+            XCTAssertThrowsError(try NTVTwitchPlayback.qualities(in: Data(("#EXTM3U\n" + body).utf8), base: base))
+        }
+    }
+
+    @MainActor
+    func testQualitySwitchPreservesPlayerAndAutomaticMode() async {
+        let master = URL(fileURLWithPath: "/tmp/ntv-master-fixture.mp4")
+        let low = URL(fileURLWithPath: "/tmp/ntv-low-fixture.mp4")
+        let media = NTVTwitchMedia(masterURL: master, qualities: [.init(id: "low", label: "480p", url: low, height: 480, frameRate: 30, bandwidth: 1000000)])
+        let model = NTVTwitchPlayerModel(mediaResolver: { _ in media })
+        defer { model.stop() }
+        await model.load(.init(login: "fixture", name: "Fixture", title: "Direct"))
+        let player = model.player
+        model.selectQuality("unknown")
+        XCTAssertNil(model.selectedQuality)
+        model.selectQuality("low")
+        XCTAssertTrue(model.player === player)
+        XCTAssertEqual((model.player?.currentItem?.asset as? AVURLAsset)?.url, low)
+        XCTAssertEqual(model.selectedQuality, "low")
+        model.selectQuality(nil)
+        XCTAssertTrue(model.player === player)
+        XCTAssertEqual((model.player?.currentItem?.asset as? AVURLAsset)?.url, master)
+        XCTAssertNil(model.selectedQuality)
+        model.stop()
+        model.selectQuality("low")
+        XCTAssertNil(model.player)
+        XCTAssertTrue(model.qualities.isEmpty)
+    }
     func testNativePlaybackUsesOnlyAnonymousVideoRequests() async throws {
         let fixture = NTVTwitchPlaybackFixture()
         let api = NTVTwitchPlayback(transport: { try await fixture.send($0, $1) }, now: { Date(timeIntervalSince1970: 1000) })

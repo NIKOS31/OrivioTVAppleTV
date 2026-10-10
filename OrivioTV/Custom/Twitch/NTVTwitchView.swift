@@ -173,8 +173,11 @@ struct NTVTwitchView: View {
                 }
             }
             if model.loadingPage { ProgressView("Chargement des chaînes…") }
-            ScrollView(.vertical) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 340, maximum: 410), spacing: 24)], spacing: 28) {
+            GeometryReader { geometry in
+                let count = max(1, Int((geometry.size.width + 28) / 420))
+                let width = max(1, (geometry.size.width - 32 - CGFloat(count - 1) * 28) / CGFloat(count))
+                ScrollView(.vertical) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 28), count: count), spacing: 32) {
                     if searching {
                         ForEach(model.channels) { channel in
                             Button {
@@ -182,7 +185,7 @@ struct NTVTwitchView: View {
                                 playing = .init(login: channel.broadcasterLogin, name: channel.displayName, title: channel.title)
                             } label: {
                                 NTVTwitchCard(name: channel.displayName, title: channel.title,
-                                    subtitle: channel.gameName, thumbnail: channel.thumbnailURL)
+                                    subtitle: channel.gameName, thumbnail: channel.thumbnailURL, width: width)
                             }
                                 .buttonStyle(PlainCardButtonStyle())
                                 .focused($focused, equals: .channel(channel.id))
@@ -196,7 +199,7 @@ struct NTVTwitchView: View {
                             } label: {
                                 NTVTwitchCard(name: stream.userName, title: stream.title,
                                     subtitle: "\(stream.gameName) · \(stream.viewerCount) spectateurs",
-                                    thumbnail: stream.previewURL?.absoluteString ?? "")
+                                    thumbnail: stream.previewURL?.absoluteString ?? "", width: width)
                             }
                                 .buttonStyle(PlainCardButtonStyle())
                                 .focused($focused, equals: .stream(stream.id))
@@ -204,7 +207,7 @@ struct NTVTwitchView: View {
                         }
                     }
                 }
-                .padding(8)
+                .padding(16)
                 if !model.loadingPage, (searching ? model.channels.isEmpty : model.streams.isEmpty) {
                     Text(searching ? (query.isEmpty ? "Saisissez une recherche pour trouver une chaîne en direct." : "Aucune chaîne en direct ne correspond à cette recherche.") : "Aucune de vos chaînes suivies n’est en direct pour le moment.")
                         .font(.system(size: 23)).foregroundStyle(NTVDesign.textSecondary).padding(.vertical, 32)
@@ -217,6 +220,7 @@ struct NTVTwitchView: View {
                     .buttonStyle(NTVActionButtonStyle())
                     .disabled(model.loadingPage)
                 }
+            }
             }
         }
     }
@@ -239,27 +243,29 @@ private struct NTVTwitchCard: View {
     let title: String
     let subtitle: String
     let thumbnail: String
+    let width: CGFloat
     private var imageURL: String? {
         guard let url = URL(string: thumbnail), url.scheme == "https", url.user == nil, url.password == nil,
               ["static-cdn.jtvnw.net", "static-cdn.twitch.tv"].contains(url.host ?? "") else { return nil }
         return url.absoluteString
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            RemoteImage(url: imageURL, maxDimension: 410)
-                .frame(height: 210).clipped()
+        VStack(alignment: .leading, spacing: 10) {
+            RemoteImage(url: imageURL, maxDimension: width)
+                .frame(width: width, height: width * 9 / 16)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(alignment: .topLeading) {
-                    Text("EN DIRECT").font(.system(size: 15, weight: .bold))
-                        .padding(8).background(.red, in: Capsule()).padding(12)
+                    Text("EN DIRECT").font(.system(size: 14, weight: .semibold))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(Color(red: 0.65, green: 0.16, blue: 0.19), in: Capsule()).padding(12)
                 }
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(focused ? .white : .white.opacity(0.1), lineWidth: focused ? 2 : 1))
             Text(name).font(.system(size: 24, weight: .semibold)).lineLimit(1)
-            Text(title).font(.system(size: 20)).lineLimit(2)
+            Text(title).font(.system(size: 20)).foregroundStyle(NTVDesign.textSecondary)
+                .lineLimit(2, reservesSpace: true)
             Text(subtitle).font(.system(size: 18)).foregroundStyle(NTVDesign.textSecondary).lineLimit(1)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(NTVDesign.surface, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(focused ? NTVDesign.accent : .clear, lineWidth: 3))
+        .frame(width: width, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 }

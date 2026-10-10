@@ -19,11 +19,12 @@ struct NTVTwitchPlayer: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let player = model.player {
-                NTVTwitchVideo(player: player)
+                NTVTwitchVideo(player: player, qualities: model.qualities,
+                               selected: model.selectedQuality, select: model.selectQuality)
                     .ignoresSafeArea()
                     .accessibilityIdentifier(model.ready ? "ntv.twitch.player.video" : "ntv.twitch.player.preparing-video")
             }
-            if model.message != nil || !model.ready {
+            if model.message != nil || model.player == nil {
                 VStack(spacing: 26) {
                     Text(target.name).font(.system(size: 40, weight: .semibold))
                         .accessibilityIdentifier("ntv.twitch.player.heading")
@@ -49,31 +50,71 @@ struct NTVTwitchPlayer: View {
     @Published private(set) var player: AVPlayer?
     @Published private(set) var message: String?
     @Published private(set) var ready = false
+    @Published private(set) var qualities: [NTVTwitchQuality] = []
+    @Published private(set) var selectedQuality: String?
+    private var media: NTVTwitchMedia?
+    private var target: NTVTwitchPlaybackTarget?
     private var observation: NSKeyValueObservation?
     private var version = 0
-    private let resolve: (String) async throws -> URL
+    private let resolve: (String) async throws -> NTVTwitchMedia
 
-    init(resolve: ((String) async throws -> URL)? = nil) {
-        self.resolve = resolve ?? { try await NTVTwitchPlayerModel.defaultResolve($0) }
+    init(resolve: ((String) async throws -> URL)? = nil,
+         mediaResolver: ((String) async throws -> NTVTwitchMedia)? = nil) {
+        if let mediaResolver { self.resolve = mediaResolver }
+        else if let resolve { self.resolve = { .init(masterURL: try await resolve($0), qualities: []) } }
+        else { self.resolve = { try await NTVTwitchPlayerModel.defaultResolve($0) } }
     }
 
     func load(_ target: NTVTwitchPlaybackTarget) async {
         stop()
         let request = version
         do {
-            let url = try await resolve(target.login)
+            let resolved = try await resolve(target.login)
             try Task.checkCancellation()
             guard request == version else { return }
+            media = resolved
+            self.target = target
+            qualities = resolved.qualities
+            let current = AVPlayer()
+            player = current
+            replaceItem(url: resolved.masterURL, target: target, request: request)
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            try? AVAudioSession.sharedInstance().setActive(true)
+            current.play()
+        } catch {
+            guard request == version, !Task.isCancelled, !(error is CancellationError) else { return }
+            message = (error as? NTVTwitchPlayback.Failure)?.errorDescription
+                ?? "La lecture Twitch est momentanément indisponible. Réessayez."
+        }
+    }
+
+    func selectQuality(_ identifier: String?) {
+        guard let media, let target, let player, identifier != selectedQuality else { return }
+        let url: URL
+        if let identifier {
+            guard let quality = qualities.first(where: { $0.id == identifier }) else { return }
+            url = quality.url
+        } else { url = media.masterURL }
+        let wasPlaying = player.rate > 0 || player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+        version &+= 1
+        selectedQuality = identifier
+        message = nil
+        ready = false
+        // Preserve the AVKit controller and its controls while changing only
+        // the HLS item. A live rendition resumes at its live edge.
+        replaceItem(url: url, target: target, request: version)
+        if wasPlaying { player.play() }
+    }
+
+    private func replaceItem(url: URL, target: NTVTwitchPlaybackTarget, request: Int) {
+            observation?.invalidate()
             let item = AVPlayerItem(url: url)
             item.preferredForwardBufferDuration = 3
             let metadata = AVMutableMetadataItem()
             metadata.identifier = .commonIdentifierTitle
             metadata.value = "\(target.name) · \(target.title)" as NSString
             item.externalMetadata = [metadata]
-            let current = AVPlayer(playerItem: item)
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
-            try? AVAudioSession.sharedInstance().setActive(true)
-            player = current
+            player?.replaceCurrentItem(with: item)
             observation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                 Task { @MainActor [weak self] in
                     guard let self, request == self.version, self.player?.currentItem === item else { return }
@@ -87,12 +128,6 @@ struct NTVTwitchPlayer: View {
                     }
                 }
             }
-            current.play()
-        } catch {
-            guard request == version, !Task.isCancelled, !(error is CancellationError) else { return }
-            message = (error as? NTVTwitchPlayback.Failure)?.errorDescription
-                ?? "La lecture Twitch est momentanément indisponible. Réessayez."
-        }
     }
 
     func stop() {
@@ -101,33 +136,50 @@ struct NTVTwitchPlayer: View {
         ready = false
         player?.pause(); player?.replaceCurrentItem(with: nil); player = nil
         message = nil
+        media = nil; target = nil; qualities = []; selectedQuality = nil
     }
 
-    private static func defaultResolve(_ login: String) async throws -> URL {
+    private static func defaultResolve(_ login: String) async throws -> NTVTwitchMedia {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-ntvTwitchDemo") {
             guard let fixture = Bundle.main.url(forResource: "ntv-player-fixture", withExtension: "mp4") else {
                 throw NTVTwitchPlayback.Failure.unavailable
             }
-            return fixture
+            return .init(masterURL: fixture, qualities: [
+                .init(id: "fixture-1080", label: "1080p60", url: fixture, height: 1080, frameRate: 60, bandwidth: 6000000),
+                .init(id: "fixture-720", label: "720p60", url: fixture, height: 720, frameRate: 60, bandwidth: 3000000)
+            ])
         }
         #endif
-        return try await NTVTwitchPlayback().resolve(channel: login)
+        return try await NTVTwitchPlayback().resolveMedia(channel: login)
     }
 }
 
 private struct NTVTwitchVideo: UIViewControllerRepresentable {
     let player: AVPlayer
+    let qualities: [NTVTwitchQuality]
+    let selected: String?
+    let select: (String?) -> Void
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
         controller.showsPlaybackControls = true
         controller.allowsPictureInPicturePlayback = false
         controller.videoGravity = .resizeAspect
+        updateMenu(controller)
         return controller
     }
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         if controller.player !== player { controller.player = player }
+        updateMenu(controller)
+    }
+    private func updateMenu(_ controller: AVPlayerViewController) {
+        let automatic = UIAction(title: "Automatique", state: selected == nil ? .on : .off) { _ in select(nil) }
+        let choices = qualities.map { quality in
+            UIAction(title: quality.label, state: selected == quality.id ? .on : .off) { _ in select(quality.id) }
+        }
+        controller.transportBarCustomMenuItems = [UIMenu(title: "Qualité",
+            image: UIImage(systemName: "gearshape"), options: .singleSelection, children: [automatic] + choices)]
     }
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: ()) {
         controller.player?.pause()

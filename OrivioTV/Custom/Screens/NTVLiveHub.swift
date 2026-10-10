@@ -21,6 +21,7 @@ struct NTVLiveHub: View {
                 Text("TV en direct")
                     .font(.system(size: 38, weight: .semibold))
                     .accessibilityIdentifier("ntv.live.hub.heading")
+                    .ntvHalloweenDecor(.heading)
                 Spacer(minLength: 20)
                 ForEach(Section.allCases, id: \.self) { choice in
                     Button { section = choice } label: {

@@ -141,6 +141,10 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(video.waitForExistence(timeout: 20), "Selecting a channel opens the native player inside nTV.")
         XCTAssertFalse(app.staticTexts["ntv.twitch.player.error"].exists)
         capture("ntv-twitch-native-player")
+        remote.press(.select)
+        let quality = app.buttons["Qualité"].firstMatch
+        XCTAssertTrue(quality.waitForExistence(timeout: 5), "The native transport bar must expose the quality menu.")
+        capture("ntv-twitch-quality-control")
         for _ in 0..<3 {
             remote.press(.menu)
             if app.buttons["ntv.twitch.followed"].waitForExistence(timeout: 3) { break }
@@ -569,6 +573,11 @@ final class NTVDesignSmoke: XCTestCase {
         let play = app.buttons["ntv.detail.play"]
         XCTAssertTrue(focused(play, timeout: 8), "The existing Play control must keep opening focus.")
         XCTAssertEqual(play.label, "Regarder")
+        let openingPlayFrame = play.frame
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(play.frame.minY, openingPlayFrame.minY, accuracy: 2,
+                       "Late metadata must not move the focused action or recenter the page.")
+        capture("ntv-detail-settled")
         let sources = app.buttons["ntv.detail.sources"]
         remote.press(.right)
         XCTAssertTrue(focused(sources, timeout: 5), "Sources must be directly reachable beside Play.")

@@ -3,6 +3,10 @@ import AVKit
 
 @MainActor
 final class DetailViewModel: ObservableObject {
+    /// Keep the artwork selected in the catalog throughout this visit. An addon
+    /// can return a different crop a second later; it must not replace this one.
+    let openingBackground: String?
+    let openingLogo: String?
     @Published var meta: MetaItem {
         didSet {
             episodeCache.removeAll()
@@ -56,6 +60,8 @@ final class DetailViewModel: ObservableObject {
 
     init(item: MetaItem) {
         meta = item
+        openingBackground = item.background ?? item.poster
+        openingLogo = item.logo
     }
 
     /// The `.task` that calls this re-runs on every return from Sources or
@@ -649,7 +655,7 @@ struct DetailView: View {
                 // swallow the action row's context-menu hit test (the same bug
                 // the home Featured bar caused for Continue Watching).
                 if !isNTV || perf.settings.heroBackdrop {
-                    RemoteImage(url: viewModel.meta.background ?? viewModel.meta.poster,
+                    RemoteImage(url: isNTV ? (viewModel.openingBackground ?? viewModel.meta.background) : (viewModel.meta.background ?? viewModel.meta.poster),
                             maxPixels: PerformanceProfile.backdropPixelCap)
                     .allowsHitTesting(false)
                     .frame(width: geo.size.width, height: geo.size.height)
@@ -874,7 +880,7 @@ struct DetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
             // Push the logo down so it sits lower on the backdrop (APK layout).
-            Spacer().frame(height: 260)
+            Spacer().frame(height: isNTV ? 160 : 260)
 
             // Both title treatments occupy the SAME 180pt slot, bottom-aligned.
             // They did not before: a logo got a fixed 180pt box while the text
@@ -885,7 +891,7 @@ struct DetailView: View {
             // whole header. Bottom alignment is what keeps a short wide logo
             // and a two-line title sharing a baseline.
             Group {
-                if let logo = viewModel.meta.logo {
+                if let logo = isNTV ? viewModel.openingLogo : viewModel.meta.logo {
                     RemoteImage(url: logo, contentMode: .fit, alignment: .bottomLeading, maxDimension: 520)
                         // Grounds a white logo on both a light frost and dark art.
                         .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
@@ -903,16 +909,18 @@ struct DetailView: View {
 
             // Meta line 1: Genres • Full release date • IMDb.
             MetaLine(segments: primaryMetaSegments, imdbRating: viewModel.meta.imdbRating)
+                .frame(height: isNTV ? 34 : nil, alignment: .leading)
             // Meta line 2: Runtime • Country • Language.
-            if !secondaryMetaSegments.isEmpty {
+            if isNTV || !secondaryMetaSegments.isEmpty {
                 MetaLine(segments: secondaryMetaSegments)
+                    .frame(height: isNTV ? 30 : nil, alignment: .leading)
             }
 
-            if let description = viewModel.meta.description {
+            if isNTV || viewModel.meta.description != nil {
                 // Clickable teaser → full-description overlay (the Android
                 // app's scrollable hero-description feature).
                 DescriptionTeaser(
-                    text: description,
+                    text: viewModel.meta.description ?? "",
                     title: viewModel.meta.name,
                     onFocusChanged: { focused in
                         teaserFocused = focused
@@ -921,6 +929,7 @@ struct DetailView: View {
                         interactionCount += 1
                     }
                 )
+                .frame(height: isNTV ? 120 : nil, alignment: .topLeading)
                 .disabled(!teaserArmed)
             }
 
@@ -1834,7 +1843,12 @@ private struct CircleIconLabel: View {
                 }
             }
             // Glass circle at rest, matching the rail.
-            .liquidGlassIf(!isFocused && !active, in: Circle())
+            .liquidGlassIf(!isFocused && !active && theme.palette.id != NTVDesign.palette.id, in: Circle())
+            .background {
+                if !isFocused && !active && theme.palette.id == NTVDesign.palette.id {
+                    Circle().fill(.black.opacity(0.28))
+                }
+            }
             .overlay(Circle().strokeBorder(isFocused ? Color.white.opacity(0.95) : .clear, lineWidth: 3))
             .focusLift(OrivioFocus.control, isFocused)
             .onAppear {
@@ -1875,7 +1889,7 @@ struct PlayActionButton: View {
     var body: some View {
         if theme.palette.id == NTVDesign.palette.id {
             Button(action: action) { label }
-                .buttonStyle(NTVActionButtonStyle())
+                .buttonStyle(NTVActionButtonStyle(prominent: true))
         } else {
             Button(action: action) { label }
                 .buttonStyle(DetailPillButtonStyle())

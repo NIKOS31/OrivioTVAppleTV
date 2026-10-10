@@ -1,5 +1,19 @@
 import Foundation
 
+struct NTVTwitchQuality: Equatable, Identifiable {
+    let id: String
+    let label: String
+    let url: URL
+    let height: Int
+    let frameRate: Double
+    let bandwidth: Double
+}
+
+struct NTVTwitchMedia {
+    let masterURL: URL
+    let qualities: [NTVTwitchQuality]
+}
+
 /// Experimental anonymous public-video protocol, separate from nTV's official
 /// OAuth/Helix client. No account token, cookie or integrity workaround enters it.
 /// Twitch does not provide a supported third-party native playback API.
@@ -16,6 +30,10 @@ struct NTVTwitchPlayback {
     }
 
     func resolve(channel raw: String) async throws -> URL {
+        try await resolveMedia(channel: raw).masterURL
+    }
+
+    func resolveMedia(channel raw: String) async throws -> NTVTwitchMedia {
         let login = raw.lowercased()
         guard !login.isEmpty, login.utf8.count <= 25,
               login.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") }) else {
@@ -51,7 +69,48 @@ struct NTVTwitchPlayback {
         let playlist = try await checked(URLRequest(url: url), limit: 512 << 10)
         try Self.validatePlaylist(playlist, base: url)
         try Task.checkCancellation()
-        return url
+        return NTVTwitchMedia(masterURL: url, qualities: try Self.qualities(in: playlist, base: url))
+    }
+
+    /// Only variants advertised in the validated master playlist are offered.
+    /// URLs stay in memory and never enter labels, preferences or logs.
+    static func qualities(in data: Data, base: URL) throws -> [NTVTwitchQuality] {
+        try validatePlaylist(data, base: base)
+        guard let text = String(data: data, encoding: .utf8) else { throw Failure.protocolChanged }
+        let expression = try NSRegularExpression(pattern: "([A-Z0-9-]+)=(\"[^\"]*\"|[^,]*)")
+        func attributes(_ line: String) -> [String: String] {
+            var values: [String: String] = [:]
+            for match in expression.matches(in: line, range: NSRange(line.startIndex..., in: line)) {
+                guard let key = Range(match.range(at: 1), in: line), let value = Range(match.range(at: 2), in: line) else { continue }
+                values[String(line[key])] = String(line[value]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            }
+            return values
+        }
+        var pending: [String: String]?
+        var results: [NTVTwitchQuality] = []
+        var seen = Set<URL>()
+        for part in text.split(whereSeparator: \.isNewline) {
+            let line = String(part).trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("#EXT-X-STREAM-INF:") { pending = attributes(line); continue }
+            guard !line.isEmpty, !line.hasPrefix("#"), let values = pending else { continue }
+            pending = nil
+            if values["VIDEO"] == "audio_only" { continue }
+            if let codecs = values["CODECS"], !codecs.contains("avc1"), !codecs.contains("hvc1"), !codecs.contains("hev1") { continue }
+            guard let url = URL(string: line, relativeTo: base)?.absoluteURL, permitsMediaURL(url) else { throw Failure.protocolChanged }
+            let height = values["RESOLUTION"]?.split(separator: "x").last.flatMap { Int($0) } ?? 0
+            let fps = Double(values["FRAME-RATE"] ?? "0") ?? 0
+            let bandwidth = Double(values["BANDWIDTH"] ?? "0") ?? 0
+            guard (0...4320).contains(height), fps.isFinite, (0...240).contains(fps), bandwidth.isFinite, bandwidth >= 0 else { throw Failure.protocolChanged }
+            let label = height > 0 ? "\(height)p" + (fps > 30 ? "\(Int(fps.rounded()))" : "") : "Source"
+            guard seen.insert(url).inserted, results.count < 16 else { continue }
+            results.append(.init(id: "variant-\(results.count)", label: label, url: url,
+                                 height: height, frameRate: fps, bandwidth: bandwidth))
+        }
+        return results.sorted { a, b in
+            if a.height != b.height { return a.height > b.height }
+            if a.frameRate != b.frameRate { return a.frameRate > b.frameRate }
+            return a.bandwidth > b.bandwidth
+        }
     }
 
     private func checked(_ request: URLRequest, limit: Int) async throws -> Data {

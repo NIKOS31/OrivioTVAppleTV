@@ -25,6 +25,7 @@ final class NTVTwitchViewModel: ObservableObject {
     private var followedPages: Set<String> = []
     private var searchPages: Set<String> = []
     private var lastQuery = ""
+    private var followedLoadedAt: Date?
     static let itemLimit = 400
 
     init(api: NTVTwitchAPI, makeSession: @escaping SessionFactory = { api, profile, owner in
@@ -116,6 +117,7 @@ final class NTVTwitchViewModel: ObservableObject {
     }
 
     func disconnect() {
+        followedLoadedAt = nil
         guard let current = session else { return }
         epoch &+= 1
         pageEpoch &+= 1
@@ -136,21 +138,24 @@ final class NTVTwitchViewModel: ObservableObject {
 
     func loadFollowed(append: Bool = false) {
         guard phase == .connected, let current = session, !append || followedCursor != nil else { return }
+        if !append, let followedLoadedAt, Date().timeIntervalSince(followedLoadedAt) < 30 { return }
         pageTask?.cancel()
         pageEpoch &+= 1
         let request = pageEpoch, expected = epoch
         let cursor = append ? followedCursor : nil
-        if !append { streams = []; followedPages = [] }
+        if !append { followedPages = [] }
         loadingPage = true; message = nil
         pageTask = Task { [weak self] in
             do {
                 let page = try await current.followedStreams(after: cursor)
                 guard let self, self.epoch == expected, self.pageEpoch == request, !Task.isCancelled else { return }
+                if !append { self.streams = [] }
                 var seen = Set(self.streams.map(\.id))
                 self.streams += Array(page.data.filter { seen.insert($0.id).inserted }.prefix(max(0, Self.itemLimit - self.streams.count)))
                 self.followedCursor = self.nextCursor(page.pagination.cursor, empty: page.data.isEmpty,
                     count: self.streams.count, previous: cursor, followed: true)
                 self.loadingPage = false
+                self.followedLoadedAt = Date()
             } catch { self?.finishFailure(error, epoch: expected, request: request) }
         }
     }
@@ -191,6 +196,7 @@ final class NTVTwitchViewModel: ObservableObject {
         loadingPage = false
         message = Self.displayError(error)
         if error as? NTVTwitchError == .unauthorized || error as? NTVTwitchError == .invalidIdentity {
+            followedLoadedAt = nil
             identity = nil; streams = []; channels = []
             followedCursor = nil; searchCursor = nil
             phase = .disconnected
@@ -236,6 +242,7 @@ final class NTVTwitchViewModel: ObservableObject {
     }
 
     func leave() {
+        followedLoadedAt = nil
         epoch &+= 1; pageEpoch &+= 1
         flowTask?.cancel(); pageTask?.cancel()
         flowTask = nil; pageTask = nil; session = nil

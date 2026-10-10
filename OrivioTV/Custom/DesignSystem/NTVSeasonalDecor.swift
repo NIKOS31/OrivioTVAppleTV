@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Static edge ornaments never alter a control's size, material or focus frame.
+/// Static ornaments sit beside page headings, away from navigation controls.
 /// The preference is local to this installation; October is the only active month.
-enum NTVHalloweenPlacement: Equatable { case navigation, heading }
+enum NTVHalloweenPlacement: Equatable { case heading }
 
 private struct NTVHalloweenModifier: ViewModifier {
     @AppStorage("ntv.seasonal.halloween.enabled") private var enabled = true
@@ -16,40 +16,15 @@ private struct NTVHalloweenModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .overlay(alignment: .bottomLeading) {
-                if visible && placement == .navigation {
-                    HStack(alignment: .bottom, spacing: 10) {
-                        NTVPumpkin().frame(width: 30, height: 24)
-                        NTVBat().fill(.white.opacity(0.42)).frame(width: 38, height: 20)
-                    }
-                    .offset(x: 28, y: 8)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if visible && placement == .navigation {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(spacing: 0) {
-                            Rectangle().fill(.white.opacity(0.24)).frame(width: 1, height: 17)
-                            NTVGhost().frame(width: 22, height: 25)
-                        }
-                        NTVWeb().stroke(.white.opacity(0.26), lineWidth: 0.9)
-                            .frame(width: 42, height: 42)
-                    }
-                    .offset(x: -28, y: 41)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
-            }
             .overlay(alignment: .trailing) {
                 if visible && placement == .heading {
-                    NTVCandy().stroke(.white.opacity(0.45), lineWidth: 1)
-                        .frame(width: 24, height: 18)
-                        .rotationEffect(.degrees(-25))
-                        .offset(x: 38)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                    HStack(alignment: .bottom, spacing: 10) {
+                        NTVPumpkin().frame(width: 24, height: 20)
+                        NTVBat().fill(.white.opacity(0.32)).frame(width: 30, height: 16)
+                    }
+                    .offset(x: 76, y: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
             }
             .onChange(of: scenePhase) { _, phase in

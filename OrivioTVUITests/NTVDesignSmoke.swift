@@ -153,14 +153,17 @@ final class NTVDesignSmoke: XCTestCase {
             if app.buttons["ntv.twitch.followed"].waitForExistence(timeout: 3) { break }
         }
         XCTAssertFalse(video.exists, "Back closes the native player and returns to the Twitch browser.")
+        XCTAssertTrue(focused(stream, timeout: 5), "Closing playback must restore the selected live.")
+        // The wider 16:9 card is centred below Search. Follow the spatial
+        // navigation used by tvOS instead of assuming Up targets Followed.
+        let search = app.buttons["ntv.twitch.search"]
+        remote.press(.up)
+        XCTAssertTrue(focused(search, timeout: 5), "Up from the first live reaches the nearest browser action.")
         let followed = app.buttons["ntv.twitch.followed"]
-        for _ in 0..<4 {
-            if followed.hasFocus { break }
-            remote.press(.up)
-        }
+        remote.press(.left)
         XCTAssertTrue(focused(followed, timeout: 5))
         remote.press(.right)
-        XCTAssertTrue(focused(app.buttons["ntv.twitch.search"], timeout: 5))
+        XCTAssertTrue(focused(search, timeout: 5))
         remote.press(.select)
         let query = app.textFields["ntv.twitch.query"]
         XCTAssertTrue(query.waitForExistence(timeout: 5))

@@ -616,8 +616,9 @@ final class AddonManager: ObservableObject {
         do {
             try await onSyncRequested()
         } catch {
-            NSLog("[OrivioAddonSync] sync FAILED: %@", String(describing: error))
-            AppProbe.warn("addon sync", "\(error)")
+            let category = NTVAddonDiagnostics.failure(error)
+            NSLog("[OrivioAddonSync] sync FAILED: %@", category)
+            AppProbe.warn("addon sync", category)
             return .failed(Self.shortReason(error))
         }
         let after = Set(addons.map(\.manifestURL))
@@ -630,12 +631,15 @@ final class AddonManager: ObservableObject {
     }
 
     nonisolated private static func shortReason(_ error: Error) -> String {
+        if error is CancellationError { return "opération annulée" }
+        if let safe = error as? StremioAPIError { return safe.localizedDescription }
         if let urlError = error as? URLError {
             return urlError.code == .notConnectedToInternet ? "pas de connexion Internet" : "erreur réseau"
         }
         if error is DecodingError { return "réponse du serveur illisible" }
-        let text = "\(error)"
-        return text.count > 90 ? String(text.prefix(90)) + "…" : text
+        // Truncating an arbitrary error does not redact credentials: its first
+        // characters can already contain an addon URL or server response.
+        return "le service n’a pas pu terminer la demande"
     }
 
     private func refreshManifests() async {

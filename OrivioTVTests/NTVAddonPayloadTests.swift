@@ -166,4 +166,19 @@ final class NTVAddonPayloadTests: XCTestCase {
         XCTAssertEqual(sources.count, 1); XCTAssertEqual(sources.first?.url, "https://cdn.invalid/a.m3u8")
         XCTAssertEqual(server.requests.count, 1)
     }
+
+    @MainActor
+    func testAddonSyncFailureDoesNotExposeTheProvidersPrivateError() async {
+        let sentinel = "PRIVATE-SYNC-SENTINEL"
+        let manager = AddonManager(startRefresh: false, manifestLoader: { _ in throw URLError(.notConnectedToInternet) })
+        manager.onSyncRequested = {
+            throw NSError(domain: sentinel, code: 42, userInfo: [NSLocalizedDescriptionKey:
+                "https://addon.invalid/\(sentinel)/manifest.json?key=\(sentinel)"])
+        }
+        let outcome = await manager.syncWithAccount()
+        guard case .failed(let reason) = outcome else { return XCTFail("Expected controlled sync failure") }
+        XCTAssertEqual(reason, "le service n’a pas pu terminer la demande")
+        XCTAssertFalse(outcome.message.contains(sentinel))
+        XCTAssertFalse(outcome.message.contains("addon.invalid"))
+    }
 }

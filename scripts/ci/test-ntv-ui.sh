@@ -38,6 +38,7 @@ xcodebuild test \
   -only-testing:OrivioTVTests/NTVTwitchTests \
   -only-testing:OrivioTVTests/NTVSecurityTests \
   -only-testing:OrivioTVTests/NTVAddonPayloadTests \
+  -only-testing:OrivioTVTests/NTVPerformanceTests \
   -only-testing:OrivioTVTests/NTVFFmpegTests \
   -parallel-testing-enabled NO \
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \

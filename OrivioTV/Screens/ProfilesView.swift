@@ -60,7 +60,8 @@ struct ProfileAvatarView: View {
             image = nil
             return
         }
-        if let cached = ImageCache.shared.image(for: urlString) {
+        let memoryKey = urlString + "#avatar256"
+        if let cached = ImageCache.shared.image(for: memoryKey) {
             image = cached
             return
         }
@@ -69,17 +70,15 @@ struct ProfileAvatarView: View {
         // full-size (lazily, ON the render path) and then re-encoded it to
         // JPEG on the main actor inside insert(). Downsampled decode happens
         // off-main; the original bytes go to disk as-is.
-        if let disk = await ImageCache.shared.diskImage(for: urlString, budget: 256) {
+        if let disk = await ImageCache.shared.diskImage(for: urlString, budget: 256, memoryKey: memoryKey) {
             if !Task.isCancelled { image = disk }
             return
         }
-        guard let data = try? await ImageCache.shared.download(url),
+        guard !Task.isCancelled, let data = try? await ImageCache.shared.download(url),
               !Task.isCancelled else { return }
-        let decoded = await Task.detached(priority: .userInitiated) {
-            ImageCache.decodeDownsampled(data, budget: 256)
-        }.value
+        let decoded = try? await ImageCache.shared.preparedImage(data, budget: 256, memoryKey: memoryKey)
         guard let decoded, !Task.isCancelled else { return }
-        ImageCache.shared.insert(decoded, for: urlString, data: data)
+        ImageCache.shared.insertData(data, for: urlString)
         image = decoded
     }
 

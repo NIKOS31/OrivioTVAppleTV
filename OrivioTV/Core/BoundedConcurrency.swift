@@ -25,7 +25,7 @@ func boundedConcurrentMap<Item: Sendable, Result: Sendable>(
 
         // Prime the window, then top it back up as each task finishes so there
         // are never more than `window` requests outstanding.
-        while next < window {
+        while next < window, !Task.isCancelled {
             let index = next
             let item = items[index]
             group.addTask { (index, await work(item)) }
@@ -33,7 +33,7 @@ func boundedConcurrentMap<Item: Sendable, Result: Sendable>(
         }
         for await (index, value) in group {
             results[index] = value
-            if next < items.count {
+            if next < items.count, !Task.isCancelled {
                 let nextIndex = next
                 let item = items[nextIndex]
                 group.addTask { (nextIndex, await work(item)) }

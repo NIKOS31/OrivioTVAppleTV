@@ -8,10 +8,18 @@ final class NTVAddonHTTPFixture: @unchecked Sendable {
     private let queue = DispatchQueue(label: "ntv.test.addon-origin")
     private let lock = NSLock()
     private var received: [String] = []
+    private var replies: [String]
     var requests: [String] { lock.lock(); defer { lock.unlock() }; return received }
     private func note(_ text: String) { lock.lock(); received.append(text); lock.unlock() }
 
-    init(redirectTo: URL? = nil, redirectWithinOrigin: Bool = false) throws {
+    private func nextBody() -> String {
+        lock.lock(); defer { lock.unlock() }
+        if replies.count > 1 { return replies.removeFirst() }
+        return replies.first ?? "{}"
+    }
+
+    init(redirectTo: URL? = nil, redirectWithinOrigin: Bool = false, bodies: [String] = ["{}"]) throws {
+        replies = bodies
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -36,7 +44,7 @@ final class NTVAddonHTTPFixture: @unchecked Sendable {
             self.note(text)
             let firstPath = text.hasPrefix("GET /response ")
             let location = redirectTo?.absoluteString ?? (withinOrigin && firstPath ? "/next" : nil)
-            let body = location == nil ? "{}" : ""
+            let body = location == nil ? self.nextBody() : ""
             let status = location == nil ? "200 OK" : "302 Found"
             let extra = location.map { "Location: \($0)\r\n" } ?? ""
             let reply = Data("HTTP/1.1 \(status)\r\nContent-Type: application/json\r\n\(extra)Content-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)".utf8)

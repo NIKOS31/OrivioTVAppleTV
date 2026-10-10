@@ -12,22 +12,24 @@ struct IntegrationsDetail: View {
     @EnvironmentObject private var mediaServers: MediaServerStore
     @State private var sheet: IntegrationSheet?
 
-    enum IntegrationSheet: String, Identifiable { case tmdb, mdblist, debrid, p2p, plex, jellyfin; var id: String { rawValue } }
+    enum IntegrationSheet: String, Identifiable { case tmdb, mdblist, debrid, p2p, plex, jellyfin, twitch; var id: String { rawValue } }
 
     var body: some View {
         // APK layout: a single list of drill-in rows, each opening a sub-screen.
         DetailScaffold(title: SettingsCategory.integration.title, subtitle: SettingsCategory.integration.subtitle) {
             SettingsGroupCard(title: "") {
                 // Orivio account moved to Settings → Account.
-                integrationRow(title: "TMDB", subtitle: "Metadata enrichment controls", icon: "film.stack") { sheet = .tmdb }
-                integrationRow(title: "MDBList", subtitle: "External ratings providers", icon: "star.circle.fill") { sheet = .mdblist }
-                integrationRow(title: "Debrid", subtitle: "Cached torrent sources as direct streams", icon: "bolt.horizontal.circle.fill") { sheet = .debrid }
-                integrationRow(title: "P2P (TorrServer)", subtitle: "Stream uncached torrents through your own TorrServer", icon: "point.3.connected.trianglepath.dotted") { sheet = .p2p }
+                integrationRow(title: "Twitch", subtitle: "Connexion, chaînes suivies et recherche", icon: "bubble.left.and.bubble.right") { sheet = .twitch }
+                    .accessibilityIdentifier("ntv.integration.twitch")
+                integrationRow(title: "TMDB", subtitle: "Compléter les informations des titres", icon: "film.stack") { sheet = .tmdb }
+                integrationRow(title: "MDBList", subtitle: "Services de notes externes", icon: "star.circle.fill") { sheet = .mdblist }
+                integrationRow(title: "Debrid", subtitle: "Sources en cache disponibles en lecture directe", icon: "bolt.horizontal.circle.fill") { sheet = .debrid }
+                integrationRow(title: "P2P (TorrServer)", subtitle: "Lire les sources non mises en cache avec votre TorrServer", icon: "point.3.connected.trianglepath.dotted") { sheet = .p2p }
                 integrationRow(title: "Plex", subtitle: mediaServers.account(for: .plex) == nil
-                               ? "Play your Plex Media Server's library" : "Connected · \(mediaServers.plex?.serverName ?? "Plex")",
+                               ? "Retrouver la bibliothèque de votre serveur Plex" : "Connecté · \(mediaServers.plex?.serverName ?? "Plex")",
                                icon: MediaServerKind.plex.icon) { sheet = .plex }
                 integrationRow(title: "Jellyfin", subtitle: mediaServers.account(for: .jellyfin) == nil
-                               ? "Play your Jellyfin server's library" : "Connected · \(mediaServers.jellyfin?.serverName ?? "Jellyfin")",
+                               ? "Retrouver la bibliothèque de votre serveur Jellyfin" : "Connecté · \(mediaServers.jellyfin?.serverName ?? "Jellyfin")",
                                icon: MediaServerKind.jellyfin.icon) { sheet = .jellyfin }
             }
         }
@@ -56,28 +58,30 @@ struct IntegrationsDetail: View {
     @ViewBuilder
     private func integrationSheet(_ s: IntegrationSheet) -> some View {
         switch s {
+        case .twitch:
+            NTVTwitchView()
         case .tmdb:
-            DetailScaffold(title: "TMDB", subtitle: "Metadata enrichment controls") {
+            DetailScaffold(title: "TMDB", subtitle: "Compléter les informations des titres") {
                 SettingsGroupCard(title: "") { tmdbSection }
             }
         case .mdblist:
-            DetailScaffold(title: "MDBList", subtitle: "External ratings providers") {
+            DetailScaffold(title: "MDBList", subtitle: "Services de notes externes") {
                 SettingsGroupCard(title: "") { mdblistSection }
             }
         case .debrid:
-            DetailScaffold(title: "Debrid", subtitle: "Cached torrent sources as direct, high-speed streams") {
+            DetailScaffold(title: "Debrid", subtitle: "Sources en cache disponibles en lecture directe") {
                 SettingsGroupCard(title: "") { debridSection }
             }
         case .p2p:
-            DetailScaffold(title: "P2P (TorrServer)", subtitle: "Stream torrents peer-to-peer via a TorrServer instance") {
+            DetailScaffold(title: "P2P (TorrServer)", subtitle: "Lire les torrents avec votre instance TorrServer") {
                 SettingsGroupCard(title: "") { P2PSection() }
             }
         case .plex:
-            DetailScaffold(title: "Plex", subtitle: "Your Plex Media Server as a Library tab") {
+            DetailScaffold(title: "Plex", subtitle: "Afficher votre serveur Plex dans la bibliothèque") {
                 SettingsGroupCard(title: "") { MediaServerSection(kind: .plex) }
             }
         case .jellyfin:
-            DetailScaffold(title: "Jellyfin", subtitle: "Your Jellyfin server as a Library tab") {
+            DetailScaffold(title: "Jellyfin", subtitle: "Afficher votre serveur Jellyfin dans la bibliothèque") {
                 SettingsGroupCard(title: "") { MediaServerSection(kind: .jellyfin) }
             }
         }
@@ -88,8 +92,8 @@ struct IntegrationsDetail: View {
     private var mdblistSection: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             SettingsToggleCard(
-                title: "Enable MDBList ratings",
-                subtitle: "Aggregate scores across rating sources",
+                title: "Activer les notes MDBList",
+                subtitle: "Regrouper les notes de plusieurs services",
                 isOn: Binding(get: { mdblist.settings.enabled }, set: { mdblist.settings.enabled = $0 })
             )
 
@@ -100,7 +104,7 @@ struct IntegrationsDetail: View {
                 }
             }
 
-            Text("Get a key at mdblist.com/preferences.")
+            Text("Obtenez votre clé sur mdblist.com/preferences.")
                 .font(.system(size: 18))
                 .foregroundStyle(theme.palette.textTertiary)
                 .padding(.top, 2)
@@ -132,71 +136,71 @@ struct IntegrationsDetail: View {
             TMDBKeyRow()
 
             SettingsToggleCard(
-                title: "Enable TMDB",
+                title: "Activer TMDB",
                 subtitle: tmdb.hasAPIKey
-                    ? "Powers TMDB sources in every collection (lists, collections, companies, networks, discover)"
-                    : "Add your API key above to switch this on",
+                    ? "Utiliser TMDB pour les contenus de vos collections"
+                    : "Ajoutez votre clé API pour activer cette option",
                 isOn: Binding(get: { tmdb.settings.enabled },
                               set: { tmdb.settings.enabled = $0 && tmdb.hasAPIKey })
             )
 
             if tmdb.settings.enabled {
                 SettingsToggleCard(
-                    title: "Enrich Continue Watching",
-                    subtitle: "Fetch missing titles and artwork for Continue Watching rows synced from other devices. Off skips those lookups.",
+                    title: "Compléter les titres à reprendre",
+                    subtitle: "Compléter les titres et illustrations manquants des lectures synchronisées",
                     isOn: Binding(get: { tmdb.settings.enrichContinueWatching }, set: { tmdb.settings.enrichContinueWatching = $0 })
                 )
 
                 OrivioDropdown(
-                    title: "Language",
+                    title: "Langue",
                     subtitle: "TMDB metadata language",
                     selection: tmdb.settings.language,
                     options: TMDBLanguages.options.map { OrivioDropdownOption($0, TMDBLanguages.displayName($0)) }
                 ) { tmdb.settings.language = $0 }
 
                 SettingsToggleCard(
-                    title: "Cast & Crew",
-                    subtitle: "Show TMDB cast, crew, and director on the details page.",
+                    title: "Distribution et équipe",
+                    subtitle: "Afficher la distribution, l’équipe et le réalisateur depuis TMDB",
                     isOn: Binding(get: { tmdb.settings.useCredits }, set: { tmdb.settings.useCredits = $0 })
                 )
                 SettingsToggleCard(
-                    title: "Trailers",
-                    subtitle: "Show TMDB trailers and the auto-playing hero trailer on details.",
+                    title: "Bandes-annonces",
+                    subtitle: "Afficher les bandes-annonces TMDB sur les fiches",
                     isOn: Binding(get: { tmdb.settings.useTrailers }, set: { tmdb.settings.useTrailers = $0 })
                 )
                 SettingsToggleCard(
-                    title: "More Like This",
-                    subtitle: "Show the TMDB recommendations row on the details page.",
+                    title: "Titres similaires",
+                    subtitle: "Afficher les recommandations TMDB sur les fiches",
                     isOn: Binding(get: { tmdb.settings.useMoreLikeThis }, set: { tmdb.settings.useMoreLikeThis = $0 })
                 )
                 SettingsToggleCard(
-                    title: "Details",
-                    subtitle: "Show TMDB country and spoken-language details.",
+                    title: "Détails",
+                    subtitle: "Afficher les pays et langues du titre depuis TMDB",
                     isOn: Binding(get: { tmdb.settings.useDetails }, set: { tmdb.settings.useDetails = $0 })
                 )
                 SettingsToggleCard(
-                    title: "Release dates",
-                    subtitle: "Show the TMDB release date on the details page.",
+                    title: "Dates de sortie",
+                    subtitle: "Afficher la date de sortie depuis TMDB",
                     isOn: Binding(get: { tmdb.settings.useReleaseDates }, set: { tmdb.settings.useReleaseDates = $0 })
                 )
                 SettingsToggleCard(
-                    title: "Production companies",
-                    subtitle: "Show the TMDB production-companies row.",
+                    title: "Sociétés de production",
+                    subtitle: "Afficher les sociétés de production depuis TMDB",
                     isOn: Binding(get: { tmdb.settings.useProductions }, set: { tmdb.settings.useProductions = $0 })
                 )
                 SettingsToggleCard(
                     title: "Collections",
-                    subtitle: "Show the “part of a collection” row and its other entries.",
+                    subtitle: "Afficher la collection du titre et ses autres films",
                     isOn: Binding(get: { tmdb.settings.useCollections }, set: { tmdb.settings.useCollections = $0 })
                 )
                 SettingsToggleCard(
-                    title: "Episodes",
-                    subtitle: "Fetch per-episode TMDB ratings and air dates for series.",
+                    title: "Épisodes",
+                    subtitle: "Afficher les notes et dates de diffusion des épisodes depuis TMDB",
                     isOn: Binding(get: { tmdb.settings.useEpisodes }, set: { tmdb.settings.useEpisodes = $0 })
                 )
             }
 
-            Text("TMDB keys are free and personal: sign in at themoviedb.org, open Settings → API, and copy the API Key (v3 auth).")
+            Text("Les clés TMDB sont gratuites. Connectez-vous sur themoviedb.org, ouvrez Réglages → API et copiez la clé API v3.")
                 .font(.system(size: 18))
                 .foregroundStyle(theme.palette.textTertiary)
                 .padding(.top, 2)
@@ -231,7 +235,7 @@ private struct DebridProviderRow: View {
                     Text(provider.displayName)
                         .font(.system(size: 25, weight: .medium))
                         .foregroundStyle(theme.palette.textPrimary)
-                    Text(isConfigured ? "Connected · key set" : "Key from \(provider.keyHint)")
+                    Text(isConfigured ? "Connecté · clé enregistrée" : "Clé disponible sur \(provider.keyHint)")
                         .font(.system(size: 19))
                         .foregroundStyle(isConfigured ? OrivioPrimitives.success : theme.palette.textSecondary)
                 }
@@ -259,8 +263,8 @@ private struct PreferredProviderRow: View {
 
     var body: some View {
         OrivioDropdown(
-            title: "Preferred provider",
-            subtitle: "Used first when a stream is cached on more than one",
+            title: "Service préféré",
+            subtitle: "Utilisé en priorité lorsque plusieurs services proposent la source",
             selection: debrid.preferred?.id ?? "",
             options: debrid.configuredProviders.map { OrivioDropdownOption($0.id, $0.displayName) }
         ) { picked in
@@ -284,7 +288,7 @@ private struct DebridKeyEditor: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.xl) {
-                Text("Connect \(provider.displayName)")
+                Text("Connecter \(provider.displayName)")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
 
@@ -294,7 +298,7 @@ private struct DebridKeyEditor: View {
                     Button { showQR = true } label: {
                         HStack(spacing: OrivioSpacing.sm) {
                             Image(systemName: "qrcode")
-                            Text("Sign in with QR")
+                            Text("Connexion par code QR")
                         }
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(theme.palette.onSecondary)
@@ -303,16 +307,16 @@ private struct DebridKeyEditor: View {
                         .background(Capsule().fill(theme.palette.secondary))
                     }
                     .buttonStyle(PlainCardButtonStyle())
-                    Text("or paste an API key from \(provider.keyHint)")
+                    Text("ou collez une clé API disponible sur \(provider.keyHint)")
                         .font(.system(size: 20))
                         .foregroundStyle(theme.palette.textTertiary)
                 } else {
-                    Text("Get your key at \(provider.keyHint)")
+                    Text("Obtenez votre clé sur \(provider.keyHint)")
                         .font(.system(size: 22))
                         .foregroundStyle(theme.palette.textSecondary)
                 }
 
-                SecureField("Paste API key", text: $key)
+                SecureField("Coller la clé API", text: $key)
                     .font(.system(size: 24))
                     .frame(maxWidth: 760)
 
@@ -325,18 +329,18 @@ private struct DebridKeyEditor: View {
                 HStack(spacing: OrivioSpacing.lg) {
                     Button(action: verifyAndSave) {
                         if validating { ProgressView().tint(theme.palette.onSecondary) }
-                        else { Text("Verify & Save") }
+                        else { Text("Vérifier et enregistrer") }
                     }
                     // Not disabled while validating: that disables the button
                     // you just pressed and drops focus. The action guards.
                     .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                     if !debrid.key(for: provider).isEmpty {
-                        Button("Remove", role: .destructive) {
+                        Button("Supprimer", role: .destructive) {
                             debrid.setKey("", for: provider)
                             onDone()
                         }
                     }
-                    Button("Cancel", role: .cancel, action: onDone)
+                    Button("Annuler", role: .cancel, action: onDone)
                 }
                 .font(.system(size: 24, weight: .semibold))
             }
@@ -365,10 +369,10 @@ private struct DebridKeyEditor: View {
             validating = false
             if valid {
                 debrid.setKey(trimmed, for: provider)
-                status = "Valid — saved."
+                status = "Clé valide et enregistrée."
                 onDone()
             } else {
-                status = "Invalid key or network error."
+                status = "Clé invalide ou problème de réseau."
             }
         }
     }
@@ -393,12 +397,12 @@ private struct DebridConnectPage: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.xl) {
-                Text("Connect \(provider.displayName)")
+                Text("Connecter \(provider.displayName)")
                     .font(.system(size: 48, weight: .heavy))
                     .foregroundStyle(theme.palette.textPrimary)
 
                 if let code {
-                    Text("Scan the code with your phone, or go to \(code.verificationURL) and enter the code below.")
+                    Text("Scannez le code avec votre téléphone, ou ouvrez \(code.verificationURL) puis saisissez le code ci-dessous.")
                         .font(.system(size: 24))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.center)
@@ -413,7 +417,7 @@ private struct DebridConnectPage: View {
 
                     HStack(spacing: OrivioSpacing.sm) {
                         ProgressView().tint(theme.palette.secondary)
-                        Text("Waiting for authorization…")
+                        Text("En attente de votre autorisation…")
                             .font(.system(size: 22))
                             .foregroundStyle(theme.palette.textTertiary)
                     }
@@ -422,8 +426,8 @@ private struct DebridConnectPage: View {
                         let seconds = expiresAt.timeIntervalSince(ctx.date)
                         let remaining = seconds.isFinite ? Int(min(max(seconds, 0), 86_400)) : 0
                         Text(remaining > 0
-                             ? "Code expires in \(remaining / 60):\(String(format: "%02d", remaining % 60))"
-                             : "Refreshing code…")
+                             ? "Expiration du code dans \(remaining / 60):\(String(format: "%02d", remaining % 60))"
+                             : "Renouvellement du code…")
                             .font(.system(size: 20))
                             .foregroundStyle(theme.palette.textTertiary)
                     }
@@ -433,16 +437,16 @@ private struct DebridConnectPage: View {
                         .foregroundStyle(OrivioPrimitives.error)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 900)
-                    Button("Try Again") { Task { await begin() } }
+                    Button("Réessayer") { Task { await begin() } }
                         .font(.system(size: 24, weight: .semibold))
                 } else {
                     ProgressView().tint(theme.palette.secondary)
-                    Text("Starting sign-in…")
+                    Text("Préparation de la connexion…")
                         .font(.system(size: 22))
                         .foregroundStyle(theme.palette.textSecondary)
                 }
 
-                Text("Press Menu to cancel")
+                Text("Retour pour annuler")
                     .font(.system(size: 20))
                     .foregroundStyle(theme.palette.textTertiary)
                 // The QR / starting states have no focusable view, so the
@@ -466,7 +470,7 @@ private struct DebridConnectPage: View {
         errorText = nil
         code = nil
         guard let c = await DebridService.startDeviceAuth(provider) else {
-            errorText = "Couldn't start QR sign-in. Check your connection, or paste an API key instead."
+            errorText = "Impossible de préparer le code QR. Vérifiez votre connexion ou collez une clé API."
             return
         }
         code = c
@@ -486,7 +490,7 @@ private struct DebridConnectPage: View {
                 if Date() >= expiresAt {   // expired → fresh code (bounded)
                     renewals += 1
                     guard renewals <= 3 else {
-                        errorText = "The QR code expired. Press Back and reopen to try again."
+                        errorText = "Le code QR a expiré. Revenez en arrière puis rouvrez cet écran."
                         code = nil
                         return
                     }
@@ -522,12 +526,12 @@ private struct TMDBKeyRow: View {
         Button { showEditor = true } label: {
             HStack(spacing: OrivioSpacing.lg) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("API Key")
+                    Text("Clé API")
                         .font(.system(size: 25, weight: .medium))
                         .foregroundStyle(theme.palette.textPrimary)
                     Text(tmdb.hasAPIKey
-                         ? "Connected · key set"
-                         : "Scan a QR to send your key from your phone, or paste it here")
+                         ? "Connecté · clé enregistrée"
+                         : "Envoyez la clé depuis votre téléphone avec le QR, ou collez-la ici")
                         .font(.system(size: 19))
                         .foregroundStyle(tmdb.hasAPIKey ? OrivioPrimitives.success : theme.palette.textSecondary)
                 }
@@ -561,10 +565,10 @@ private struct TMDBKeyEditor: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.xl) {
-                Text("TMDB API Key")
+                Text("Clé API TMDB")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("Sign in at themoviedb.org → Settings → API and copy your API Key (v3 auth). It's free.")
+                Text("Connectez-vous sur themoviedb.org → Réglages → API puis copiez votre clé v3 gratuite.")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -576,7 +580,7 @@ private struct TMDBKeyEditor: View {
                 Button { showQR = true } label: {
                     HStack(spacing: OrivioSpacing.sm) {
                         Image(systemName: "qrcode")
-                        Text("Send from my phone")
+                        Text("Envoyer depuis mon téléphone")
                     }
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(theme.palette.onSecondary)
@@ -590,7 +594,7 @@ private struct TMDBKeyEditor: View {
                     .font(.system(size: 20))
                     .foregroundStyle(theme.palette.textTertiary)
 
-                SecureField("Paste API key", text: $key)
+                SecureField("Coller la clé API", text: $key)
                     .font(.system(size: 24))
                     .frame(maxWidth: 760)
 
@@ -603,16 +607,16 @@ private struct TMDBKeyEditor: View {
                 HStack(spacing: OrivioSpacing.lg) {
                     Button(action: verifyAndSave) {
                         if validating { ProgressView().tint(theme.palette.onSecondary) }
-                        else { Text("Verify & Save") }
+                        else { Text("Vérifier et enregistrer") }
                     }
                     .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                     if tmdb.hasAPIKey {
-                        Button("Remove", role: .destructive) {
+                        Button("Supprimer", role: .destructive) {
                             tmdb.setAPIKey("")
                             onDone()
                         }
                     }
-                    Button("Cancel", role: .cancel, action: onDone)
+                    Button("Annuler", role: .cancel, action: onDone)
                 }
                 .font(.system(size: 24, weight: .semibold))
             }
@@ -641,10 +645,10 @@ private struct TMDBKeyEditor: View {
             validating = false
             if valid {
                 tmdb.setAPIKey(trimmed)
-                status = "Valid — saved."
+                status = "Clé valide et enregistrée."
                 onDone()
             } else {
-                status = "Invalid key or network error."
+                status = "Clé invalide ou problème de réseau."
             }
         }
     }
@@ -666,14 +670,14 @@ private struct TMDBKeyHandoffPage: View {
         blurb: "Open <a href=\"https://www.themoviedb.org/settings/api\" target=\"_blank\" "
              + "rel=\"noopener\">themoviedb.org/settings/api</a>, copy your "
              + "<strong>API Key (v3 auth)</strong>, and paste it below.",
-        placeholder: "Paste your TMDB API key"
+        placeholder: "Collez votre clé API TMDB"
     )
 
     var body: some View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.lg) {
-                Text("Send your TMDB key")
+                Text("Envoyer votre clé TMDB")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
 
@@ -681,11 +685,11 @@ private struct TMDBKeyHandoffPage: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 90))
                         .foregroundStyle(OrivioPrimitives.success)
-                    Text("Key saved.")
+                    Text("Clé enregistrée.")
                         .font(.system(size: 26, weight: .semibold))
                         .foregroundStyle(theme.palette.textPrimary)
                 } else if let address = server.address {
-                    Text("Scan with your phone, or open \(address) in its browser. Both devices have to be on the same network.")
+                    Text("Scannez le QR avec votre téléphone, ou ouvrez \(address) dans son navigateur. Les deux appareils doivent être sur le même réseau.")
                         .font(.system(size: 22))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.center)
@@ -703,11 +707,11 @@ private struct TMDBKeyHandoffPage: View {
                         .frame(maxWidth: 900)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    OrivioLoadingView(label: "Starting")
+                    OrivioLoadingView(label: "Préparation")
                         .frame(height: 360)
                 }
 
-                Button(server.accepted ? "Done" : "Cancel") { onDone(server.accepted) }
+                Button(server.accepted ? "Terminé" : "Annuler") { onDone(server.accepted) }
                     .font(.system(size: 24, weight: .semibold))
                     .padding(.top, OrivioSpacing.sm)
             }
@@ -720,10 +724,10 @@ private struct TMDBKeyHandoffPage: View {
                 // should say so on the phone, where it can be fixed, rather
                 // than quietly emptying every TMDB-backed row.
                 guard await TMDBService.validate(apiKey: value) else {
-                    return (false, "That key didn't work. Check you copied the v3 API key.")
+                    return (false, "Cette clé est invalide. Vérifiez que vous avez copié la clé API v3.")
                 }
                 tmdb.setAPIKey(value)
-                return (true, "Saved — you can put your phone down.")
+                return (true, "Clé enregistrée. Vous pouvez fermer cette page.")
             }
             server.start()
         }
@@ -745,10 +749,10 @@ private struct MDBListKeyRow: View {
         Button { showEditor = true } label: {
             HStack(spacing: OrivioSpacing.lg) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("API Key")
+                    Text("Clé API")
                         .font(.system(size: 25, weight: .medium))
                         .foregroundStyle(theme.palette.textPrimary)
-                    Text(isConfigured ? "Connected · key set" : "Tap to paste your MDBList key")
+                    Text(isConfigured ? "Connecté · clé enregistrée" : "Coller votre clé MDBList")
                         .font(.system(size: 19))
                         .foregroundStyle(isConfigured ? OrivioPrimitives.success : theme.palette.textSecondary)
                 }
@@ -818,14 +822,14 @@ private struct MDBListKeyEditor: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.xl) {
-                Text("MDBList API Key")
+                Text("Clé API MDBList")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("Get your key at mdblist.com/preferences")
+                Text("Obtenez votre clé sur mdblist.com/preferences")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textSecondary)
 
-                SecureField("Paste API key", text: $key)
+                SecureField("Coller la clé API", text: $key)
                     .font(.system(size: 24))
                     .frame(maxWidth: 760)
 
@@ -838,16 +842,16 @@ private struct MDBListKeyEditor: View {
                 HStack(spacing: OrivioSpacing.lg) {
                     Button(action: verifyAndSave) {
                         if validating { ProgressView().tint(theme.palette.onSecondary) }
-                        else { Text("Verify & Save") }
+                        else { Text("Vérifier et enregistrer") }
                     }
                     .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                     if !mdblist.settings.apiKey.isEmpty {
-                        Button("Remove", role: .destructive) {
+                        Button("Supprimer", role: .destructive) {
                             mdblist.settings.apiKey = ""
                             onDone()
                         }
                     }
-                    Button("Cancel", role: .cancel, action: onDone)
+                    Button("Annuler", role: .cancel, action: onDone)
                 }
                 .font(.system(size: 24, weight: .semibold))
             }
@@ -868,10 +872,10 @@ private struct MDBListKeyEditor: View {
             validating = false
             if valid {
                 mdblist.settings.apiKey = trimmed
-                status = "Valid — saved."
+                status = "Clé valide et enregistrée."
                 onDone()
             } else {
-                status = "Invalid key or network error."
+                status = "Clé invalide ou problème de réseau."
             }
         }
     }
@@ -935,19 +939,19 @@ private struct P2PSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             SettingsToggleCard(
-                title: "Enable P2P",
-                subtitle: "Play torrent sources peer-to-peer through TorrServer when no debrid provider is set",
+                title: "Activer le P2P",
+                subtitle: "Utiliser TorrServer lorsqu’aucun service de débridage n’est configuré",
                 isOn: s.p2pEnabled
             )
 
             if torrent.settings.p2pEnabled {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("TorrServer URL")
+                    Text("Adresse TorrServer")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(theme.palette.textPrimary)
                     TextField("http://192.168.1.10:8090", text: s.serverURL)
                         .font(.system(size: 22))
-                    Text("Run TorrServer (github.com/YouROK/TorrServer) on a computer, NAS, or Raspberry Pi on your network, then enter its address here.")
+                    Text("Lancez TorrServer sur un ordinateur, un NAS ou un Raspberry Pi de votre réseau, puis saisissez son adresse.")
                         .font(.system(size: 17))
                         .foregroundStyle(theme.palette.textTertiary)
                 }
@@ -959,11 +963,11 @@ private struct P2PSection: View {
                         testing = true; testResult = nil
                         Task {
                             let ok = await TorrServerService.ping(torrent.settings)
-                            testResult = ok ? "Connected ✓" : "Couldn't reach TorrServer"
+                            testResult = ok ? "Connecté ✓" : "TorrServer est inaccessible"
                             testing = false
                         }
                     } label: {
-                        if testing { ProgressView() } else { SeeAllLabel(text: "Test connection") }
+                        if testing { ProgressView() } else { SeeAllLabel(text: "Tester la connexion") }
                     }
                     .buttonStyle(PlainCardButtonStyle())
                     if let testResult {
@@ -974,13 +978,13 @@ private struct P2PSection: View {
                 }
 
                 SettingsToggleCard(
-                    title: "Hide torrent stats",
-                    subtitle: "Don't show peer / seed counts while streaming",
+                    title: "Masquer les statistiques des torrents",
+                    subtitle: "Masquer le nombre de pairs et de sources pendant la lecture",
                     isOn: s.hideTorrentStats
                 )
             }
 
-            Text("Apple TV can't run a torrent engine itself, so P2P streams through your TorrServer. Debrid (if configured) is still used first; P2P is the fallback for uncached torrents.")
+            Text("Le P2P utilise votre serveur TorrServer. Le débridage reste prioritaire lorsqu’il est configuré.")
                 .font(.system(size: 17))
                 .foregroundStyle(theme.palette.textTertiary)
                 .padding(.top, 2)

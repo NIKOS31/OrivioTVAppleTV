@@ -46,17 +46,17 @@ struct AccountView: View {
             switch self {
             case .orivio: return "Orivio"
             case .stremio: return "Stremio"
-            case .sync: return "Sync"
-            case .backups: return "Backups"
+            case .sync: return "Synchronisation"
+            case .backups: return "Sauvegardes"
             }
         }
 
         var subtitle: String {
             switch self {
-            case .orivio: return "Account sign-in"
+            case .orivio: return "Connexion au compte"
             case .stremio: return "Stremio Link"
-            case .sync: return "Status and actions"
-            case .backups: return "Local safety copy"
+            case .sync: return "État et actions"
+            case .backups: return "Sauvegarde locale"
             }
         }
 
@@ -160,7 +160,7 @@ struct AccountView: View {
     private var content: some View {
         switch account.authState {
         case .loading:
-            OrivioLoadingView(label: "Loading account")
+            OrivioLoadingView(label: "Chargement du compte")
         case .signedIn(_, let email):
             accountShell(orivioEmail: email)
         case .signedOut:
@@ -187,18 +187,18 @@ struct AccountView: View {
             syncLog = OrivioSyncDiagnostics.entries()
             focusedControl = selectedSection.focus
         }
-        .alert("Sign Out?", isPresented: $confirmSignOut) {
-            Button("Sign Out", role: .destructive) { account.signOut() }
-            Button("Cancel", role: .cancel) {}
+        .alert("Se déconnecter ?", isPresented: $confirmSignOut) {
+            Button("Se déconnecter", role: .destructive) { account.signOut() }
+            Button("Annuler", role: .cancel) {}
         } message: {
-            Text("Your watch progress, library and add-ons stay on this device, but they'll stop syncing until you sign in again.")
+            Text("Votre progression, votre bibliothèque et vos addons restent sur cet appareil. Leur synchronisation reprendra à votre prochaine connexion.")
         }
     }
 
     private func accountNavigationRail(orivioEmail: String?) -> some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Accounts")
+                Text("Comptes")
                     .font(.system(size: 38, weight: .heavy))
                     .foregroundStyle(theme.palette.textPrimary)
                 Text(accountRailSubtitle(orivioEmail: orivioEmail))
@@ -225,8 +225,8 @@ struct AccountView: View {
             Spacer(minLength: OrivioSpacing.md)
 
             VStack(alignment: .leading, spacing: 8) {
-                AccountRailStatus(title: "Orivio", value: orivioEmail ?? "Not connected", connected: orivioEmail != nil)
-                AccountRailStatus(title: "Stremio", value: stremio.isSignedIn ? (stremio.email ?? "Connected") : "Not connected", connected: stremio.isSignedIn)
+                AccountRailStatus(title: "Orivio", value: orivioEmail ?? "Non connecté", connected: orivioEmail != nil)
+                AccountRailStatus(title: "Stremio", value: stremio.isSignedIn ? (stremio.email ?? "Connecté") : "Non connecté", connected: stremio.isSignedIn)
             }
         }
         .padding(OrivioSpacing.xl)
@@ -287,10 +287,10 @@ struct AccountView: View {
 
     private func accountRailSubtitle(orivioEmail: String?) -> String {
         switch (orivioEmail != nil, stremio.isSignedIn) {
-        case (true, true): return "Orivio and Stremio connected"
-        case (true, false): return "Orivio connected"
-        case (false, true): return "Stremio connected"
-        case (false, false): return "No accounts connected"
+        case (true, true): return "Comptes nTV et Stremio connectés"
+        case (true, false): return "Compte nTV connecté"
+        case (false, true): return "Stremio connecté"
+        case (false, false): return "Aucun compte connecté"
         }
     }
 
@@ -298,14 +298,14 @@ struct AccountView: View {
         switch selectedSection {
         case .orivio:
             return orivioEmail == nil
-                ? "Sign in by QR or with your email and password to sync this Apple TV with your Orivio account."
-                : "Signed in as \(orivioEmail ?? "Orivio account")."
+                ? "Connectez votre compte avec le code QR ou votre adresse e-mail pour synchroniser cette Apple TV."
+                : "Connecté avec \(orivioEmail ?? "votre compte")."
         case .stremio:
-            return "Connect by Stremio Link or email and password, and keep Stremio data merged into this app."
+            return "Connectez Stremio par code QR ou par e-mail pour retrouver vos données dans nTV."
         case .sync:
-            return "Run account sync actions and inspect the latest sync state without leaving this page."
+            return "Synchronisez vos comptes et consultez leur état sur cette page."
         case .backups:
-            return "Export or import a local backup for add-ons, plugins, library, progress, and watched state."
+            return "Sauvegardez ou restaurez vos addons, plugins, bibliothèque et progression."
         }
     }
 
@@ -313,9 +313,9 @@ struct AccountView: View {
         accountConnectionCard(
             title: "Orivio",
             subtitle: orivioEmail == nil
-                ? "Sync add-ons, profiles, settings, library, watched, and Continue Watching with your Orivio account."
-                : "Full account sync runs automatically while the app is open and not playing video.",
-            status: orivioEmail == nil ? "Not connected" : "Connected",
+                ? "Synchronisez vos addons, profils, réglages, bibliothèque et progression avec votre compte."
+                : "La synchronisation est automatique lorsque l’app est ouverte, en dehors de la lecture.",
+            status: orivioEmail == nil ? "Non connecté" : "Connecté",
             icon: orivioEmail == nil ? "person.crop.circle.badge.plus" : "checkmark.circle.fill"
         ) {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
@@ -323,17 +323,17 @@ struct AccountView: View {
                     Text(orivioEmail)
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(theme.palette.textPrimary)
-                    AccountPrimaryButton(title: "Sign Out", systemImage: "rectangle.portrait.and.arrow.right", filled: false) {
+                    AccountPrimaryButton(title: "Se déconnecter", systemImage: "rectangle.portrait.and.arrow.right", filled: false) {
                         confirmSignOut = true
                     }
                     .focused($focusedControl, equals: .signOut)
                 } else {
-                    AccountPrimaryButton(title: "Sign In with QR", systemImage: "qrcode") {
+                    AccountPrimaryButton(title: "Connexion par code QR", systemImage: "qrcode") {
                         account.startQRLogin()
                     }
                     .focused($focusedControl, equals: .orivioSignIn)
 
-                    AccountPrimaryButton(title: "Sign In with Email", systemImage: "envelope", filled: false) {
+                    AccountPrimaryButton(title: "Connexion par e-mail", systemImage: "envelope", filled: false) {
                         beginOrivioEmailSignIn()
                     }
                     .focused($focusedControl, equals: .orivioEmailSignIn)
@@ -350,43 +350,43 @@ struct AccountView: View {
     private var syncActions: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             AccountPrimaryButton(
-                title: syncing ? "Syncing..." : "Merge Sync",
+                title: syncing ? "Synchronisation…" : "Synchroniser",
                 systemImage: "arrow.triangle.2.circlepath"
             ) {
-                runSyncAction(label: "Merge sync") { sync in
+                runSyncAction(label: "Synchronisation") { sync in
                     await sync.syncNow()
                 }
             }
             .focused($focusedControl, equals: .mergeSync)
 
             HStack(spacing: OrivioSpacing.md) {
-                AccountPrimaryButton(title: "Pull Updates", systemImage: "arrow.down.circle", filled: false) {
-                    runSyncAction(label: "Pull updates") { sync in
+                AccountPrimaryButton(title: "Récupérer les changements", systemImage: "arrow.down.circle", filled: false) {
+                    runSyncAction(label: "Récupération des changements") { sync in
                         await sync.pullAccountUpdates()
                     }
                 }
                 .focused($focusedControl, equals: .pullUpdates)
 
-                AccountPrimaryButton(title: "Push Device", systemImage: "arrow.up.circle", filled: false) {
-                    runSyncAction(label: "Device push") { sync in
+                AccountPrimaryButton(title: "Envoyer les données de cette TV", systemImage: "arrow.up.circle", filled: false) {
+                    runSyncAction(label: "Envoi des données de cette TV") { sync in
                         await sync.pushThisDevice()
                     }
                 }
                 .focused($focusedControl, equals: .pushDevice)
             }
 
-            AccountPrimaryButton(title: "Clear Watch History", systemImage: "trash", filled: false) {
+            AccountPrimaryButton(title: "Effacer l’historique", systemImage: "trash", filled: false) {
                 confirmClearHistory = true
             }
-            .alert("Clear Watch History?", isPresented: $confirmClearHistory) {
-                Button("Clear Everywhere", role: .destructive) {
-                    runSyncAction(label: "Clear watch history") { sync in
+            .alert("Effacer l’historique ?", isPresented: $confirmClearHistory) {
+                Button("Effacer sur tous les appareils", role: .destructive) {
+                    runSyncAction(label: "Effacement de l’historique") { sync in
                         await sync.clearWatchHistoryEverywhere()
                     }
                 }
-                Button("Cancel", role: .cancel) {}
+                Button("Annuler", role: .cancel) {}
             } message: {
-                Text("Removes every Continue Watching and watched item from this device and your account, and stops Trakt from re-importing anything watched before now. This cannot be undone.")
+                Text("Supprime l’historique et la progression sur cet appareil et votre compte, puis empêche Trakt de réimporter les anciennes lectures. Cette action est définitive.")
             }
 
             if let syncStatus {
@@ -414,7 +414,7 @@ struct AccountView: View {
     private var backupActions: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
             HStack(spacing: OrivioSpacing.md) {
-                AccountPrimaryButton(title: "Export Backup", systemImage: "square.and.arrow.up", filled: false) {
+                AccountPrimaryButton(title: "Exporter une sauvegarde", systemImage: "square.and.arrow.up", filled: false) {
                     backupText = OrivioLocalBackupService.exportBackup(
                         addonManager: addonManager,
                         plugins: plugins,
@@ -426,7 +426,7 @@ struct AccountView: View {
                 }
                 .focused($focusedControl, equals: .exportBackup)
 
-                AccountPrimaryButton(title: "Import Backup", systemImage: "square.and.arrow.down", filled: false) {
+                AccountPrimaryButton(title: "Importer une sauvegarde", systemImage: "square.and.arrow.down", filled: false) {
                     backupImportText = ""
                     backupImportStatus = nil
                     showBackupImport = true
@@ -434,7 +434,7 @@ struct AccountView: View {
                 .focused($focusedControl, equals: .importBackup)
             }
 
-            Text("Backups stay local and do not include provider credentials or account tokens.")
+            Text("Cette sauvegarde reste locale. Elle peut contenir des liens privés d’addons ou de listes de chaînes : ne la partagez pas avec d’autres personnes. Les mots de passe et sessions de connexion ne sont pas exportés.")
                 .font(.system(size: 21, weight: .medium))
                 .foregroundStyle(theme.palette.textSecondary)
                 .frame(maxWidth: 780, alignment: .leading)
@@ -516,7 +516,7 @@ struct AccountView: View {
                         Text("Stremio")
                             .font(.system(size: 31, weight: .heavy))
                             .foregroundStyle(theme.palette.textPrimary)
-                        Text(stremio.isSignedIn ? "Connected" : "Optional")
+                        Text(stremio.isSignedIn ? "Connecté" : "Facultatif")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(stremio.isSignedIn ? OrivioPrimitives.success : theme.palette.textTertiary)
                             .padding(.horizontal, 12)
@@ -527,7 +527,7 @@ struct AccountView: View {
                             )
                     }
 
-                    Text(stremio.isSignedIn ? (stremio.email ?? "Stremio account linked") : "Connect with Stremio Link to bring over add-ons, saved library, watched movies, and Continue Watching.")
+                    Text(stremio.isSignedIn ? (stremio.email ?? "Compte Stremio connecté") : "Connectez Stremio par code QR pour retrouver vos addons, votre bibliothèque et votre progression.")
                         .font(.system(size: 21, weight: .medium))
                         .foregroundStyle(theme.palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -537,17 +537,17 @@ struct AccountView: View {
             }
 
             HStack(spacing: OrivioSpacing.sm) {
-                AccountMetricPill(title: "Add-ons", value: "\(addonManager.addons.count)", systemImage: "puzzlepiece.extension")
-                AccountMetricPill(title: "Library", value: "\(library.items.count)", systemImage: "bookmark")
-                AccountMetricPill(title: "Continue", value: "\(progress.continueWatching.count)", systemImage: "play.rectangle")
-                AccountMetricPill(title: "Watched", value: "\(watched.items.count)", systemImage: "checkmark.seal")
+                AccountMetricPill(title: "Addons", value: "\(addonManager.addons.count)", systemImage: "puzzlepiece.extension")
+                AccountMetricPill(title: "Bibliothèque", value: "\(library.items.count)", systemImage: "bookmark")
+                AccountMetricPill(title: "À reprendre", value: "\(progress.continueWatching.count)", systemImage: "play.rectangle")
+                AccountMetricPill(title: "Vu", value: "\(watched.items.count)", systemImage: "checkmark.seal")
             }
 
             VStack(alignment: .leading, spacing: OrivioSpacing.sm) {
                 HStack(spacing: OrivioSpacing.md) {
                     if stremio.isSignedIn {
                         AccountPrimaryButton(
-                            title: stremio.isSyncing ? "Syncing..." : "Sync Stremio",
+                            title: stremio.isSyncing ? "Synchronisation…" : "Synchroniser Stremio",
                             systemImage: "arrow.triangle.2.circlepath",
                             filled: false
                         ) {
@@ -555,18 +555,18 @@ struct AccountView: View {
                         }
                         .focused($focusedControl, equals: .stremioSync)
 
-                        AccountPrimaryButton(title: "Disconnect", systemImage: "xmark.circle", filled: false) {
+                        AccountPrimaryButton(title: "Déconnecter", systemImage: "xmark.circle", filled: false) {
                             stremio.signOut()
                             focusedControl = .stremioSignIn
                         }
                         .focused($focusedControl, equals: .stremioDisconnect)
                     } else {
-                        AccountPrimaryButton(title: "Connect with QR", systemImage: "qrcode", filled: false) {
+                        AccountPrimaryButton(title: "Connexion par code QR", systemImage: "qrcode", filled: false) {
                             startStremioLogin()
                         }
                         .focused($focusedControl, equals: .stremioSignIn)
 
-                        AccountPrimaryButton(title: "Sign In with Email", systemImage: "envelope", filled: false) {
+                        AccountPrimaryButton(title: "Connexion par e-mail", systemImage: "envelope", filled: false) {
                             beginStremioEmailSignIn()
                         }
                         .focused($focusedControl, equals: .stremioEmailSignIn)
@@ -598,13 +598,13 @@ struct AccountView: View {
             QRCodeView(string: qr.webURL, side: 360)
 
             VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
-                Text("Scan to sign in")
+                Text("Scanner pour se connecter")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
 
-                stepRow(1, "Scan the QR code with your phone camera")
-                stepRow(2, "Sign in on the page that opens")
-                stepRow(3, "This TV signs in automatically")
+                stepRow(1, "Scannez le code QR avec votre téléphone")
+                stepRow(2, "Connectez-vous sur la page qui s’ouvre")
+                stepRow(3, "Cette TV se connectera automatiquement")
 
                 Text(qr.webURL)
                     .font(.system(size: 19, weight: .medium).monospaced())
@@ -625,7 +625,7 @@ struct AccountView: View {
                     errorLabel(error)
                 }
 
-                AccountPrimaryButton(title: "Cancel", systemImage: "xmark", filled: false) {
+                AccountPrimaryButton(title: "Annuler", systemImage: "xmark", filled: false) {
                     account.cancelQRLogin()
                 }
                 .focused($focusedControl, equals: .cancelOrivioSignIn)
@@ -665,44 +665,44 @@ struct AccountView: View {
     @State private var showStremioConnect = false
     @State private var stremioLinkCode: StremioLinkCode?
     @State private var stremioPollTask: Task<Void, Never>?
-    @State private var stremioConnectStatus = "Starting sign-in..."
+    @State private var stremioConnectStatus = "Préparation de la connexion…"
     @State private var stremioStatus: String?
     private var sync: OrivioSyncManager? { OrivioSyncManager.shared }
 
     private var syncStatusPanel: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             HStack {
-                Label("Sync Status", systemImage: "checklist.checked")
+                Label("État de la synchronisation", systemImage: "checklist.checked")
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
                 Spacer()
-                Text(sync?.isSyncing == true ? "Running" : "Idle")
+                Text(sync?.isSyncing == true ? "En cours" : "En attente")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(sync?.isSyncing == true ? theme.palette.secondary : theme.palette.textTertiary)
             }
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: OrivioSpacing.md), count: 2), spacing: OrivioSpacing.md) {
-                AccountSyncStatusRow(title: "Profile", value: activeProfileName, systemImage: "person.crop.circle")
-                AccountSyncStatusRow(title: "Add-ons", value: "\(addonManager.addons.count) installed", systemImage: "puzzlepiece.extension")
-                AccountSyncStatusRow(title: "Library", value: "\(library.items.count) saved", systemImage: "bookmark")
-                AccountSyncStatusRow(title: "Continue Watching", value: "\(progress.continueWatching.count) active", systemImage: "play.rectangle")
-                AccountSyncStatusRow(title: "Watched", value: "\(watched.items.count) marked", systemImage: "checkmark.seal")
-                AccountSyncStatusRow(title: "Stremio", value: stremio.isSignedIn ? (stremio.email ?? "Connected") : "Not connected", systemImage: "link")
-                AccountSyncStatusRow(title: "Trakt", value: trakt.isSignedIn ? (trakt.username ?? "Connected") : "Not connected", systemImage: "checkmark.seal.fill")
+                AccountSyncStatusRow(title: "Profil", value: activeProfileName, systemImage: "person.crop.circle")
+                AccountSyncStatusRow(title: "Addons", value: "\(addonManager.addons.count) installés", systemImage: "puzzlepiece.extension")
+                AccountSyncStatusRow(title: "Bibliothèque", value: "\(library.items.count) saved", systemImage: "bookmark")
+                AccountSyncStatusRow(title: "Continuer à regarder", value: "\(progress.continueWatching.count) en cours", systemImage: "play.rectangle")
+                AccountSyncStatusRow(title: "Vu", value: "\(watched.items.count) marked", systemImage: "checkmark.seal")
+                AccountSyncStatusRow(title: "Stremio", value: stremio.isSignedIn ? (stremio.email ?? "Connecté") : "Non connecté", systemImage: "link")
+                AccountSyncStatusRow(title: "Trakt", value: trakt.isSignedIn ? (trakt.username ?? "Connecté") : "Non connecté", systemImage: "checkmark.seal.fill")
                 AccountSyncStatusRow(title: "Debrid", value: debridProvidersLabel, systemImage: "key")
-                AccountSyncStatusRow(title: "Plugins", value: "\(plugins.repositories.count) repos, \(plugins.enabledScrapers.count) enabled", systemImage: "shippingbox")
-                AccountSyncStatusRow(title: "Pending Queue", value: pendingQueueLabel, systemImage: "tray.and.arrow.up")
-                AccountSyncStatusRow(title: "Last Error", value: sync?.lastSyncError ?? "None", systemImage: "exclamationmark.triangle")
+                AccountSyncStatusRow(title: "Plugins", value: "\(plugins.repositories.count) dépôts, \(plugins.enabledScrapers.count) actifs", systemImage: "shippingbox")
+                AccountSyncStatusRow(title: "Actions en attente", value: pendingQueueLabel, systemImage: "tray.and.arrow.up")
+                AccountSyncStatusRow(title: "Dernière erreur", value: sync?.lastSyncError ?? "Aucun", systemImage: "exclamationmark.triangle")
             }
 
             if !syncLog.isEmpty {
                 VStack(alignment: .leading, spacing: OrivioSpacing.sm) {
                     HStack {
-                        Text("Recent Events")
+                        Text("Événements récents")
                             .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(theme.palette.textPrimary)
                         Spacer()
-                        AccountMiniButton(title: "Clear", systemImage: "trash") {
+                        AccountMiniButton(title: "Effacer", systemImage: "trash") {
                             OrivioSyncDiagnostics.clear()
                             syncLog = []
                             focusedControl = .syncPanel
@@ -721,8 +721,8 @@ struct AccountView: View {
                 Task { await runProviderCheck() }
             } label: {
                 SettingsActionRow(
-                    title: checkingProviders ? "Checking Providers" : "Run Provider Check",
-                    subtitle: providerStatus ?? "Check add-on manifests, plugin repositories, Trakt and debrid setup",
+                    title: checkingProviders ? "Vérification des fournisseurs" : "Vérifier les fournisseurs",
+                    subtitle: providerStatus ?? "Vérifier les addons, plugins, Trakt et services de débridage",
                     leadingIcon: "waveform.path.ecg"
                 )
             }
@@ -748,18 +748,18 @@ struct AccountView: View {
     }
 
     private var activeProfileName: String {
-        profiles.profiles.first { $0.id == profiles.activeProfileID }?.name ?? "Profile \(profiles.activeProfileID)"
+        profiles.profiles.first { $0.id == profiles.activeProfileID }?.name ?? "Profil \(profiles.activeProfileID)"
     }
 
     private var debridProvidersLabel: String {
         let providers = debrid.configuredProviders.map(\.displayName)
-        return providers.isEmpty ? "None configured" : providers.joined(separator: ", ")
+        return providers.isEmpty ? "Aucun configuré" : providers.joined(separator: ", ")
     }
 
     private var pendingQueueLabel: String {
-        guard let counts = sync?.pendingSyncCounts else { return "Unavailable" }
-        guard counts.total > 0 else { return "Empty" }
-        return "\(counts.progressDeletes) progress, \(counts.libraryDeletes) library, \(counts.watchedDeletes) watched"
+        guard let counts = sync?.pendingSyncCounts else { return "Indisponible" }
+        guard counts.total > 0 else { return "Vide" }
+        return "\(counts.progressDeletes) progressions, \(counts.libraryDeletes) titres enregistrés, \(counts.watchedDeletes) titres vus"
     }
 
     private func correctSkippedFocus(_ oldFocus: AccountFocus?, _ newFocus: AccountFocus?) {
@@ -780,36 +780,42 @@ struct AccountView: View {
     }
 
     private func startStremioLogin() {
+        let generation = stremio.beginAuthentication()
         stremioStatus = nil
-        stremioConnectStatus = "Starting sign-in..."
+        stremioConnectStatus = "Préparation de la connexion…"
         showStremioConnect = true
-        Task { await loadStremioCode() }
+        Task { await loadStremioCode(generation: generation) }
     }
 
-    private func loadStremioCode() async {
+    private func loadStremioCode(generation: Int) async {
         do {
             let code = try await StremioAccountService.createLink()
+            guard !Task.isCancelled, showStremioConnect, generation == stremio.sessionGeneration else { return }
             stremioLinkCode = code
-            stremioConnectStatus = "Waiting for authorization..."
-            beginStremioPolling(code)
+            stremioConnectStatus = "En attente de votre autorisation…"
+            beginStremioPolling(code, generation: generation)
         } catch {
-            stremioStatus = "Couldn't start Stremio login."
+            guard generation == stremio.sessionGeneration, showStremioConnect else { return }
+            stremioStatus = "Impossible de démarrer la connexion à Stremio."
             showStremioConnect = false
         }
     }
 
-    private func beginStremioPolling(_ code: StremioLinkCode) {
+    private func beginStremioPolling(_ code: StremioLinkCode, generation: Int) {
         stremioPollTask?.cancel()
         stremioPollTask = Task {
             let deadline = Date().addingTimeInterval(300)
             while !Task.isCancelled && Date() < deadline {
-                switch await StremioAccountService.readLink(code: code.code) {
+                let result = await StremioAccountService.readLink(code: code.code)
+                guard !Task.isCancelled, showStremioConnect, generation == stremio.sessionGeneration else { return }
+                switch result {
                 case .pending:
-                    stremioConnectStatus = "Waiting for authorization..."
+                    stremioConnectStatus = "En attente de votre autorisation…"
                 case .authorized(let authKey):
-                    stremioConnectStatus = "Authorized. Syncing your account..."
+                    stremioConnectStatus = "Connexion autorisée. Synchronisation du compte…"
                     let user = await StremioAccountService.getUser(authKey: authKey)
-                    stremio.signIn(authKey: authKey, user: user)
+                    guard !Task.isCancelled, showStremioConnect,
+                          stremio.signIn(authKey: authKey, user: user, expectedGeneration: generation) else { return }
                     stremioLinkCode = nil
                     showStremioConnect = false
                     syncStremioNow()
@@ -825,7 +831,9 @@ struct AccountView: View {
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
-            if !Task.isCancelled && showStremioConnect { await loadStremioCode() }
+            if !Task.isCancelled && showStremioConnect && generation == stremio.sessionGeneration {
+                await loadStremioCode(generation: generation)
+            }
         }
     }
 
@@ -864,6 +872,8 @@ struct AccountView: View {
     }
 
     private func beginStremioEmailSignIn() {
+        stremio.cancelAuthentication()
+        stremioPollTask?.cancel()
         stremioPasswordField = ""
         stremioEmailError = nil
         stremioEmailBusy = false
@@ -871,7 +881,8 @@ struct AccountView: View {
     }
 
     private func cancelStremioEmailSignIn() {
-        guard !stremioEmailBusy else { return }
+        stremio.cancelAuthentication()
+        stremioEmailBusy = false
         showStremioEmailSignIn = false
         stremioPasswordField = ""
         stremioEmailError = nil
@@ -880,13 +891,15 @@ struct AccountView: View {
 
     private func submitStremioEmailSignIn() {
         guard !stremioEmailBusy else { return }
+        let generation = stremio.beginAuthentication()
         stremioEmailBusy = true
         stremioEmailError = nil
         Task {
             do {
                 let result = try await StremioAccountService.login(email: stremioEmailField,
                                                                    password: stremioPasswordField)
-                stremio.signIn(authKey: result.authKey, user: result.user)
+                guard !Task.isCancelled, showStremioEmailSignIn,
+                      stremio.signIn(authKey: result.authKey, user: result.user, expectedGeneration: generation) else { return }
                 stremioPasswordField = ""
                 stremioEmailBusy = false
                 showStremioEmailSignIn = false
@@ -895,14 +908,16 @@ struct AccountView: View {
                 syncStremioNow()
                 focusedControl = .stremioSync
             } catch {
+                guard generation == stremio.sessionGeneration, showStremioEmailSignIn else { return }
                 stremioEmailBusy = false
                 stremioEmailError = (error as? LocalizedError)?.errorDescription
-                    ?? "Couldn't sign in to Stremio."
+                    ?? "Connexion à Stremio impossible."
             }
         }
     }
 
     private func cancelStremioConnect() {
+        stremio.cancelAuthentication()
         stremioPollTask?.cancel()
         stremioLinkCode = nil
         showStremioConnect = false
@@ -911,22 +926,25 @@ struct AccountView: View {
 
     private func syncStremioNow() {
         if let manager = StremioSyncManager.shared {
-            manager.syncNow(reason: "Manual Stremio sync")
+            manager.syncNow(reason: "Synchronisation manuelle de Stremio")
             focusedControl = .stremioSync
             return
         }
 
         guard let key = stremio.authKey else { return }
+        let generation = stremio.sessionGeneration
         stremio.setSyncing(true)
-        stremio.setStatus("Syncing...")
+        stremio.setStatus("Synchronisation…")
         Task {
             let result = await StremioSync.pull(
                 authKey: key,
                 addonManager: addonManager,
                 library: library,
                 progress: progress,
-                watched: watched
+                watched: watched,
+                isCurrent: { stremio.sessionGeneration == generation && stremio.authKey == key }
             )
+            guard !Task.isCancelled, generation == stremio.sessionGeneration, stremio.authKey == key else { return }
             stremio.setStatus(result)
             stremio.setSyncing(false)
             focusedControl = .stremioSync
@@ -950,13 +968,13 @@ struct AccountView: View {
         let addonSlow = addonResults.filter { $0.status == .slow }.count
 
         let pluginFailures = await pluginManifestFailures()
-        let traktStatus = trakt.isSignedIn ? "Trakt connected" : "Trakt off"
+        let traktStatus = trakt.isSignedIn ? "Trakt connecté" : "Trakt désactivé"
         let debridStatus = debrid.configuredProviders.isEmpty
             ? "no debrid"
             : "\(debrid.configuredProviders.count) debrid"
 
         providerStatus = "\(addonFailures) addon failed, \(addonSlow) slow · \(pluginFailures) plugin repo failed · \(traktStatus) · \(debridStatus)"
-        OrivioSyncDiagnostics.record(.info, area: "Health", providerStatus ?? "Provider check finished.")
+        OrivioSyncDiagnostics.record(.info, area: "Health", providerStatus ?? "Vérification des fournisseurs terminée.")
         syncLog = OrivioSyncDiagnostics.entries()
     }
 
@@ -996,7 +1014,7 @@ struct AccountView: View {
     private func importBackup() {
         guard !importingBackup else { return }
         importingBackup = true
-        backupImportStatus = "Importing..."
+        backupImportStatus = "Importation…"
         Task {
             let result = await OrivioLocalBackupService.importBackup(
                 backupImportText,
@@ -1257,15 +1275,15 @@ private struct AccountBackupExportView: View {
         ZStack {
             ATVBackground()
             VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
-                Text("Local Backup")
+                Text("Sauvegarde locale")
                     .font(.system(size: 44, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("\(text.count) characters · credentials are not included")
+                Text("\(text.count) caractères · peut contenir des liens privés, à conserver pour vous")
                     .font(.system(size: 21, weight: .medium))
                     .foregroundStyle(theme.palette.textSecondary)
 
                 ScrollView {
-                    Text(text.isEmpty ? "Backup unavailable." : text)
+                    Text(text.isEmpty ? "Sauvegarde indisponible." : text)
                         .font(.system(size: 17, weight: .medium).monospaced())
                         .foregroundStyle(theme.palette.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1278,7 +1296,7 @@ private struct AccountBackupExportView: View {
                 )
 
                 HStack(spacing: OrivioSpacing.md) {
-                    Button("Done", action: onDone)
+                    Button("Terminé", action: onDone)
                 }
                 .font(.system(size: 24, weight: .bold))
             }
@@ -1300,11 +1318,11 @@ private struct AccountBackupImportView: View {
         ZStack {
             ATVBackground()
             VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
-                Text("Import Backup")
+                Text("Importer une sauvegarde")
                     .font(.system(size: 44, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
 
-                TextField("Paste backup JSON", text: $text, axis: .vertical)
+                TextField("Collez votre sauvegarde JSON", text: $text, axis: .vertical)
                     .font(.system(size: 20, weight: .medium).monospaced())
                     .foregroundStyle(theme.palette.textPrimary)
                     .padding(OrivioSpacing.md)
@@ -1321,11 +1339,11 @@ private struct AccountBackupImportView: View {
                 }
 
                 HStack(spacing: OrivioSpacing.md) {
-                    Button(importing ? "Importing..." : "Import", action: onImport)
+                    Button(importing ? "Importation…" : "Importer", action: onImport)
                         // Stays enabled while importing (disabling the focused
                         // button drops focus); importBackup() guards re-entry.
                         .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    Button("Done", action: onDone)
+                    Button("Terminé", action: onDone)
                 }
                 .font(.system(size: 24, weight: .bold))
             }

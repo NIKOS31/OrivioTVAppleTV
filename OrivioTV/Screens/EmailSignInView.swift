@@ -31,10 +31,10 @@ struct EmailSignInView: View {
 
             VStack(spacing: OrivioSpacing.xl) {
                 VStack(spacing: OrivioSpacing.sm) {
-                    Text("Sign in to \(service)")
+                    Text("Connexion à \(service)")
                         .font(.system(size: 48, weight: .heavy))
                         .foregroundStyle(theme.palette.textPrimary)
-                    Text("Enter the email and password for your \(service) account.")
+                    Text("Saisissez l’adresse e-mail et le mot de passe de votre compte \(service).")
                         .font(.system(size: 24))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.center)
@@ -46,7 +46,7 @@ struct EmailSignInView: View {
                     // saved credential and the iPhone keyboard hand-off, which
                     // is the difference between typing an address on a remote
                     // and not having to.
-                    TextField("Email", text: $email)
+                    TextField("Adresse e-mail", text: $email)
                         .textContentType(.username)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -54,7 +54,7 @@ struct EmailSignInView: View {
                         .focused($focused, equals: .email)
                         .onSubmit { focused = .password }
 
-                    SecureField("Password", text: $password)
+                    SecureField("Mot de passe", text: $password)
                         .textContentType(.password)
                         .focused($focused, equals: .password)
                         .onSubmit(submit)
@@ -62,7 +62,7 @@ struct EmailSignInView: View {
                 .font(.system(size: 26))
                 .frame(maxWidth: 760)
 
-                AccountPrimaryButton(title: busy ? "Signing In…" : "Sign In",
+                AccountPrimaryButton(title: busy ? "Connexion…" : "Se connecter",
                                      systemImage: "arrow.right.circle.fill",
                                      action: submit)
                     .focused($focused, equals: .submit)
@@ -75,7 +75,7 @@ struct EmailSignInView: View {
                         .frame(maxWidth: 760)
                 }
 
-                Text("Press Menu to go back")
+                Text("Retour pour revenir")
                     .font(.system(size: 20))
                     .foregroundStyle(theme.palette.textTertiary)
             }

@@ -53,6 +53,9 @@ struct OrivioTVApp: App {
         // appear, so the tail covers launch itself — a cold start that hangs
         // before any view exists is exactly the session with no other witness.
         AppProbe.installLevels()
+        // One public dependency value per launch, including Release. No URL,
+        // credential or media title; keep av_version_info in the device binary.
+        NSLog("[nTV] linked FFmpeg=%@", NTVMediaDependencyAudit.ffmpegVersion)
     }
 
     @StateObject private var theme = ThemeManager()
@@ -78,6 +81,8 @@ struct OrivioTVApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .modifier(NTVLaunchPresentation())
+                .environment(\.locale, Locale(identifier: "fr_FR"))
                 .fontDesign(theme.rootFontDesign)   // app-wide font family (Fusion routes serif to headings only)
                 .environmentObject(theme)
                 .environmentObject(stores.addonManager)
@@ -298,6 +303,7 @@ struct RootView: View {
     /// it); false for the cold-launch gate, where Back stays a no-op.
     @State private var profileGateCancellable = false
     @State private var selectedTab = 0
+    @State private var ntvCanvas = NTVBackdropCanvas()
     /// Polls the account every 30s while Home is up so Continue Watching stays
     /// live — removals and additions made on another device (or that failed to
     /// reconcile on foreground) appear without a relaunch. Fires continuously;
@@ -459,7 +465,17 @@ struct RootView: View {
                     profiles.onProfileDeleted = { [weak trakt, weak simkl, weak addonManager,
                                                    weak plugins, weak debrid, weak playerSettings,
                                                    weak tmdbSettings, weak theme, weak streamBadges,
-                                                   weak orivioSync] id in
+                                                   weak orivioSync, weak account] id in
+                        let credentials = NTVTwitchCredentials(clientID: NTVTwitchConfiguration.clientID,
+                            profileID: id, ownerScope: account?.currentUserID ?? "local")
+                        let twitchTokens = try? credentials.load()
+                        try? credentials.remove()
+                        if let twitchTokens {
+                            Task {
+                                let api = try? NTVTwitchAPI(clientID: NTVTwitchConfiguration.clientID)
+                                try? await api?.revoke(twitchTokens.accessToken)
+                            }
+                        }
                         trakt?.forgetProfile(id)
                         simkl?.forgetProfile(id)
                         addonManager?.forgetProfile(id)
@@ -573,8 +589,20 @@ struct RootView: View {
                     AppProbe.life("root appeared — tab=\(Self.tabName(selectedTab))")
                     // Skipped in the demo modes so the screen isn't covered.
                     let args = ProcessInfo.processInfo.arguments
-                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo"]
+                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvProfileDemo", "-ntvPlayerDemo", "-ntvTwitchDemo"]
                     let demoMode = demoArgs.contains { args.contains($0) }
+                    #if DEBUG
+                    if demoMode {
+                        homeCatalogSettings.navigationPosition = args.contains("-ntvTopMenuDemo") ? .top : .left
+                    }
+                    #endif
+                    // The selected design is applied once; subsequent layout
+                    // choices remain the viewer's own preference.
+                    if !demoMode, theme.palette.id == NTVDesign.palette.id,
+                       !UserDefaults.standard.bool(forKey: "ntv.navigation.top.v1") {
+                        homeCatalogSettings.navigationPosition = .top
+                        UserDefaults.standard.set(true, forKey: "ntv.navigation.top.v1")
+                    }
                     // -welcomeDemo forces it regardless of the completed flag
                     // or an already-restored session, which is the only way to
                     // look at this screen twice on one install.
@@ -587,6 +615,10 @@ struct RootView: View {
                     // Settings TAB (in-place, not the full-screen pane demo) —
                     // used to drive the ATV theme's settings in the sim.
                     if args.contains("-settingsTabDemo") { selectedTab = 3 }
+                    #if DEBUG
+                    if args.contains("-ntvTopMenuDemo") { selectedTab = 3 }
+                    if args.contains("-ntvProfileDemo") { showProfileGate = true }
+                    #endif
                     if args.contains("-liveTVDemo") { selectedTab = 4 }
                     if args.contains("-searchDemo") { selectedTab = 1 }
                     if args.contains("-libraryDemo") { selectedTab = 2 }
@@ -604,7 +636,7 @@ struct RootView: View {
                             do {
                                 try await addonManager.install(manifestURL: url)
                                 let m = addonManager.addons.first { $0.manifestURL == url }?.manifest
-                                return .success(.init(manifestURL: url, name: m?.name ?? url,
+                                return .success(.init(manifestURL: url, name: m?.name ?? "Addon ajouté",
                                                       logo: m?.logo, description: m?.description))
                             } catch { return .failure(error) }
                         }
@@ -612,8 +644,8 @@ struct RootView: View {
                         devAddonServer = server
                         Task { @MainActor in
                             for _ in 0..<20 {
-                                if let a = server.address {
-                                    NSLog("[OrivioAddonServer] listening at %@", a); return
+                                if server.address != nil {
+                                    NSLog("[OrivioAddonServer] local import ready; code displayed on TV"); return
                                 }
                                 try? await Task.sleep(nanoseconds: 250_000_000)
                             }
@@ -805,6 +837,13 @@ struct RootView: View {
                 .environmentObject(theme)
             }
             .fullScreenCover(isPresented: $showProfileGate) {
+                if ProcessInfo.processInfo.arguments.contains("-ntvProfileDemo") {
+                    ProfileEditView(profile: profiles.active) { showProfileGate = false }
+                        .environmentObject(theme)
+                        .environmentObject(profiles)
+                        .environmentObject(addonManager)
+                        .environmentObject(collections)
+                } else {
                 // The gate now only SELECTS a profile; account + Manage Profiles
                 // live in Settings → Account. The design is an independent look
                 // axis (Settings → Themes → Profile Screen).
@@ -817,6 +856,7 @@ struct RootView: View {
                 .environmentObject(theme)
                 .environmentObject(profiles)
                 .environmentObject(account)
+                }
             }
             // Returning to the app pulls the latest Continue Watching so changes
             // made on another device show up without a relaunch (local edits
@@ -896,20 +936,23 @@ struct RootView: View {
     private func startPlayerDemoIfRequested() {
         let args = ProcessInfo.processInfo.arguments
         let wantsMKV = args.contains("-playerDemoMKV")
-        guard wantsMKV || args.contains("-playerDemo") else { return }
+        let wantsNTV = args.contains("-ntvPlayerDemo")
+        guard wantsMKV || wantsNTV || args.contains("-playerDemo") else { return }
+        let fixtureURL = Bundle.main.url(forResource: "ntv-player-fixture", withExtension: "mp4")
+        if wantsNTV && fixtureURL == nil { return }
         // Once per process: the root content re-appears whenever the player
         // cover dismisses — including the Picture in Picture handoff — and a
         // second demo session would tear the parked one down.
         guard !Self.playerDemoStarted else { return }
         Self.playerDemoStarted = true
         let meta = MetaItem(
-            id: "tt0111161", type: "movie", name: wantsMKV ? "Demo Stream (MKV)" : "Demo Stream (HLS)"
+            id: "ntv-player-test", type: "movie", name: wantsNTV ? "Validation nTV" : wantsMKV ? "Demo Stream (MKV)" : "Demo Stream (HLS)"
         )
         let stream = Stream(
             name: wantsMKV ? "MKV Sample\n1080p" : "Apple HLS\n1080p",
             title: wantsMKV ? "Big Buck Bunny MKV sample" : "BipBop advanced fMP4 example",
             description: nil,
-            url: wantsMKV
+            url: wantsNTV ? fixtureURL!.absoluteString : wantsMKV
                 ? "https://test-videos.co.uk/vids/bigbuckbunny/mkv/1080/Big_Buck_Bunny_1080_10s_5MB.mkv"
                 : "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8",
             infoHash: nil, behaviorHints: nil
@@ -1199,9 +1242,22 @@ struct RootView: View {
     /// the left edge over full-bleed content. OVERLAY layout (not an HStack)
     /// so the expanding panel just draws over the content — the content
     /// column never re-lays-out during the spring.
+    private var ntvBackdropID: String? {
+        guard theme.palette.id == NTVDesign.palette.id else { return nil }
+        switch selectedTab {
+        case 0 where homePath.isEmpty: return "ntv.home.backdrop"
+        case 5 where moviesPath.isEmpty: return "ntv.catalog.movie.backdrop"
+        case 6 where seriesPath.isEmpty: return "ntv.catalog.series.backdrop"
+        default: return nil
+        }
+    }
+
     private var tabLayout: some View {
         ZStack(alignment: navIsTop ? .top : .leading) {
+            if theme.palette.id == NTVDesign.palette.id { NTVCanvasBackdrop(canvas: ntvCanvas) }
             selectedContent
+                .environmentObject(ntvCanvas)
+                .modifier(NTVFullWidthViewport(enabled: theme.palette.id == NTVDesign.palette.id))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Tab changes CUT. No fade, in either direction.
                 //
@@ -1238,13 +1294,13 @@ struct RootView: View {
                 // is text rather than bleed.
                 .padding(.leading, !navIsTop && showSidebar && selectedTab != 0
                          ? GlassSidebar.collapsedWidth : 0)
-                // Same rule on the other axis, Home included: the bar FLOATS
-                // over Home the way the pill floats beside it, so the hero is
-                // never pushed down. The other tabs get a SAFE-AREA inset
-                // rather than a plain one — see `topBarClearance`: plain
-                // padding cut the page off under the bar, so scrolled rows hit
-                // a black band instead of sliding under the glass.
+                // Reserve physical space for nTV's top menu before offering a
+                // viewport to each NavigationStack. Safe-area-only padding was
+                // not honoured consistently by the inherited full-screen pages.
+                .padding(.top, navIsTop && showSidebar && theme.palette.id == NTVDesign.palette.id
+                         ? NTVDesign.topChromeClearance : 0)
                 .safeAreaPadding(.top, navIsTop && showSidebar && selectedTab != 0
+                                 && theme.palette.id != NTVDesign.palette.id
                                  ? GlassSidebar.topBarClearance : 0)
                 // The expanded panel draws OVER the page and the page does
                 // not move. There was an `.offset` here (plus an animation
@@ -1386,6 +1442,10 @@ struct RootView: View {
                     }
             }
         }
+        .onAppear { ntvCanvas.activate(ntvBackdropID) }
+        .onChange(of: ntvBackdropID) { _, id in ntvCanvas.activate(id) }
+        .onChange(of: profiles.activeProfileID) { _, _ in ntvCanvas.clear() }
+        .onChange(of: account.currentUserID) { _, _ in ntvCanvas.clear() }
         .animation(perf.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: showSidebar)
         .animation(perf.sidebarAnimationEffective
@@ -1432,7 +1492,6 @@ struct RootView: View {
         case 4:
             NavigationStack(path: $liveTVPath) {
                 liveTVRoot
-                    .onExitCommand { focusSidebar(4) }
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $liveTVPath) }
             }
         case 5:
@@ -1705,12 +1764,23 @@ struct RootView: View {
         .probeScreen("Library")
     }
 
+    @ViewBuilder
     private var liveTVRoot: some View {
-        LiveTVView(
-            onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
-            onPlayDirect: { channel in playLiveChannel(channel) }
-        )
-        .probeScreen("Live TV")
+        if theme.palette.id == NTVDesign.palette.id {
+            NTVLiveHub(
+                onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
+                onPlayDirect: { channel in playLiveChannel(channel) },
+                onBackAtRoot: { focusSidebar(4) }
+            )
+            .probeScreen("Live TV")
+        } else {
+            LiveTVView(
+                onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
+                onPlayDirect: { channel in playLiveChannel(channel) }
+            )
+            .onExitCommand { focusSidebar(4) }
+            .probeScreen("Live TV")
+        }
     }
 
     /// Shared navigation destinations. `path` is the binding for whichever
@@ -1764,7 +1834,8 @@ struct RootView: View {
                 // Auto Link Selector auto-played: flag a deferred pop; the real
                 // pop happens when the player closes (see the player cover),
                 // never while this view's resolve Task is still running.
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 let key = ProgressStore.key(metaID: meta.id, video: video)
                 startPlayback(PlaybackRequest(
@@ -1781,7 +1852,8 @@ struct RootView: View {
             // but the finished link is handed off rather than played here.
             StreamsView(
                 meta: meta, video: video,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, _ in
                 guard let url = entry.stream.url else { return }
                 // Like the external branch of `startPlayback`: no in-app cover
@@ -1791,7 +1863,8 @@ struct RootView: View {
                 ExternalPlayers.openInInfuse(urlString: url)
             }
         case .streamsManual(let meta, let video):
-            StreamsView(meta: meta, video: video, forceManual: true) { entry, all in
+            StreamsView(meta: meta, video: video, forceManual: true,
+                        onOpenAddons: { selectTab(7) }) { entry, all in
                 let key = ProgressStore.key(metaID: meta.id, video: video)
                 startPlayback(PlaybackRequest(
                     meta: meta,
@@ -1808,7 +1881,8 @@ struct RootView: View {
             // list uncovered itself behind the player and Back landed on it.
             StreamsView(
                 meta: meta, video: video,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 startPlayback(PlaybackRequest(
                     meta: meta,
@@ -1824,7 +1898,8 @@ struct RootView: View {
             StreamsView(
                 meta: meta, video: video,
                 forceAutoPick: true,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 let key = ProgressStore.key(metaID: meta.id, video: video)
                 startPlayback(PlaybackRequest(
@@ -1846,7 +1921,8 @@ struct RootView: View {
                 meta: meta, video: video,
                 resumeAutoPlay: true,
                 resumeSignature: progress?.streamSignature,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 startPlayback(PlaybackRequest(
                     meta: meta,

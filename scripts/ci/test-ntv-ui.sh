@@ -34,9 +34,18 @@ xcodebuild test \
   -derivedDataPath "$output/DerivedData" \
   -resultBundlePath "$results/navigation.xcresult" \
   -only-testing:OrivioTVUITests/NTVDesignSmoke \
+  -only-testing:OrivioTVTests/NTVCoreTests \
+  -only-testing:OrivioTVTests/NTVTwitchTests \
+  -only-testing:OrivioTVTests/NTVSecurityTests \
+  -only-testing:OrivioTVTests/NTVAddonPayloadTests \
+  -only-testing:OrivioTVTests/NTVPerformanceTests \
+  -only-testing:OrivioTVTests/NTVArtworkTests \
+  -only-testing:OrivioTVTests/NTVFFmpegTests \
   -parallel-testing-enabled NO \
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+  CODE_SIGN_ENTITLEMENTS="$task_root/Config/NTV-CI-Simulator.entitlements" \
+  ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
   2>&1 | tee "$output/logs/ntv-ui.log"
 test_pipeline=("${PIPESTATUS[@]}")
 set -e
@@ -61,6 +70,25 @@ for status in "${test_pipeline[@]}" "$export_status"; do
   if ((status != 0)); then exit "$status"; fi
 done
 
+# Record the actual launch overlay, with no demo argument that skips animation.
+# This is the simulator app built and tested above; no personal accounts exist here.
+preview_app="$output/DerivedData/Build/Products/Debug-appletvsimulator/OrivioTV.app"
+preview_bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$preview_app/Info.plist")
+xcrun simctl install "$simulator" "$preview_app"
+xcrun simctl terminate "$simulator" "$preview_bundle" 2>/dev/null || true
+xcrun simctl io "$simulator" recordVideo --codec=h264 "$output/screenshots/ntv-launch.mp4" > "$output/logs/launch-recording.log" 2>&1 &
+record_pid=$!
+trap 'kill -INT "$record_pid" 2>/dev/null || true' EXIT
+sleep 1
+xcrun simctl launch "$simulator" "$preview_bundle" > "$output/logs/launch-preview.log"
+sleep 7
+kill -INT "$record_pid"
+record_status=0
+wait "$record_pid" || record_status=$?
+if ((record_status != 0 && record_status != 130)); then exit "$record_status"; fi
+trap - EXIT
+[[ -s "$output/screenshots/ntv-launch.mp4" ]]
+
 python3 - "$output/build-info.json" <<'PY'
 import json
 import sys
@@ -68,12 +96,13 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     data = json.load(handle)
 data["ui_tests_executed"] = True
-data["ui_test_scope"] = "nTV sidebar/Library, real-addon Home/Movies/Detail/Series, Addons QR/restart/state persistence"
+data["ui_test_scope"] = "nTV sidebar/Library, top floating menu, real-addon Home/Movies/Detail/manual Sources/Addon recovery/Series, Addons QR/restart/state persistence, offline profile characters, full-window artwork/width, Twitch QR/follows/search UI with offline fixtures, player timeline cancel/commit and actual launch recording"
+data["unit_test_scope"] = "legacy profiles/local avatar persistence/remote sync, TV home exclusion/pagination/stale category, Twitch public OAuth/encoding/identity/Helix/session cancellation/concurrent refresh; security real Keychain/migration/revocation/private scope, Orivio/Stremio account races, stale Stremio pull and positive addon import, stale addon responses, real phone import server/HTTP framing/Origin/Host/capability/expiry/quota, linked media dependency inventory; offline account fixtures"
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=2)
     handle.write("\n")
 PY
 
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
-  printf '\n- nTV simulator tests passed: sidebar/Library, real-addon Home/Movies/Detail/Series and Addons QR/restart/state persistence.\n' >> "$GITHUB_STEP_SUMMARY"
+  printf '\n- nTV simulator UI and model tests passed; see build-info.json for scope. Twitch tests use offline fixtures, not a personal Twitch account. Physical Apple TV playback remains a separate check.\n' >> "$GITHUB_STEP_SUMMARY"
 fi

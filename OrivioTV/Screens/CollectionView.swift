@@ -781,9 +781,9 @@ struct CollectionView: View {
     private var emptyMessage: String {
         switch selectedBlocker {
         case .needsEither:
-            return "This folder needs TMDB or Trakt. Add your TMDB API key in "
+            return "Ce dossier utilise TMDB ou Trakt. Ajoutez votre clé TMDB dans "
                 + "Settings → Integrations → TMDB (free, and it covers every kind of source), "
-                + "or sign in to Trakt for your lists."
+                + "ou connectez Trakt pour vos listes."
         case .needsTMDB:
             return "This folder's sources are TMDB — add your TMDB API key in "
                 + "Settings → Integrations → TMDB to show them here."
@@ -791,16 +791,16 @@ struct CollectionView: View {
             return "This folder's sources are Trakt lists — sign in to Trakt in "
                 + "Settings → Trakt to show them here."
         case .needsAddon:
-            return "This folder's catalogs come from an add-on that isn't installed on this profile, "
-                + "or is switched off. Add it or switch it on in Settings → Add-ons to show them here."
+            return "L’addon de ce dossier n’est pas installé sur ce profil, "
+                + "ou il est désactivé. Ajoutez-le ou activez-le dans Réglages → Addons."
         case .unsupportedSources:
-            return "This folder's sources aren't ones this app can load. "
-                + "Add TMDB or Trakt sources to it in Settings → Collections."
+            return "Les sources de ce dossier ne sont pas compatibles avec cette app. "
+                + "Ajoutez des contenus TMDB ou Trakt dans Réglages → Collections."
         case .empty:
-            return "This folder has no sources. Add TMDB or Trakt sources to it in "
+            return "Ce dossier est vide. Ajoutez des contenus TMDB ou Trakt dans "
                 + "Settings → Collections."
         case .none:
-            return "Nothing came back for this folder. Its sources may be empty right now."
+            return "Aucun contenu reçu pour ce dossier. Ses sources sont peut-être vides pour le moment."
         }
     }
 
@@ -845,7 +845,7 @@ struct CollectionView: View {
                 if !allFoldersResolved {
                     HStack(spacing: OrivioSpacing.sm) {
                         ProgressView()
-                        Text("Loading more categories…")
+                        Text("Chargement des catégories suivantes…")
                             .font(.system(size: 22))
                             .foregroundStyle(theme.palette.textTertiary)
                     }
@@ -878,14 +878,14 @@ struct CollectionView: View {
             // tab you just moved to, then vanished with the spinner, leaving
             // focus nowhere and the remote apparently dead. That is the
             // "folder tabs don't work" in tabbed/Folders mode.
-            OrivioLoadingView(label: "Loading collection", holdsFocus: isLoading)
+            OrivioLoadingView(label: "Chargement de la collection", holdsFocus: isLoading)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewMode == .categories && !(folderItems.isEmpty && allFoldersResolved) {
             categoryRows
         } else if visibleItems.isEmpty {
             OrivioEmptyState(
                 icon: selectedBlocker == .none ? "rectangle.stack" : "link.badge.plus",
-                title: selectedBlocker == .none ? "Nothing here yet" : "Connect a source",
+                title: selectedBlocker == .none ? "Aucun contenu pour le moment" : "Connecter une source de contenus",
                 message: emptyMessage
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -922,11 +922,11 @@ struct CollectionView: View {
             // Only for collections that actually have categories to lay out.
             if collection.folders.count > 1 {
                 OrivioDropdown(
-                    title: "View",
+                    title: "Présentation",
                     selection: viewMode.rawValue,
                     options: [
-                        OrivioDropdownOption(ViewMode.categories.rawValue, "Categories"),
-                        OrivioDropdownOption(ViewMode.grid.rawValue, "Grid"),
+                        OrivioDropdownOption(ViewMode.categories.rawValue, "Catégories"),
+                        OrivioDropdownOption(ViewMode.grid.rawValue, "Grille"),
                     ],
                     triggerWidth: 280
                 ) { raw in
@@ -959,13 +959,13 @@ struct CollectionView: View {
     private func gridFilterControls(genres: [String], mixedTypes: Bool) -> some View {
         Group {
             OrivioDropdown(
-                title: "Sort",
+                title: "Tri",
                 selection: sortMode.rawValue,
                 options: [
-                    OrivioDropdownOption(SortMode.popular.rawValue, "Popular"),
-                    OrivioDropdownOption(SortMode.topRated.rawValue, "Top Rated"),
+                    OrivioDropdownOption(SortMode.popular.rawValue, "Populaires"),
+                    OrivioDropdownOption(SortMode.topRated.rawValue, "Les mieux notés"),
                     OrivioDropdownOption(SortMode.az.rawValue, "A-Z"),
-                    OrivioDropdownOption(SortMode.newest.rawValue, "Newest"),
+                    OrivioDropdownOption(SortMode.newest.rawValue, "Les plus récents"),
                 ],
                 triggerWidth: 280
             ) { sortMode = SortMode(rawValue: $0) ?? .popular }
@@ -975,9 +975,9 @@ struct CollectionView: View {
                     title: "Type",
                     selection: typeFilter.rawValue,
                     options: [
-                        OrivioDropdownOption(TypeFilter.all.rawValue, "All"),
-                        OrivioDropdownOption(TypeFilter.movies.rawValue, "Movies"),
-                        OrivioDropdownOption(TypeFilter.shows.rawValue, "Shows"),
+                        OrivioDropdownOption(TypeFilter.all.rawValue, "Tous"),
+                        OrivioDropdownOption(TypeFilter.movies.rawValue, "Films"),
+                        OrivioDropdownOption(TypeFilter.shows.rawValue, "Séries"),
                     ],
                     triggerWidth: 240
                 ) { newValue in
@@ -995,8 +995,8 @@ struct CollectionView: View {
             if !genres.isEmpty {
                 OrivioDropdown(
                     title: "Genre",
-                    selection: genreFilter ?? "All",
-                    options: [OrivioDropdownOption("All")] + genres.map { OrivioDropdownOption($0) },
+                    selection: genreFilter ?? "Tous",
+                    options: [OrivioDropdownOption("Tous")] + genres.map { OrivioDropdownOption($0) },
                     triggerWidth: 260
                 ) { genreFilter = $0 == "All" ? nil : $0 }
             }
@@ -1009,7 +1009,7 @@ struct CollectionView: View {
             ScrollView(.horizontal) {
                 HStack(spacing: OrivioSpacing.md) {
                     if collection.showAllTab {
-                        folderTab(id: nil, label: "All")
+                        folderTab(id: nil, label: "Tous")
                     }
                     ForEach(collection.folders) { folder in
                         folderTab(id: folder.id, label: folder.title)
@@ -1198,22 +1198,22 @@ struct CollectionLayoutPicker: View {
     var onChange: (String) -> Void = { _ in }
 
     private static let options: [(id: String, label: String)] = [
-        ("TABBED_GRID", "Folders"),
-        ("ROWS", "Rows"),
-        ("COMBINED", "Combined"),
+        ("TABBED_GRID", "Dossiers"),
+        ("ROWS", "Rangées"),
+        ("COMBINED", "Combiné"),
     ]
 
     private var subtitle: String {
         switch viewMode {
-        case "ROWS": return "Each folder becomes its own row, stacked top to bottom."
-        case "COMBINED": return "Every folder's titles spread out together in one row."
-        default: return "Browse one folder at a time, with tabs across the top."
+        case "ROWS": return "Afficher une rangée par dossier"
+        case "COMBINED": return "Regrouper les titres de tous les dossiers dans une rangée"
+        default: return "Parcourir un dossier à la fois avec les onglets en haut"
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-            Text("Layout")
+            Text("Disposition")
                 .font(.system(size: 26, weight: .semibold))
                 .foregroundStyle(theme.palette.textPrimary)
             HStack(spacing: OrivioSpacing.md) {

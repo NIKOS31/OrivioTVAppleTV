@@ -14,6 +14,8 @@ final class AddonManager: ObservableObject {
     /// no sync manager is attached at all (signed out).
     var onSyncRequested: (() async throws -> Void)?
     private var suppressChange = false
+    private var scopeEpoch = 0
+    private let manifestLoader: @Sendable (String) async throws -> AddonManifest
 
     /// The LEGACY device-wide list. Never deleted (except on account switch):
     /// it is what the PRIMARY profile inherits when add-ons are separate, and
@@ -52,6 +54,8 @@ final class AddonManager: ObservableObject {
     /// Silent (no push armed): the LIST didn't change, only which copy is live.
     func setPerProfile(_ on: Bool) {
         guard on != perProfileEnabled else { return }
+        scopeEpoch &+= 1
+        missedLocalChangeWhileSuppressed = false
         ProfileScopedDefaults.setSeparate(Self.feature, on)
         suppressChange = true
         defer { suppressChange = false }
@@ -66,6 +70,8 @@ final class AddonManager: ObservableObject {
     /// defaults (its account rows pull in on the next sync).
     func setProfile(_ id: Int) {
         guard id != profileID else { return }
+        scopeEpoch &+= 1
+        missedLocalChangeWhileSuppressed = false
         profileID = id
         suppressChange = true
         defer { suppressChange = false }
@@ -77,6 +83,7 @@ final class AddonManager: ObservableObject {
     /// Forget a deleted profile's add-ons so a recycled profile id starts
     /// from the seed instead of inheriting them.
     func forgetProfile(_ id: Int) {
+        if id == profileID { scopeEpoch &+= 1 }
         UserDefaults.standard.removeObject(forKey: Self.storageKey + ".p\(id)")
         UserDefaults.standard.removeObject(forKey: Self.forgottenDefaultsKey + ".p\(id)")
         if id == profileID {
@@ -192,8 +199,9 @@ final class AddonManager: ObservableObject {
     /// Does not fire `onLocalChange` (no echo back). Returns the number added.
     @discardableResult
     func applyRemote(addons remoteAddons: [RemoteAddonState], reconcile: Bool = false) async -> Int {
+        let epoch = scopeEpoch
         suppressChange = true
-        defer { endSuppression() }
+        defer { if epoch == scopeEpoch { endSuppression() } }
         let normalizedStates = remoteAddons.map { state in
             let manifestURL = Self.normalizeManifestURL(state.manifestURL)
             // Derived by the SAME rule as `InstalledAddon.baseURL`. This used to
@@ -241,12 +249,13 @@ final class AddonManager: ObservableObject {
         // The window matters here: this runs during the first-login sync, when
         // an account with dozens of addons would otherwise fire every manifest
         // request at once while Home is also loading.
+        let loader = manifestLoader
         let fetched = await boundedConcurrentMap(toInstall, limit: AddonSweepLimits.manifests) { state in
-            let manifest = (try? await StremioAPI.manifest(url: state.manifestURL))
+            let manifest = (try? await loader(state.manifestURL))
                 ?? AddonManifest.placeholder(manifestURL: state.manifestURL)
             return (state, manifest)
         }
-
+        guard epoch == scopeEpoch, !Task.isCancelled else { return 0 }
         var added = 0
         for (state, manifest) in fetched {
             let addon = InstalledAddon(manifestURL: state.manifestURL, manifest: manifest, enabled: state.enabled)
@@ -276,12 +285,14 @@ final class AddonManager: ObservableObject {
 
     @discardableResult
     func resolvePlaceholders() async -> Bool {
+        let epoch = scopeEpoch
+        let loader = manifestLoader
         let stuck = addons.filter { $0.enabled && $0.manifest.isPlaceholder }
         guard !stuck.isEmpty else { return false }
         let timeout = Self.placeholderResolveTimeout
         let resolved = await boundedConcurrentMap(stuck, limit: AddonSweepLimits.manifests) { addon in
             let manifest: AddonManifest? = await withTaskGroup(of: AddonManifest?.self) { group in
-                group.addTask { try? await StremioAPI.manifest(url: addon.manifestURL) }
+                group.addTask { try? await loader(addon.manifestURL) }
                 group.addTask {
                     try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                     return nil
@@ -292,6 +303,7 @@ final class AddonManager: ObservableObject {
             }
             return (url: addon.manifestURL, manifest: manifest, enabled: addon.enabled)
         }
+        guard epoch == scopeEpoch, !Task.isCancelled else { return false }
         var resolvedAny = false
         for entry in resolved {
             // Same rule as the refresh: an empty manifest is not a resolution.
@@ -308,7 +320,9 @@ final class AddonManager: ObservableObject {
 
     private static let lastRefreshKey = "orivio.addons.lastRefresh.v1"
 
-    init() {
+    init(startRefresh: Bool = true,
+         manifestLoader: @escaping @Sendable (String) async throws -> AddonManifest = { try await StremioAPI.manifest(url: $0) }) {
+        self.manifestLoader = manifestLoader
         profileID = UserDefaults.standard.object(forKey: Self.activeProfileKey) as? Int ?? 1
         load()
         ensureDefaults()
@@ -316,7 +330,7 @@ final class AddonManager: ObservableObject {
         // one is under an hour old (faster cold start, less addon traffic).
         // The manual "Refresh Add-ons" button always forces it.
         let last = UserDefaults.standard.double(forKey: Self.lastRefreshKey)
-        if Date().timeIntervalSince1970 - last > 3600 {
+        if startRefresh, Date().timeIntervalSince1970 - last > 3600 {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 guard !Task.isCancelled else { return }
@@ -364,8 +378,11 @@ final class AddonManager: ObservableObject {
     }
 
     func install(manifestURL rawURL: String) async throws {
+        let epoch = scopeEpoch
         let urlString = Self.normalizeManifestURL(rawURL)
-        let manifest = try await StremioAPI.manifest(url: urlString)
+        let manifest = try await manifestLoader(urlString)
+        try Task.checkCancellation()
+        guard epoch == scopeEpoch else { throw CancellationError() }
         let addon = InstalledAddon(manifestURL: urlString, manifest: manifest)
         if let existing = addons.firstIndex(where: { $0.manifestURL == urlString }) {
             addons[existing] = addon
@@ -392,6 +409,9 @@ final class AddonManager: ObservableObject {
     /// copy) still carries the previous user's tokenized manifest URLs, and
     /// the next profile switch would load them straight into the new account.
     func clearAll() {
+        scopeEpoch &+= 1
+        suppressChange = false
+        missedLocalChangeWhileSuppressed = false
         addons.removeAll()
         UserDefaults.standard.removeObject(forKey: Self.storageKey)
         for id in 1...ProfileStore.maxProfiles {
@@ -487,9 +507,9 @@ final class AddonManager: ObservableObject {
             var label: String {
                 switch self {
                 case .ok: return "OK"
-                case .slow: return "Slow"
-                case .disabled: return "Off"
-                case .failed: return "Failed"
+                case .slow: return "Lent"
+                case .disabled: return "Désactivé"
+                case .failed: return "Indisponible"
                 }
             }
         }
@@ -540,11 +560,11 @@ final class AddonManager: ObservableObject {
 
     nonisolated private static func capabilitySummary(for manifest: AddonManifest) -> String {
         var parts: [String] = []
-        if manifest.providesCatalogs { parts.append("Catalogs") }
-        if manifest.providesStreams { parts.append("Streams") }
-        if manifest.providesMeta { parts.append("Meta") }
-        if manifest.providesSubtitles { parts.append("Subtitles") }
-        return parts.isEmpty ? "No active resources" : parts.joined(separator: " · ")
+        if manifest.providesCatalogs { parts.append("Catalogues") }
+        if manifest.providesStreams { parts.append("Sources") }
+        if manifest.providesMeta { parts.append("Métadonnées") }
+        if manifest.providesSubtitles { parts.append("Sous-titres") }
+        return parts.isEmpty ? "Aucune ressource active" : parts.joined(separator: " · ")
     }
 
     /// Re-fetch every installed addon's manifest (the APK's "Refresh Add-ons")
@@ -565,16 +585,16 @@ final class AddonManager: ObservableObject {
         var message: String {
             switch self {
             case .notSignedIn:
-                return "Manifests refreshed — sign in to sync add-ons with your account"
+                return "Addons actualisés. Connectez-vous pour les synchroniser avec votre compte."
             case .changed(let added, let removed):
                 var parts: [String] = []
-                if added > 0 { parts.append("added \(added)") }
-                if removed > 0 { parts.append("removed \(removed)") }
-                return "Synced with your account — " + parts.joined(separator: ", ")
+                if added > 0 { parts.append("\(added) ajoutés") }
+                if removed > 0 { parts.append("\(removed) supprimés") }
+                return "Synchronisés avec votre compte : " + parts.joined(separator: ", ")
             case .alreadyUpToDate:
-                return "Add-ons synced — already up to date"
+                return "Addons synchronisés et à jour"
             case .failed(let why):
-                return "Couldn't sync with your account: \(why)"
+                return "Synchronisation impossible : \(why)"
             }
         }
     }
@@ -596,8 +616,9 @@ final class AddonManager: ObservableObject {
         do {
             try await onSyncRequested()
         } catch {
-            NSLog("[OrivioAddonSync] sync FAILED: %@", String(describing: error))
-            AppProbe.warn("addon sync", "\(error)")
+            let category = NTVAddonDiagnostics.failure(error)
+            NSLog("[OrivioAddonSync] sync FAILED: %@", category)
+            AppProbe.warn("addon sync", category)
             return .failed(Self.shortReason(error))
         }
         let after = Set(addons.map(\.manifestURL))
@@ -610,21 +631,26 @@ final class AddonManager: ObservableObject {
     }
 
     nonisolated private static func shortReason(_ error: Error) -> String {
+        if error is CancellationError { return "opération annulée" }
+        if let safe = error as? StremioAPIError { return safe.localizedDescription }
         if let urlError = error as? URLError {
-            return urlError.code == .notConnectedToInternet ? "no internet" : "network error"
+            return urlError.code == .notConnectedToInternet ? "pas de connexion Internet" : "erreur réseau"
         }
-        if error is DecodingError { return "unexpected response from the server" }
-        let text = "\(error)"
-        return text.count > 90 ? String(text.prefix(90)) + "…" : text
+        if error is DecodingError { return "réponse du serveur illisible" }
+        // Truncating an arbitrary error does not redact credentials: its first
+        // characters can already contain an addon URL or server response.
+        return "le service n’a pas pu terminer la demande"
     }
 
     private func refreshManifests() async {
+        let epoch = scopeEpoch
+        let loader = manifestLoader
         // Snapshot the current list, re-fetch the manifests a few at a time,
         // then reassemble in the original order.
         let current = addons
         guard !current.isEmpty else { return }
         let refreshed = await boundedConcurrentMap(current, limit: AddonSweepLimits.manifests) { addon -> (InstalledAddon, Bool) in
-            guard let manifest = try? await StremioAPI.manifest(url: addon.manifestURL) else {
+            guard let manifest = try? await loader(addon.manifestURL) else {
                 return (addon, false)
             }
             // A 200 THAT ISN'T A MANIFEST decodes to an EMPTY one: the decoder
@@ -643,7 +669,8 @@ final class AddonManager: ObservableObject {
         }
         // Bail if the installed set changed while we were fetching (e.g. the
         // user added/removed an addon), so we don't clobber their edit.
-        guard addons.map(\.manifestURL) == current.map(\.manifestURL) else { return }
+        guard epoch == scopeEpoch, !Task.isCancelled,
+              addons.map(\.manifestURL) == current.map(\.manifestURL) else { return }
         addons = refreshed.map { $0.0 }
         save()
         // Only a sweep that actually reached an add-on counts as "done for the

@@ -6,7 +6,7 @@ import UIKit
 struct TMDBSettings: Codable, Equatable {
     var enabled: Bool = false
     var enrichContinueWatching: Bool = true
-    var language: String = "en"
+    var language: String = "fr"
     // Granular enrichment toggles (mirror Android's per-section TMDB switches).
     var useCredits: Bool = true
     var useTrailers: Bool = true
@@ -167,7 +167,7 @@ final class TMDBSettingsStore: ObservableObject {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(settings) else { return }
-        UserDefaults.standard.set(
+        NTVSecurePreferences.standard.set(
             data, forKey: ProfileScopedDefaults.writeKey(Self.key, feature: Self.feature, profileID))
     }
 }

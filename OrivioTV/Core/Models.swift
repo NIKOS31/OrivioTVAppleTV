@@ -208,6 +208,11 @@ struct ManifestCatalog: Codable, Identifiable, Hashable {
     let extraRequired: [String]?
     let extraSupported: [String]?
 
+    var appearsOnHome: Bool { (type == "movie" || type == "series") && !requiresExtra }
+    var supportsSkip: Bool {
+        extraSupported?.contains("skip") == true || extra?.contains { $0.name == "skip" } == true
+    }
+
     /// Catalogs that require an extra argument (search, genre...) cannot be
     /// shown as plain home rows.
     var requiresExtra: Bool {

@@ -21,6 +21,7 @@ final class StremioSyncManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var syncTask: Task<Void, Never>?
     private var autoSyncTask: Task<Void, Never>?
+    private var syncGeneration = 0
 
     init(
         stremio: StremioAccountStore,
@@ -134,6 +135,10 @@ final class StremioSyncManager: ObservableObject {
     private var lastPulledSignature: String?
 
     private func handleAuthKey(_ key: String?) {
+        syncGeneration &+= 1
+        syncTask?.cancel()
+        syncTask = nil
+        stremio.setSyncing(false)
         // A new key means a new account (or a re-link): forget what the
         // previous one was last seen holding and what this device sent it.
         lastPulledSignature = nil
@@ -207,10 +212,24 @@ final class StremioSyncManager: ObservableObject {
         stremio.setSyncing(true)
         stremio.setStatus("Syncing...")
         let automatic = reason.hasPrefix("Auto")
+        let generation = syncGeneration
+        let profile = watched.profileID
+        let isCurrent: () -> Bool = { [weak self] in
+            guard let self else { return false }
+            return !Task.isCancelled && self.syncGeneration == generation
+                && self.stremio.authKey == key && self.watched.profileID == profile
+        }
         if !automatic { OrivioSyncDiagnostics.record(.info, area: "Stremio", "\(reason) started.") }
 
         syncTask = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if syncGeneration == generation {
+                    stremio.setSyncing(false)
+                    syncTask = nil
+                }
+            }
+            guard isCurrent() else { return }
             // A DIFFERENT Stremio account than the one these stores were last
             // synced with. The pull below is additive, so the previous
             // account's rows would survive it and the push at the end would
@@ -246,8 +265,9 @@ final class StremioSyncManager: ObservableObject {
             } catch {
                 // No signature means no change detection this tick: fall back
                 // to the full pull rather than guess.
-                NSLog("[OrivioStremio] datastoreMeta unavailable (%@) — full pull", String(describing: error))
+                NSLog("[OrivioStremio] datastoreMeta unavailable — full pull")
             }
+            guard isCurrent() else { return }
             let remoteChanged = signature == nil || signature != lastPulledSignature
             var pullResult = "Stremio unchanged"
             var succeeded = true
@@ -257,8 +277,10 @@ final class StremioSyncManager: ObservableObject {
                     addonManager: addonManager,
                     library: library,
                     progress: progress,
-                    watched: watched
+                    watched: watched,
+                    isCurrent: isCurrent
                 )
+                guard isCurrent() else { return }
                 succeeded = !pullResult.hasPrefix("Couldn't")
                 if succeeded { lastPulledSignature = signature }
             } else {
@@ -269,12 +291,14 @@ final class StremioSyncManager: ObservableObject {
                 // another device never arrive here.
                 if let descriptors = try? await StremioAccountService.fetchAddonCollection(authKey: key),
                    !descriptors.isEmpty {
+                    guard isCurrent() else { return }
                     let states = descriptors
                         .filter { !$0.transportUrl.isEmpty }
                         .map { AddonManager.RemoteAddonState(manifestURL: $0.transportUrl, enabled: true) }
                     _ = await addonManager.applyRemote(addons: states, reconcile: false)
                 }
             }
+            guard isCurrent() else { return }
             var finalResult = pullResult
             if succeeded, accountChanged {
                 // The pull landed: the stores now hold this account's data.
@@ -282,6 +306,7 @@ final class StremioSyncManager: ObservableObject {
                 UserDefaults.standard.set(identity, forKey: Self.lastSyncedUserKey)
                 progress.removeLocalOnlyProgress()
                 await onMergedFromStremio?()
+                guard isCurrent() else { return }
                 progress.removeLocalOnlyProgress()
                 OrivioSyncDiagnostics.record(.info, area: "Stremio", "\(reason): \(pullResult) (first pull for this account; push deferred to the next tick).")
                 stremio.setStatus(pullResult)
@@ -298,6 +323,7 @@ final class StremioSyncManager: ObservableObject {
                 if remoteChanged {
                     progress.removeLocalOnlyProgress()
                     await onMergedFromStremio?()
+                    guard isCurrent() else { return }
                     progress.removeLocalOnlyProgress()
                 }
                 let clears = pendingProgressClears
@@ -307,6 +333,7 @@ final class StremioSyncManager: ObservableObject {
                 // folded into "what we last pulled" or it would never be
                 // pulled (see below).
                 let beforePush = try? await StremioAccountService.fetchLibrarySignature(authKey: key)
+                guard isCurrent() else { return }
                 let push = await StremioSync.pushCombined(
                     authKey: key,
                     addonManager: addonManager,
@@ -314,8 +341,10 @@ final class StremioSyncManager: ObservableObject {
                     progress: progress,
                     watched: watched,
                     clearedProgressIDs: clears,
-                    removedLibraryItems: removals
+                    removedLibraryItems: removals,
+                    isCurrent: isCurrent
                 )
+                guard isCurrent() else { return }
                 // Only drop the queue once the LIBRARY push actually landed —
                 // the cleared ids ride in that payload. This used to test the
                 // summary string for a "Couldn't" prefix that `pushCombined`
@@ -339,6 +368,7 @@ final class StremioSyncManager: ObservableObject {
                 if push.changedRows > 0,
                    let beforePush, beforePush == lastPulledSignature,
                    let after = try? await StremioAccountService.fetchLibrarySignature(authKey: key) {
+                    guard isCurrent() else { return }
                     lastPulledSignature = after
                 }
                 // A quiet automatic tick stays out of the diagnostics log —

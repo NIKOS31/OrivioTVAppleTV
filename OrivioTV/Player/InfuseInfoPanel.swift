@@ -43,7 +43,7 @@ struct InfuseInfoPanel: View {
         case row(String)
     }
 
-    private static let tabs = ["Info", "Video", "Audio", "Subtitles"]
+    private static let tabs = ["Info", "Vidéo", "Audio", "Sous-titres"]
 
     /// Focus one main-actor turn later — the rows are being (re)enabled or
     /// the sheet is still mounting on the pass that asks for it.
@@ -288,12 +288,12 @@ struct InfuseInfoPanel: View {
                     return InfusePickerSpec(title: "Sources", content: .sources)
                 }
                 if viewModel.currentVideo?.season != nil {
-                    optionRow("info.episodes", label: "Episodes", value: viewModel.currentVideo?.seasonEpisodeCode) {
-                        InfusePickerSpec(title: "Episodes", content: .episodes)
+                    optionRow("info.episodes", label: "Épisodes", value: viewModel.currentVideo?.seasonEpisodeCode) {
+                        InfusePickerSpec(title: "Épisodes", content: .episodes)
                     }
                 }
-                optionRow("info.engine", label: "Engine", value: viewModel.engineName) {
-                    InfusePickerSpec(title: "Engine", content: .items(
+                optionRow("info.engine", label: "Moteur", value: viewModel.engineName) {
+                    InfusePickerSpec(title: "Moteur", content: .items(
                         PlayerEngine.allCases.filter { $0 != .external }.map { engine in
                             InfusePickerItem(id: engine.rawValue, title: engine.label,
                                              selected: viewModel.effectiveEngine == engine) {
@@ -303,11 +303,11 @@ struct InfuseInfoPanel: View {
                     ))
                 }
                 if viewModel.pictureInPicture.isPossible {
-                    actionRow("info.pip", label: "Picture in Picture") {
+                    actionRow("info.pip", label: "Image dans l’image") {
                         viewModel.pictureInPicture.start()
                     }
                 } else if viewModel.canEnterPictureInPictureViaNativeEngine {
-                    actionRow("info.pip", label: "Picture in Picture", value: "via Native engine") {
+                    actionRow("info.pip", label: "Image dans l’image", value: "avec le moteur natif") {
                         viewModel.enterPictureInPictureViaNativeEngine()
                     }
                 }
@@ -372,27 +372,27 @@ struct InfuseInfoPanel: View {
             let h = MediaCacheServer.shared.health
             let bufferAhead = max(viewModel.clock.buffered - viewModel.clock.position, 0)
             VStack(alignment: .leading, spacing: 0) {
-                InfuseColumnHeader(text: "Status")
+                InfuseColumnHeader(text: "État")
                 if h.hasSession {
-                    InfuseOptionRow(label: "Download",
-                                    value: h.downloadRate > 0 ? Self.rate(h.downloadRate) : "idle",
+                    InfuseOptionRow(label: "Téléchargement",
+                                    value: h.downloadRate > 0 ? Self.rate(h.downloadRate) : "en attente",
                                     interactive: false)
-                    InfuseOptionRow(label: "Cache ahead",
+                    InfuseOptionRow(label: "Vidéo en avance",
                                     value: h.leadSeconds > 0
                                         ? "\(Int(h.leadSeconds))s (\(Self.bytes(h.leadBytes)))"
                                         : Self.bytes(h.leadBytes),
                                     interactive: false)
-                    InfuseOptionRow(label: "On disk",
+                    InfuseOptionRow(label: "Sur le stockage",
                                     value: h.totalBytes > 0
                                         ? "\(Self.bytes(h.onDiskBytes)) of \(Self.bytes(h.totalBytes)) (\(Int(Double(h.onDiskBytes) / Double(h.totalBytes) * 100))%)"
                                         : Self.bytes(h.onDiskBytes),
                                     interactive: false)
-                    InfuseOptionRow(label: "Connections",
+                    InfuseOptionRow(label: "Connexions",
                                     value: "\(h.busyWorkers)/\(h.workerLimit)"
                                         + (h.originCap.map { " · capped at \($0)" } ?? ""),
                                     interactive: false)
                     if h.windowed {
-                        InfuseOptionRow(label: "Cache window",
+                        InfuseOptionRow(label: "Fenêtre du cache",
                                         value: h.pausedForSpace
                                             ? "paused for space"
                                             : "sliding · \(Self.bytes(h.evictedBytes)) evicted",
@@ -401,9 +401,9 @@ struct InfuseInfoPanel: View {
                 } else if let failure = h.failure {
                     InfuseOptionRow(label: "Cache", value: failure, interactive: false)
                 } else {
-                    InfuseOptionRow(label: "Cache", value: "off (direct stream)", interactive: false)
+                    InfuseOptionRow(label: "Cache", value: "désactivé · lecture directe", interactive: false)
                 }
-                InfuseOptionRow(label: "Engine buffer",
+                InfuseOptionRow(label: "Tampon du lecteur",
                                 value: bufferAhead > 0 ? "\(Int(bufferAhead))s" : "—",
                                 interactive: false)
             }
@@ -433,7 +433,7 @@ struct InfuseInfoPanel: View {
         return VStack(alignment: .leading, spacing: 0) {
             InfuseColumnHeader(text: "Format")
             if rows.isEmpty {
-                InfuseOptionRow(label: "Still identifying the stream…", value: nil, interactive: false)
+                InfuseOptionRow(label: "Analyse de la vidéo…", value: nil, interactive: false)
             } else {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     InfuseOptionRow(label: row.label, value: row.value, interactive: false)
@@ -446,8 +446,8 @@ struct InfuseInfoPanel: View {
 
     private var videoOptions: some View {
         optionsColumn(header: "Options") {
-            optionRow("video.zoom", label: "Zoom Mode", value: zoomLabel(viewModel.aspectMode)) {
-                InfusePickerSpec(title: "Zoom Mode", content: .items(
+            optionRow("video.zoom", label: "Mode de zoom", value: zoomLabel(viewModel.aspectMode)) {
+                InfusePickerSpec(title: "Mode de zoom", content: .items(
                     AspectMode.allCases.map { mode in
                         InfusePickerItem(id: mode.rawValue, title: zoomLabel(mode),
                                          selected: viewModel.aspectMode == mode) {
@@ -456,8 +456,8 @@ struct InfuseInfoPanel: View {
                     }
                 ))
             }
-            optionRow("video.aspect", label: "Aspect Ratio", value: viewModel.aspectRatioLabel) {
-                InfusePickerSpec(title: "Aspect Ratio", content: .items(
+            optionRow("video.aspect", label: "Format d’image", value: viewModel.aspectRatioLabel) {
+                InfusePickerSpec(title: "Format d’image", content: .items(
                     PlayerViewModel.aspectRatioOptions.map { option in
                         InfusePickerItem(id: option.label, title: option.label,
                                          selected: option.value == viewModel.aspectRatioOverride) {
@@ -466,8 +466,8 @@ struct InfuseInfoPanel: View {
                     }
                 ))
             }
-            optionRow("video.shift", label: "Vertical Shift", value: viewModel.verticalShift.label) {
-                InfusePickerSpec(title: "Vertical Shift", content: .items(
+            optionRow("video.shift", label: "Décalage vertical", value: viewModel.verticalShift.label) {
+                InfusePickerSpec(title: "Décalage vertical", content: .items(
                     PlayerViewModel.VerticalShift.allCases.map { shift in
                         InfusePickerItem(id: shift.rawValue, title: shift.label,
                                          selected: viewModel.verticalShift == shift) {
@@ -479,9 +479,9 @@ struct InfuseInfoPanel: View {
             if !viewModel.chapters.isEmpty {
                 let current = viewModel.currentChapter
                 let currentIndex = viewModel.chapters.firstIndex { $0.start == current?.start } ?? 0
-                optionRow("video.chapters", label: "Chapters",
+                optionRow("video.chapters", label: "Chapitres",
                           value: current.map { PlayerViewModel.chapterLabel($0, index: currentIndex) } ?? "—") {
-                    InfusePickerSpec(title: "Chapters", content: .items(
+                    InfusePickerSpec(title: "Chapitres", content: .items(
                         viewModel.chapters.enumerated().map { index, chapter in
                             InfusePickerItem(id: "chapter-\(index)",
                                              title: PlayerViewModel.chapterLabel(chapter, index: index),
@@ -493,8 +493,8 @@ struct InfuseInfoPanel: View {
                     ))
                 }
             }
-            optionRow("video.speed", label: "Playback Speed", value: speedLabel(viewModel.playbackSpeed)) {
-                InfusePickerSpec(title: "Playback Speed", content: .items(
+            optionRow("video.speed", label: "Vitesse de lecture", value: speedLabel(viewModel.playbackSpeed)) {
+                InfusePickerSpec(title: "Vitesse de lecture", content: .items(
                     Self.speeds.map { speed in
                         InfusePickerItem(id: "\(speed)", title: speedLabel(speed),
                                          selected: viewModel.playbackSpeed == speed) {
@@ -515,8 +515,8 @@ struct InfuseInfoPanel: View {
     private func zoomLabel(_ mode: AspectMode) -> String {
         switch mode {
         case .fit: return "Normal"
-        case .zoom: return "Crop"
-        case .stretch: return "Stretch"
+        case .zoom: return "Recadrer"
+        case .stretch: return "Étirer"
         }
     }
 
@@ -558,7 +558,7 @@ struct InfuseInfoPanel: View {
         return VStack(alignment: .leading, spacing: 0) {
             InfuseColumnHeader(text: "Format")
             if rows.isEmpty {
-                InfuseOptionRow(label: "Still identifying the audio…", value: nil, interactive: false)
+                InfuseOptionRow(label: "Analyse de l’audio…", value: nil, interactive: false)
             } else {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     InfuseOptionRow(label: row.label, value: row.value, interactive: false)
@@ -577,12 +577,12 @@ struct InfuseInfoPanel: View {
                 // Lip-sync offset ("voices don't line up with the mouths") —
                 // per-title, remembered like speed. FFmpeg, VLC and DV sample
                 // engines; the native AVPlayer path has no knob to turn, so the
-                // row stays out of the way there rather than lying. "Off" is the
+                // row stays out of the way there rather than lying. "Désactivé" is the
                 // engine's own timing — every value is added on top of it.
                 if viewModel.audioSyncAdjustable {
-                    optionRow("audio.sync", label: "Audio Sync",
+                    optionRow("audio.sync", label: "Synchronisation audio",
                               value: PlayerViewModel.audioSyncLabel(viewModel.audioSyncOffset)) {
-                        InfusePickerSpec(title: "Audio Sync", content: .items(
+                        InfusePickerSpec(title: "Synchronisation audio", content: .items(
                             PlayerViewModel.audioSyncOptions.map { offset in
                                 InfusePickerItem(
                                     id: "sync-\(Int(offset * 1000))",
@@ -595,7 +595,7 @@ struct InfuseInfoPanel: View {
                         ))
                     }
                 }
-                actionRow("audio.speaker", label: "Speaker", value: speakerName) {
+                actionRow("audio.speaker", label: "Sortie audio", value: speakerName) {
                     routePickerToken += 1
                 }
             }
@@ -638,11 +638,11 @@ struct InfuseInfoPanel: View {
                 let s = store.settings
                 // Fetches the addon tracks again and puts the current one
                 // back — for captions that stopped showing or never loaded.
-                actionRow("sub.reload", label: "Reload Subtitles") {
+                actionRow("sub.reload", label: "Recharger les sous-titres") {
                     viewModel.reloadSubtitles()
                 }
-                optionRow("sub.font", label: "Font", value: fontLabel(s.subtitleFontName)) {
-                    InfusePickerSpec(title: "Font", content: .items(
+                optionRow("sub.font", label: "Police", value: fontLabel(s.subtitleFontName)) {
+                    InfusePickerSpec(title: "Police", content: .items(
                         PlayerSettings.subtitleFontOptions.map { option in
                             InfusePickerItem(id: "font-\(option.0)", title: option.1,
                                              selected: s.subtitleFontName == option.0) {
@@ -651,8 +651,8 @@ struct InfuseInfoPanel: View {
                         }
                     ))
                 }
-                optionRow("sub.size", label: "Size", value: "\(s.subtitleSize) pt") {
-                    InfusePickerSpec(title: "Size", content: .items(
+                optionRow("sub.size", label: "Taille", value: "\(s.subtitleSize) pt") {
+                    InfusePickerSpec(title: "Taille", content: .items(
                         PlayerSettings.subtitleSizeValues.map { size in
                             InfusePickerItem(id: "size-\(size)", title: "\(size) pt",
                                              selected: s.subtitleSize == size) {
@@ -663,8 +663,8 @@ struct InfuseInfoPanel: View {
                         }
                     ))
                 }
-                optionRow("sub.color", label: "Color", value: colorLabel(s.subtitleTextColorHex)) {
-                    InfusePickerSpec(title: "Color", content: .items(
+                optionRow("sub.color", label: "Couleur", value: colorLabel(s.subtitleTextColorHex)) {
+                    InfusePickerSpec(title: "Couleur", content: .items(
                         PlayerSettings.subtitleColorOptions.map { option in
                             InfusePickerItem(id: "color-\(option.0)", title: option.1,
                                              selected: s.subtitleTextColorHex == option.0) {
@@ -673,38 +673,38 @@ struct InfuseInfoPanel: View {
                         }
                     ))
                 }
-                optionRow("sub.weight", label: "Weight", value: s.subtitleBold ? "Bold" : "Regular") {
-                    InfusePickerSpec(title: "Weight", content: .items([
-                        InfusePickerItem(id: "regular", title: "Regular", selected: !s.subtitleBold) {
+                optionRow("sub.weight", label: "Graisse", value: s.subtitleBold ? "Gras" : "Normal") {
+                    InfusePickerSpec(title: "Graisse", content: .items([
+                        InfusePickerItem(id: "regular", title: "Normal", selected: !s.subtitleBold) {
                             store.settings.subtitleBold = false
                         },
-                        InfusePickerItem(id: "bold", title: "Bold", selected: s.subtitleBold) {
+                        InfusePickerItem(id: "bold", title: "Gras", selected: s.subtitleBold) {
                             store.settings.subtitleBold = true
                         }
                     ]))
                 }
-                optionRow("sub.outline", label: "Outline", value: s.subtitleOutlineEnabled ? "Bordered" : "Off") {
-                    InfusePickerSpec(title: "Outline", content: .items([
-                        InfusePickerItem(id: "bordered", title: "Bordered", selected: s.subtitleOutlineEnabled) {
+                optionRow("sub.outline", label: "Contour", value: s.subtitleOutlineEnabled ? "Avec contour" : "Désactivé") {
+                    InfusePickerSpec(title: "Contour", content: .items([
+                        InfusePickerItem(id: "bordered", title: "Avec contour", selected: s.subtitleOutlineEnabled) {
                             store.settings.subtitleOutlineEnabled = true
                         },
-                        InfusePickerItem(id: "off", title: "Off", selected: !s.subtitleOutlineEnabled) {
+                        InfusePickerItem(id: "off", title: "Désactivé", selected: !s.subtitleOutlineEnabled) {
                             store.settings.subtitleOutlineEnabled = false
                         }
                     ]))
                 }
-                optionRow("sub.background", label: "Background", value: s.subtitleBackground ? "On" : "Off") {
-                    InfusePickerSpec(title: "Background", content: .items([
-                        InfusePickerItem(id: "on", title: "On", selected: s.subtitleBackground) {
+                optionRow("sub.background", label: "Fond", value: s.subtitleBackground ? "Activé" : "Désactivé") {
+                    InfusePickerSpec(title: "Fond", content: .items([
+                        InfusePickerItem(id: "on", title: "Activé", selected: s.subtitleBackground) {
                             store.settings.subtitleBackground = true
                         },
-                        InfusePickerItem(id: "off", title: "Off", selected: !s.subtitleBackground) {
+                        InfusePickerItem(id: "off", title: "Désactivé", selected: !s.subtitleBackground) {
                             store.settings.subtitleBackground = false
                         }
                     ]))
                 }
-                optionRow("sub.opacity", label: "Opacity", value: "\(s.subtitleBackgroundOpacity)%") {
-                    InfusePickerSpec(title: "Opacity", content: .items(
+                optionRow("sub.opacity", label: "Opacité", value: "\(s.subtitleBackgroundOpacity)%") {
+                    InfusePickerSpec(title: "Opacité", content: .items(
                         PlayerSettings.subtitleBackgroundOpacityValues.map { value in
                             InfusePickerItem(id: "opacity-\(value)", title: "\(value)%",
                                              selected: s.subtitleBackgroundOpacity == value) {
@@ -713,8 +713,8 @@ struct InfuseInfoPanel: View {
                         }
                     ))
                 }
-                optionRow("sub.offset", label: "Vertical Alignment", value: offsetLabel(s.subtitleVerticalOffset)) {
-                    InfusePickerSpec(title: "Vertical Alignment", content: .items(
+                optionRow("sub.offset", label: "Position verticale", value: offsetLabel(s.subtitleVerticalOffset)) {
+                    InfusePickerSpec(title: "Position verticale", content: .items(
                         PlayerSettings.subtitleOffsetValues.map { value in
                             InfusePickerItem(id: "offset-\(value)", title: offsetLabel(value),
                                              selected: s.subtitleVerticalOffset == value) {
@@ -723,8 +723,8 @@ struct InfuseInfoPanel: View {
                         }
                     ))
                 }
-                optionRow("sub.delay", label: "Delay", value: PlayerViewModel.formatDelay(viewModel.subtitleDelay)) {
-                    InfusePickerSpec(title: "Delay", content: .items(
+                optionRow("sub.delay", label: "Décalage", value: PlayerViewModel.formatDelay(viewModel.subtitleDelay)) {
+                    InfusePickerSpec(title: "Décalage", content: .items(
                         PlayerSettings.subtitleDelayValues.map { value in
                             InfusePickerItem(id: "delay-\(value)", title: PlayerViewModel.formatDelay(value),
                                              selected: viewModel.subtitleDelay == value) {
@@ -738,15 +738,15 @@ struct InfuseInfoPanel: View {
     }
 
     private func fontLabel(_ name: String) -> String {
-        PlayerSettings.subtitleFontOptions.first { $0.0 == name }?.1 ?? "Default"
+        PlayerSettings.subtitleFontOptions.first { $0.0 == name }?.1 ?? "Par défaut"
     }
 
     private func colorLabel(_ hex: String) -> String {
-        PlayerSettings.subtitleColorOptions.first { $0.0.caseInsensitiveCompare(hex) == .orderedSame }?.1 ?? "White"
+        PlayerSettings.subtitleColorOptions.first { $0.0.caseInsensitiveCompare(hex) == .orderedSame }?.1 ?? "Blanc"
     }
 
     private func offsetLabel(_ value: Int) -> String {
-        value == 0 ? "Default" : (value > 0 ? "Up \(value)" : "Down \(-value)")
+        value == 0 ? "Par défaut" : (value > 0 ? "Plus haut de \(value)" : "Plus bas de \(-value)")
     }
 
     // MARK: Layout helpers
@@ -777,18 +777,18 @@ struct InfuseInfoPanel: View {
     private func tracksColumn(prefix: String, options: [TrackOption], selectedID: String?,
                               onSelect: @escaping (TrackOption) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            InfuseColumnHeader(text: "Tracks")
+            InfuseColumnHeader(text: "Pistes")
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if options.isEmpty {
-                        InfuseOptionRow(label: "No tracks in this stream", value: nil, interactive: false)
+                        InfuseOptionRow(label: "Aucune piste disponible", value: nil, interactive: false)
                     }
                     ForEach(options) { option in
                         Button {
                             onSelect(option)
                         } label: {
                             InfuseTrackRow(
-                                title: option.id == "sub-off" ? "None" : option.displayName,
+                                title: option.id == "sub-off" ? "Aucun" : option.displayName,
                                 selected: option.id == selectedID
                             )
                         }
@@ -1097,7 +1097,7 @@ struct InfusePickerScreen: View {
             return viewModel.displayMeta.episodes(season: season).map { episode in
                 InfusePickerItem(
                     id: episode.id,
-                    title: "\(episode.episode.map { "\($0). " } ?? "")\(episode.title ?? "Episode")",
+                    title: "\(episode.episode.map { "\($0). " } ?? "")\(episode.title ?? "Épisode")",
                     subtitle: episode.overview.flatMap { $0.isEmpty ? nil : $0 },
                     selected: episode.id == viewModel.currentVideo?.id
                 ) {
@@ -1112,12 +1112,12 @@ struct InfusePickerScreen: View {
     private func emptyLabel(for rows: [InfusePickerItem]) -> String? {
         switch spec.content {
         case .sources:
-            if viewModel.isLoadingSources { return "Searching sources…" }
-            return viewModel.allEntries.isEmpty ? "No sources found" : nil
+            if viewModel.isLoadingSources { return "Recherche des sources…" }
+            return viewModel.allEntries.isEmpty ? "Aucune source trouvée" : nil
         case .episodes:
-            return rows.isEmpty ? "The episode list hasn't loaded yet" : nil
+            return rows.isEmpty ? "La liste des épisodes n’est pas encore chargée" : nil
         case .items(let items):
-            return items.isEmpty ? "Nothing to choose" : nil
+            return items.isEmpty ? "Aucun choix disponible" : nil
         }
     }
 
@@ -1193,7 +1193,7 @@ struct InfusePickerScreen: View {
         // Sources and Episodes arrive AFTER the screen opens — a Continue
         // Watching session has to fetch its alternatives first, and the
         // episode list comes in with the enriched metadata. Focus was parked
-        // on the "Searching sources…" placeholder, which is removed the
+        // on the "Recherche des sources…" placeholder, which is removed the
         // instant the real rows land, taking focus out of the hierarchy with
         // it: a full screen of rows and a dead remote. Re-land it on the row
         // the picker would have opened on.
@@ -1238,7 +1238,7 @@ private struct InfusePickerRow: View {
             // read as one thing rather than two.
             if instant {
                 MetaBadge(
-                    text: "⚡︎ Cached",
+                    text: "⚡︎ Disponible",
                     tint: OrivioPrimitives.success.opacity(isFocused ? 0.30 : 0.22),
                     textColor: OrivioPrimitives.success
                 )

@@ -314,7 +314,7 @@ final class HomeViewModel: ObservableObject {
         // user's order was merged in. `maxHomeRows` below is the real ceiling,
         // and it cuts in the user's own order.
         for addon in addonManager.catalogAddons {
-            for catalog in (addon.manifest.catalogs ?? []) where !catalog.requiresExtra {
+            for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
                 let key = HomeCatalogSettingsStore.catalogKey(
                     addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id
                 )
@@ -466,7 +466,7 @@ final class HomeViewModel: ObservableObject {
         if isLoading {
             // No artificial pause — go straight to fetching so the first-run
             // load is as fast as the network allows.
-            loadingStep = "Loading catalogs…"
+            loadingStep = "Chargement des catalogues…"
         }
 
         // REVALIDATE: fetch the catalogs, a bounded number at a time.
@@ -587,7 +587,7 @@ final class HomeViewModel: ObservableObject {
         // republishing this run's (older) row list over it.
         guard isCurrent() else { return }
 
-        if isLoading { loadingStep = "Loading artwork…" }
+        if isLoading { loadingStep = "Chargement des illustrations…" }
 
         let ordered = fetched.sorted { $0.index < $1.index }
         // Per-row fallback, so one dead catalog can't blank its row and an
@@ -616,7 +616,7 @@ final class HomeViewModel: ObservableObject {
         // cached ones, and an already-cached URL costs a `fileExists` here.
         warmSpotlightArt()
         if entries.isEmpty {
-            loadError = "No catalogs available. Check your addons and network connection."
+            loadError = "Aucun catalogue disponible. Vérifiez vos addons et votre connexion."
         }
         isLoading = false
         loadingStep = nil
@@ -646,8 +646,8 @@ final class HomeViewModel: ObservableObject {
         // APK row header format: "{Catalog Name} - {Type}" (e.g. "Trending Movies - Movie").
         let typeLabel: String
         switch request.catalog.type {
-        case "series", "tv": typeLabel = "Series"
-        case "movie": typeLabel = "Movie"
+        case "series", "tv": typeLabel = "Séries"
+        case "movie": typeLabel = "Film"
         default: typeLabel = request.catalog.type.capitalized
         }
         let baseName = request.catalog.name ?? request.catalog.id.capitalized
@@ -1298,7 +1298,7 @@ struct HomeView: View {
         layoutContent
         .onAppear {
             isVisible = true
-            hero.layout = homeCatalogSettings.heroLayout
+            hero.layout = usesNTVLayout ? .pinnedFocus : homeCatalogSettings.heroLayout
             hero.onBrowseStateChange = { browsing in
                 AppProbe.focus("home handoff browsedIntoContent=\(browsing)")
                 // DEFERRED BY ONE TURN, and that is the whole fix for "the
@@ -1336,7 +1336,7 @@ struct HomeView: View {
         // on the roll instead of inheriting a browse that already happened.
         .onChange(of: homeCatalogSettings.heroLayout) { _, mode in
             AppProbe.focus("home heroLayout=\(mode)")
-            hero.layout = mode
+            hero.layout = usesNTVLayout ? .pinnedFocus : mode
             hero.resetBrowseHandoff()
         }
         // HYBRID, going back UP. The pinned hero's return strip binds the same
@@ -1569,16 +1569,19 @@ struct HomeView: View {
     /// remain owned by HomeView and its persistent model.
     private var ntvLayout: some View {
         ZStack {
-            ATVBackground()
+            NTVFocusBackdrop(hero: hero, identifier: "ntv.home.backdrop")
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 32) {
                     Text("Accueil")
                         .font(.system(size: 38, weight: .semibold))
                         .foregroundStyle(NTVDesign.textPrimary)
                         .accessibilityIdentifier("ntv.home.heading")
+                        .ntvHalloweenDecor(.heading)
+                        .padding(.horizontal, NTVViewport.horizontalInset)
                     if perf.settings.heroBackdrop {
                         NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
                                          onSelect: heroSelect, onBack: onHomeBack)
+                            .padding(.horizontal, NTVViewport.horizontalInset)
                             .focusSection()
                     }
                     if viewModel.entries.isEmpty && !viewModel.isLoading {
@@ -1589,17 +1592,17 @@ struct HomeView: View {
                             onOpenSettings: onOpenSettings,
                             onRetry: { Task { await reload() } }
                         )
+                        .padding(.horizontal, NTVViewport.horizontalInset)
                     } else {
                         rowsContent
                     }
                 }
-                .modifier(RailClearingLeading(withRail: 120, withoutRail: OrivioSpacing.huge))
-                .padding(.trailing, OrivioSpacing.huge)
+                .modifier(RailClearingLeading(withRail: 120, withoutRail: 0))
                 .padding(.top, OrivioSpacing.lg)
                 .padding(.bottom, 120)
             }
-            .scrollClipDisabled()
         }
+        .ignoresSafeArea(edges: .horizontal)
     }
 
     private var fusionModernLayout: some View {
@@ -1758,7 +1761,7 @@ struct HomeView: View {
                 .frame(height: 460)
         } else if let error = viewModel.loadError, viewModel.entries.isEmpty {
             VStack(spacing: OrivioSpacing.lg) {
-                OrivioEmptyState(icon: "antenna.radiowaves.left.and.right.slash", title: "Nothing to show", message: error)
+                OrivioEmptyState(icon: "antenna.radiowaves.left.and.right.slash", title: "Aucun contenu à afficher", message: error)
                 Button {
                     Task { await reload() }
                 } label: {
@@ -1856,7 +1859,7 @@ struct HomeView: View {
         let pinned = liveFavorites.homeChannels
         if !pinned.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-                RowHeader(title: "Live Channels")
+                RowHeader(title: "Chaînes en direct")
                     .padding(.leading, OrivioSpacing.sm)
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
@@ -2536,7 +2539,8 @@ private struct HomePosterRow: View {
                             .id(item.id)
                         }
                     }
-                    .padding(.horizontal, OrivioSpacing.huge)
+                    .padding(.horizontal, theme.palette.id == NTVDesign.palette.id
+                             ? NTVViewport.horizontalInset : OrivioSpacing.huge)
                     .padding(.vertical, OrivioSpacing.lg)
                 }
                 .scrollClipDisabled()
@@ -2607,7 +2611,8 @@ private struct HomePosterRow: View {
                     SeeAllLabel()
                 }
                 .buttonStyle(PlainCardButtonStyle())
-                .padding(.trailing, OrivioSpacing.huge)
+                .padding(.trailing, theme.palette.id == NTVDesign.palette.id
+                         ? NTVViewport.horizontalInset : OrivioSpacing.huge)
             }
         }
     }
@@ -2681,6 +2686,7 @@ private struct HomePosterCell: View, Equatable {
             .holdProbe("poster \(item.name)", enabled: PerformanceSettingsStore.shared.settings.showHoldProbe)
             .posterHoldMenu(item) { onSelect(item) }
             .onPlayPauseCommand { onPlayManually(item, nil) }
+            .accessibilityIdentifier("ntv.home.poster.\(item.type).\(item.id)")
 
             if showLabel {
                 ATVCardCaption(
@@ -2738,7 +2744,7 @@ private struct ContinueWatchingRow: View {
         // Focus model mirrors HomePosterRow (plain @FocusState, no .focusScope /
         // .focusSection).
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-            RowHeader(title: "Continue Watching")
+            RowHeader(title: "Continuer à regarder")
             ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 // Wider gap than the poster rows (.xl, not .lg): these cards
@@ -2774,7 +2780,8 @@ private struct ContinueWatchingRow: View {
                       .id(progress.id)
                     }
                 }
-                .padding(.horizontal, OrivioSpacing.huge)
+                .padding(.horizontal, theme.palette.id == NTVDesign.palette.id
+                         ? NTVViewport.horizontalInset : OrivioSpacing.huge)
                 .padding(.vertical, OrivioSpacing.lg)
             }
             .scrollClipDisabled()
@@ -2905,7 +2912,7 @@ private struct HomeLoadingBackdrop: View {
     @EnvironmentObject private var theme: ThemeManager
     let step: String?
 
-    private let steps = ["Loading add-ons…", "Loading catalogs…", "Loading artwork…"]
+    private let steps = ["Chargement des addons…", "Chargement des catalogues…", "Chargement des illustrations…"]
     private var activeIndex: Int { steps.firstIndex(of: step ?? "") ?? 0 }
 
     var body: some View {
@@ -2966,7 +2973,7 @@ struct RetryLabel: View {
         HStack(spacing: OrivioSpacing.sm) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 20, weight: .semibold))
-            Text("Try Again")
+            Text("Réessayer")
                 .font(.system(size: 24, weight: .semibold))
         }
         .foregroundStyle(isFocused ? theme.palette.onSecondary : theme.palette.textPrimary)
@@ -2985,7 +2992,7 @@ struct RetryLabel: View {
 struct SeeAllLabel: View {
     @EnvironmentObject private var theme: ThemeManager
     @Environment(\.isFocused) private var isFocused
-    var text: String = "See All"
+    var text: String = "Tout voir"
 
     var body: some View {
         HStack(spacing: 6) {

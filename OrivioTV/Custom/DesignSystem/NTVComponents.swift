@@ -1,5 +1,29 @@
 import SwiftUI
 
+/// Background-only glass keeps custom controls in the tvOS focus engine.
+/// Older hardware and Reduce Transparency use an opaque surface instead.
+struct NTVGlassSurface<S: Shape>: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let shape: S
+    var emphasized = false
+    var clear = false
+
+    var body: some View {
+        if reduceTransparency || PerformanceProfile.isLowPower || PerformanceProfile.isMidPower {
+            shape.fill(emphasized ? NTVDesign.raised : NTVDesign.surface)
+        } else if #available(tvOS 26.0, *) {
+            if clear {
+                Color.clear.glassEffect(.clear, in: shape)
+            } else {
+                Color.clear.glassEffect(
+                    .regular.tint(NTVDesign.surface.opacity(emphasized ? 0.3 : 0.15)), in: shape)
+            }
+        } else {
+            shape.fill(.regularMaterial)
+        }
+    }
+}
+
 /// The supplied nTV logo, preserving its original artwork and transparency.
 struct NTVWordmark: View {
     var size: CGFloat = 36
@@ -119,11 +143,10 @@ struct NTVSidebarLabel: View {
         .padding(.horizontal, expanded ? 14 : 0)
         .frame(height: 64)
         .frame(maxWidth: expanded ? .infinity : nil, alignment: .leading)
-        .foregroundStyle(focused ? NTVDesign.background
-                         : selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+        .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .background {
             RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                .fill(focused ? NTVDesign.textPrimary
+                .fill(focused ? NTVDesign.textPrimary.opacity(0.22)
                       : selected ? NTVDesign.accentMuted : .clear)
         }
         .overlay {
@@ -135,29 +158,35 @@ struct NTVSidebarLabel: View {
 }
 
 struct NTVActionButtonStyle: ButtonStyle {
+    var prominent = false
     func makeBody(configuration: Configuration) -> some View {
-        Chrome(configuration: configuration)
+        Chrome(configuration: configuration, prominent: prominent)
     }
 
     private struct Chrome: View {
         @Environment(\.isFocused) private var focused
         let configuration: ButtonStyle.Configuration
+        let prominent: Bool
 
         var body: some View {
             configuration.label
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
-                .padding(.horizontal, 26)
-                .frame(minHeight: 60)
+                .font(.system(size: 23, weight: .medium))
+                .foregroundStyle(focused || prominent ? NTVDesign.background : NTVDesign.textPrimary)
+                .padding(.horizontal, 28)
+                .frame(minHeight: 62)
                 .background {
-                    RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                        .fill(focused ? NTVDesign.accent : NTVDesign.raised)
+                    if focused || prominent {
+                        Capsule().fill(NTVDesign.textPrimary.opacity(focused ? 1 : 0.92))
+                    } else {
+                        Capsule().fill(.black.opacity(0.28))
+                    }
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                        .strokeBorder(focused ? NTVDesign.accent : .clear, lineWidth: 2)
+                    Capsule().strokeBorder(.white.opacity(focused ? 0 : 0.16), lineWidth: 1)
                 }
-                .focusLift(NTVDesign.controlFocusScale, focused)
+                // A single alpha fill is sufficient here. Glass refraction belongs
+                // to navigation, rather than every action in a scrolling page.
+                .focusLift(1.015, focused)
                 .cardPressDip(configuration.isPressed)
         }
     }

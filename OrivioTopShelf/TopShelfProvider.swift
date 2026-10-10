@@ -10,9 +10,8 @@ import TVServices
 /// Selecting an item deep-links into the app via orivio://meta?type=…&id=…
 /// (handled by DeepLinkService), which opens the title's detail page.
 ///
-/// If the app group isn't available (e.g. a sideload signer that strips the
-/// entitlement), the container URL is nil and the shelf simply stays empty —
-/// the app itself is unaffected.
+/// If the app group isn't available, the bundled nTV banner is presented
+/// without requiring an account or viewing history.
 final class TopShelfProvider: TVTopShelfContentProvider {
 
     /// Mirror of TopShelfExporter.Entry — kept as its own tiny struct so the
@@ -33,11 +32,11 @@ final class TopShelfProvider: TVTopShelfContentProvider {
     private static func content() -> TVTopShelfContent? {
         // AppGroupResolver is shared with the app target (see project.yml) so
         // both sides resolve the SAME signer-assigned group at runtime.
-        guard let file = AppGroupResolver.sharedFile("topshelf.json") else { return nil }
+        guard let file = AppGroupResolver.sharedFile("topshelf.json") else { return brandContent() }
         guard let data = try? Data(contentsOf: file),
               let entries = try? JSONDecoder().decode([Entry].self, from: data),
               !entries.isEmpty
-        else { return nil }
+        else { return brandContent() }
 
         // Written by the app beside the snapshot — see TopShelfExporter.
         let scheme = AppGroupResolver.sharedFile("topshelf-scheme.txt")
@@ -70,8 +69,21 @@ final class TopShelfProvider: TVTopShelfContentProvider {
         }
 
         let section = TVTopShelfItemCollection(items: items)
-        section.title = "Continue Watching"
+        section.title = "Continuer à regarder"
         return TVTopShelfSectionedContent(sections: [section])
+    }
+
+    /// Branding needs no shared container, account or viewing history. Free
+    /// signing can remove the app-group entitlement, but the extension can
+    /// still present this bundled banner when the extension itself is retained.
+    private static func brandContent() -> TVTopShelfContent? {
+        guard let image = Bundle.main.url(forResource: "topshelf-wide", withExtension: "png") else { return nil }
+        let item = TVTopShelfItem(identifier: "ntv.brand")
+        item.setImageURL(image, for: [.screenScale1x, .screenScale2x])
+        if let retina = Bundle.main.url(forResource: "topshelf-wide@2x", withExtension: "png") {
+            item.setImageURL(retina, for: [.screenScale2x])
+        }
+        return TVTopShelfInsetContent(items: [item])
     }
 }
 

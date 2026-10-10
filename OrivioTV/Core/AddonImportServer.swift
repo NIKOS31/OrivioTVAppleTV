@@ -6,7 +6,7 @@ import Network
 /// Typing a manifest URL on a TV remote is miserable, and the existing
 /// "Add-on Setup" QR only goes the other way (it *exports* what is installed).
 /// This serves a one-field page on the local network; the QR on screen is just
-/// its address, so scanning it opens the form with no app to install.
+/// a temporary, unguessable session link, so scanning opens the authorized form.
 ///
 /// Deliberately small and deliberately local:
 ///
@@ -17,10 +17,11 @@ import Network
 ///   a URL typed on the TV, so the same validation applies.
 /// * http, not https: a self-signed certificate on a LAN address would make
 ///   every phone show a security warning, which trains exactly the wrong
-///   instinct. Nothing secret crosses it.
+///   instinct. Configured manifest links can carry private tokens; they
+    ///   travel only over this local connection and are never echoed in HTML.
 @MainActor
 final class AddonImportServer: ObservableObject {
-    /// What the QR encodes, e.g. "http://192.168.1.20:8090". nil until the
+    /// What the QR encodes: a local address plus a temporary random path. nil until the
     /// listener is actually up.
     @Published private(set) var address: String?
     /// What an install actually turned out to be. A manifest URL says nothing
@@ -47,27 +48,40 @@ final class AddonImportServer: ObservableObject {
     /// is deliberately generic — anything pasted goes through `onInstall` —
     /// so other paste-from-phone flows (the custom IPTV playlist) reuse it by
     /// swapping these before `start()`.
-    var pageTitle = "Add add-ons"
-    var pagePrompt = "Paste one manifest URL, or a whole Add-on Setup export — one URL per line. Scanning the Export Add-on Setup QR from another Orivio gives you exactly that list."
+    var pageTitle = "Ajouter un addon à nTV"
+    var pagePrompt = "Collez un lien de manifest, ou plusieurs liens séparés par des retours à la ligne."
     var pagePlaceholder = "https://…/manifest.json"
-    var pageButton = "Add to Orivio"
-    var pageEmptyMessage = "Enter a manifest URL."
+    var pageButton = "Ajouter à nTV"
+    var pageEmptyMessage = "Entrez le lien de votre addon."
 
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private var timeouts: [ObjectIdentifier: Task<Void, Never>] = [:]
+    private var policy: NTVAddonImportPolicy?
+    private var expiration: Task<Void, Never>?
+    private var generation = 0
+    private var installing = false
 
-    /// Fixed rather than ephemeral so the QR is stable across restarts of the
-    /// screen; high enough to need no privilege.
+    /// The port is stable; the authorization path changes each session.
     private static let port: UInt16 = 8099
 
     func start() {
         guard listener == nil else { return }
+        guard let ip = Self.lanAddress() else {
+            lastError = "L’Apple TV n’est pas connectée au réseau."
+            return
+        }
+        generation &+= 1
+        installing = false
+        accepted = []
+        policy = NTVAddonImportPolicy(host: "\(ip):\(Self.port)")
         lastError = nil
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             guard let port = NWEndpoint.Port(rawValue: Self.port) else { return }
-            let listener = try NWListener(using: params, on: port)
+            params.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(ip), port: port)
+            let listener = try NWListener(using: params)
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor in self?.accept(connection) }
             }
@@ -75,9 +89,9 @@ final class AddonImportServer: ObservableObject {
                 Task { @MainActor in
                     switch state {
                     case .ready:
-                        self?.address = Self.lanAddress().map { "http://\($0):\(Self.port)" }
+                        if let policy = self?.policy { self?.address = policy.origin + policy.path }
                         if self?.address == nil {
-                            self?.lastError = "This Apple TV isn't on a network."
+                            self?.lastError = "L’Apple TV n’est pas connectée au réseau."
                         }
                     case .failed(let error):
                         self?.lastError = error.localizedDescription
@@ -88,12 +102,23 @@ final class AddonImportServer: ObservableObject {
             }
             listener.start(queue: .main)
             self.listener = listener
+            expiration = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 900_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.stop()
+                self?.lastError = "Ce code a expiré. Renouvelez-le pour continuer."
+            }
         } catch {
             lastError = error.localizedDescription
         }
     }
 
     func stop() {
+        generation &+= 1
+        policy = nil
+        expiration?.cancel(); expiration = nil
+        for task in timeouts.values { task.cancel() }
+        timeouts.removeAll()
         listener?.cancel()
         listener = nil
         for connection in connections.values { connection.cancel() }
@@ -104,12 +129,19 @@ final class AddonImportServer: ObservableObject {
     // MARK: - Connections
 
     private func accept(_ connection: NWConnection) {
+        guard connections.count < 8 else { connection.cancel(); return }
         connections[ObjectIdentifier(connection)] = connection
+        timeouts[ObjectIdentifier(connection)] = Task { [weak self, weak connection] in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled, let connection else { return }
+            self?.drop(connection)
+        }
         connection.start(queue: .main)
         receive(connection, buffer: Data())
     }
 
     private func drop(_ connection: NWConnection) {
+        timeouts.removeValue(forKey: ObjectIdentifier(connection))?.cancel()
         connection.cancel()
         connections.removeValue(forKey: ObjectIdentifier(connection))
     }
@@ -125,7 +157,7 @@ final class AddonImportServer: ObservableObject {
             if let chunk { buffer.append(chunk) }
             Task { @MainActor in
                 if error != nil { self.drop(connection); return }
-                guard let request = HTTPRequest(buffer), request.isComplete else {
+                guard let request = NTVImportHTTPRequest(buffer), request.isComplete else {
                     // Cap it: without this a connection that never sends a
                     // complete request grows this buffer without bound.
                     if isComplete || buffer.count > 64 * 1024 { self.drop(connection) }
@@ -137,27 +169,43 @@ final class AddonImportServer: ObservableObject {
         }
     }
 
-    private func respond(to request: HTTPRequest, on connection: NWConnection) async {
+    private func respond(to request: NTVImportHTTPRequest, on connection: NWConnection) async {
+        guard var currentPolicy = policy else { drop(connection); return }
+        let status = currentPolicy.authorize(request)
+        policy = currentPolicy
+        guard status == 200 else {
+            send("Cette demande n’est pas autorisée ou le code a expiré.", on: connection, status: status)
+            return
+        }
+        let requestGeneration = generation
         var body = page(accepted: accepted, message: nil)
         if request.method == "POST" {
+            guard !installing else { send("Un ajout est déjà en cours.", on: connection, status: 429); return }
             let raw = Self.formValue("url", in: request.body)
             let urls = raw
                 .replacingOccurrences(of: ",", with: "\n")
                 .split(whereSeparator: \.isNewline)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
+            guard urls.count <= 8 else { send("Ajoutez huit liens au maximum à la fois.", on: connection, status: 413); return }
+            installing = true
+            defer { if requestGeneration == generation { installing = false } }
+            timeouts.removeValue(forKey: ObjectIdentifier(connection))?.cancel()
             var results: [String] = []
             for url in urls {
+                guard requestGeneration == generation else { drop(connection); return }
                 guard let onInstall else { break }
-                switch await onInstall(url) {
+                let result = await onInstall(url)
+                guard requestGeneration == generation else { drop(connection); return }
+                switch result {
                 case .success(let addon):
                     // Newest first, and never twice: re-adding an installed
                     // add-on succeeds, and a duplicate row would suggest two.
                     accepted.removeAll { $0.manifestURL == addon.manifestURL }
                     accepted.insert(addon, at: 0)
-                    results.append("Added \(addon.name)")
-                case .failure(let error):
-                    results.append("Couldn't add: \(error.localizedDescription)")
+                    results.append("Ajouté : \(addon.name)")
+                case .failure:
+                    results.append("Ajout impossible : vérifiez le lien et la connexion.")
                 }
             }
             body = page(accepted: accepted,
@@ -166,13 +214,16 @@ final class AddonImportServer: ObservableObject {
         send(body, on: connection)
     }
 
-    private func send(_ html: String, on connection: NWConnection) {
+    private func send(_ html: String, on connection: NWConnection, status: Int = 200) {
         let data = Data(html.utf8)
         let head = """
-        HTTP/1.1 200 OK\r
+        HTTP/1.1 \(status) Response\r
         Content-Type: text/html; charset=utf-8\r
         Content-Length: \(data.count)\r
         Cache-Control: no-store\r
+        Referrer-Policy: no-referrer\r
+        X-Content-Type-Options: nosniff\r
+        Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src https: http: data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'\r
         Connection: close\r
         \r
 
@@ -184,25 +235,6 @@ final class AddonImportServer: ObservableObject {
     }
 
     // MARK: - Parsing
-
-    private struct HTTPRequest {
-        let method: String
-        let body: String
-        let isComplete: Bool
-
-        init?(_ data: Data) {
-            guard let text = String(data: data, encoding: .utf8),
-                  let headerEnd = text.range(of: "\r\n\r\n") ?? text.range(of: "\n\n"),
-                  let requestLine = text.split(whereSeparator: \.isNewline).first
-            else { return nil }
-            method = requestLine.split(separator: " ").first.map(String.init) ?? "GET"
-            body = String(text[headerEnd.upperBound...])
-            // A POST is only complete once the declared body length is here.
-            let declared = text.range(of: #"(?i)content-length:\s*(\d+)"#, options: .regularExpression)
-                .flatMap { Int(text[$0].filter(\.isNumber)) } ?? 0
-            isComplete = method != "POST" || body.utf8.count >= declared
-        }
-    }
 
     private static func formValue(_ name: String, in body: String) -> String {
         for pair in body.split(separator: "&") {
@@ -243,12 +275,12 @@ final class AddonImportServer: ObservableObject {
             return "<li>\(art)<div><strong>\(escape(addon.name))</strong>\(blurb)</div></li>"
         }
         let list = accepted.isEmpty ? ""
-            : "<h2>Added</h2><ul class=addons>" + rows.joined() + "</ul>"
+            : "<h2>Ajoutés</h2><ul class=addons>" + rows.joined() + "</ul>"
         let note = message.map { "<p class=note>\(escape($0))</p>" } ?? ""
         return """
-        <!doctype html><html><head><meta charset=utf-8>
+        <!doctype html><html lang="fr"><head><meta charset=utf-8>
         <meta name=viewport content="width=device-width,initial-scale=1">
-        <title>\(escape(title)) · Orivio</title><style>
+        <title>\(escape(title)) · nTV</title><style>
         :root{color-scheme:dark}
         body{margin:0;padding:24px;background:#0d0f14;color:#f2f2f7;
              font:16px/1.5 -apple-system,system-ui,sans-serif}
@@ -268,7 +300,7 @@ final class AddonImportServer: ObservableObject {
         </style></head><body>
         <h1>\(escape(title))</h1>
         <p>\(escape(prompt))</p>
-        <form method=post action="/">
+        <form method=post action="">
         <textarea name=url rows=6 autocapitalize=off autocorrect=off
                   spellcheck=false placeholder="\(escape(placeholder))" autofocus></textarea>
         <button type=submit>\(escape(button))</button>

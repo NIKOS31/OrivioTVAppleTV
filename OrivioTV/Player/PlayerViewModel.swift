@@ -41,7 +41,7 @@ enum PlayerDevFlags {
     static let playerHUD = args.contains("-playerHUD")
     static let controlsDemo = args.contains("-playerControlsDemo")
     /// The `-playerDemo` / `-playerDemoMKV` sample sessions.
-    static let playerDemo = args.contains("-playerDemo") || args.contains("-playerDemoMKV")
+    static let playerDemo = args.contains("-playerDemo") || args.contains("-playerDemoMKV") || args.contains("-ntvPlayerDemo")
     static let infoDemo = args.contains("-playerInfoDemo")
     static let demoTour = args.contains("-playerDemoTour")
 }
@@ -4029,7 +4029,7 @@ final class PlayerViewModel: ObservableObject {
             }
         }
         guard let originURL = overrideURL ?? entry.stream.url.flatMap(URL.init(string:)) else {
-            overlay = .error("This source has no playable link.")
+            overlay = .error("Cette source ne fournit aucun lien de lecture.")
             return
         }
         PlayerProbe.event("load", "START \(entry.addonName)"
@@ -6402,10 +6402,16 @@ final class PlayerViewModel: ObservableObject {
     /// carries focus from the rows up onto the pills must not ALSO count as
     /// the close gesture, so the close reads the state at touch-down.
     private var infoTabsAtTouchStart = false
+    private var ntvTouchStartedOnTimeline = false
+    private var scrubMotionTime: TimeInterval = 0
+    private var ntvTouchAnchor: Double?
 
     func remoteTouchBegan() {
         debug("touch ↓")
         infoTabsAtTouchStart = infoFocusOnTabs
+        ntvTouchStartedOnTimeline = usesNTVControls && controlsFocusOnBar
+        scrubMotionTime = ProcessInfo.processInfo.systemUptime
+        ntvTouchAnchor = scrubValue
         scrubLastDx = 0            // translation resets per gesture
         panInFlight = true
         lastPanDx = 0
@@ -6435,6 +6441,12 @@ final class PlayerViewModel: ObservableObject {
             break
         case .undecided:
             let adx = abs(dx), ady = abs(dy)
+            if usesNTVControls, ntvTouchStartedOnTimeline,
+               (overlay == .controls || overlay == .pauseInfo), adx > 22, adx > ady * 1.4 {
+                beginScrub(pausing: true)
+                if isScrubbing { touchIntent = .scrub }
+                return
+            }
             // Skip Intro first. While the pill is up it is the one thing the
             // viewer is reaching for, so ANY perceptible movement highlights
             // it — no aiming, no swipe direction to learn.
@@ -6519,6 +6531,8 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func remoteTouchEnded(dx: CGFloat, dy: CGFloat) {
+        ntvTouchStartedOnTimeline = false
+        ntvTouchAnchor = nil
         panInFlight = false
         scrubDragInContact = false   // the contact is over; presses now hop
         if touchIntent == .scrub { endScrubGesture() }
@@ -6538,9 +6552,18 @@ final class PlayerViewModel: ObservableObject {
     private func scrubPanPoints(dx: CGFloat) {
         let inc = dx - scrubLastDx
         scrubLastDx = dx
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = now - scrubMotionTime
+        scrubMotionTime = now
         guard let target = scrubValue, !wheelEngaged else { return }
-        let proposed = target + Double(inc) * secondsPerPoint
-        let clamped = max(0, min(proposed, duration > 0 ? duration - 1 : proposed))
+        let delta = usesNTVControls
+            ? NTVScrubMotion.delta(points: Double(inc), elapsed: elapsed, duration: duration)
+            : Double(inc) * secondsPerPoint
+        let proposed = target + delta
+        if usesNTVControls, ntvTouchAnchor == nil { ntvTouchAnchor = target }
+        let clamped = usesNTVControls
+            ? NTVScrubMotion.position(proposed: proposed, anchor: ntvTouchAnchor ?? target, duration: duration)
+            : max(0, min(proposed, duration > 0 ? duration - 1 : proposed))
         scrubDragInContact = true
         publishScrub(clamped)
         // Moved out of the dense window — fetch the next one once you stop.
@@ -6551,6 +6574,11 @@ final class PlayerViewModel: ObservableObject {
     /// Playback was running when a bar click opened this scrub — the commit
     /// (and a cancel) put it back.
     private var resumeAfterScrub = false
+    /// Set by the player host; existing themes keep their transport grammar.
+    var usesNTVControls = false
+    private var ntvScrubDirection = false
+    private var ntvScrubRepeats = 0
+    private var ntvScrubPressedAt = Date.distantPast
 
     /// This CONTACT (finger-down to lift) has dragged the scrub target — by
     /// pan or by wheel. A directional press during such a contact is the
@@ -6565,6 +6593,8 @@ final class PlayerViewModel: ObservableObject {
     func beginScrub(pausing: Bool = false) {
         guard acceptsTransportInput else { return }
         guard overlay == .none || overlay == .controls || overlay == .pauseInfo else { return }
+        ntvScrubRepeats = 0
+        ntvScrubPressedAt = .distantPast
         var start = position
         if pausing, isPlaying {
             enginePause("bar click opening a scrub")
@@ -7066,7 +7096,8 @@ final class PlayerViewModel: ObservableObject {
         // having to load". The extra 200ms buys the viewer one seek instead of
         // six, and the bar shows `pendingSeekDelta` throughout, so the target is
         // moving on screen the whole time it is being gathered.
-        let window: UInt64 = gesture ? 450_000_000 : 650_000_000
+        // Coalesce bursts so a held direction does not restart the decoder on every repeat.
+        let window: UInt64 = usesNTVControls ? 280_000_000 : (gesture ? 450_000_000 : 650_000_000)
         seekDebounceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: window)
             guard !Task.isCancelled, let self else { return }
@@ -7542,6 +7573,17 @@ final class PlayerViewModel: ObservableObject {
     func barDirectionalPress(forward: Bool) {
         guard acceptsTransportInput else { return }
         nudgeSeek(forward ? Double(settings.skipSeconds) : -Double(settings.skipSeconds))
+    }
+
+    /// Single presses stay precise; a held direction progressively travels further.
+    func stepNTVScrub(forward: Bool) {
+        let now = Date()
+        let repeating = forward == ntvScrubDirection && now.timeIntervalSince(ntvScrubPressedAt) < 0.65
+        ntvScrubRepeats = repeating ? ntvScrubRepeats + 1 : 0
+        ntvScrubPressedAt = now
+        ntvScrubDirection = forward
+        let multiplier = ntvScrubRepeats >= 7 ? 12.0 : ntvScrubRepeats >= 3 ? 4.0 : 1.0
+        scrubJump((forward ? 1 : -1) * Double(settings.scrubJumpSeconds) * multiplier)
     }
 
     // The fast-forward / rewind SCAN transport was removed here.
@@ -9035,8 +9077,8 @@ final class PlayerViewModel: ObservableObject {
                 self.decisionLog.record("Error", "every source exhausted",
                                         because: error.localizedDescription)
                 self.overlay = .error(
-                    "This title wouldn't play.\n\nEvery source was tried — they may be "
-                    + "offline, expired, or unavailable in your region."
+                    "Impossible de lire ce titre.\n\nToutes les sources ont été essayées. Elles peuvent être "
+                    + "indisponibles, expirées ou inaccessibles depuis votre région."
                 )
                 return
             }
@@ -11806,6 +11848,14 @@ extension PlayerViewModel: KSPlayerLayerDelegate {
         // the engine did or didn't report — never let the 30s load watchdog
         // fail over a stream that is visibly playing.
         if currentTime > 0 { markLoadStarted() }
+        // A warm seek can resume the engine without another buffer-state
+        // notification. Reconcile the transport with the running engine;
+        // otherwise the clock advances while the button still says Play.
+        if !isExiting, !pauseIntent, !isScrubbing, layer.player.isPlaying {
+            if !isPlaying { isPlaying = true }
+            pausedAt = nil
+            if layer.player.loadState == .playable, isBuffering { isBuffering = false }
+        }
         // The engine may have swapped its display layer under us since the
         // last tick — see refreshPictureInPictureSource.
         refreshPictureInPictureSource()

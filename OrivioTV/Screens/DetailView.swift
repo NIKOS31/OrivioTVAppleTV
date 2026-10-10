@@ -3,6 +3,10 @@ import AVKit
 
 @MainActor
 final class DetailViewModel: ObservableObject {
+    /// Keep the artwork selected in the catalog throughout this visit. An addon
+    /// can return a different crop a second later; it must not replace this one.
+    let openingBackground: String?
+    let openingLogo: String?
     @Published var meta: MetaItem {
         didSet {
             episodeCache.removeAll()
@@ -56,6 +60,8 @@ final class DetailViewModel: ObservableObject {
 
     init(item: MetaItem) {
         meta = item
+        openingBackground = item.background ?? item.poster
+        openingLogo = item.logo
     }
 
     /// The `.task` that calls this re-runs on every return from Sources or
@@ -324,11 +330,11 @@ private struct PlayManuallyMenu: ViewModifier {
             // is off.
             let _ = HoldProbe.log("MENU BUILT — detail Play")
             Button(action: action) {
-                Label("Play Manually", systemImage: "list.and.film")
+                Label("Choisir une source", systemImage: "list.and.film")
             }
             if let infuse {
                 Button(action: infuse) {
-                    Label("Play in Infuse", systemImage: "arrow.up.forward.app.fill")
+                    Label("Lire avec Infuse", systemImage: "arrow.up.forward.app.fill")
                 }
             }
         }
@@ -366,7 +372,7 @@ struct DetailView: View {
     @State private var activeTrailer: TMDBService.Trailer?
     /// The action row's controls, for the enter-lands-on-Play redirect.
     private enum ActionControl: Hashable {
-        case play, startOver, library, watched, rate, trailer, shuffle
+        case play, sources, startOver, library, watched, rate, trailer, shuffle
     }
     /// Entering the action row from ANY direction lands on the Play button:
     /// when focus arrives on any other control while the row didn't previously
@@ -454,6 +460,8 @@ struct DetailView: View {
     private var autoLinkOn: Bool {
         profiles.activeAutoLink.enabled || playerSettings.settings.autoPlaySourceEnabled
     }
+
+    private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
 
     var body: some View {
         ZStack {
@@ -634,7 +642,7 @@ struct DetailView: View {
             ) { newRating in
                 ratings.setRating(newRating, for: viewModel.meta.id, type: viewModel.meta.type)
                 showRatingPicker = false
-                ToastCenter.shared.show("Rating Saved", icon: "star.fill")
+                ToastCenter.shared.show("Note enregistrée", icon: "star.fill")
             } onCancel: { showRatingPicker = false }
             .environmentObject(theme)
         }
@@ -646,10 +654,12 @@ struct DetailView: View {
                 // Decorative backdrop — kept out of hit testing so it cannot
                 // swallow the action row's context-menu hit test (the same bug
                 // the home Featured bar caused for Continue Watching).
-                RemoteImage(url: viewModel.meta.background ?? viewModel.meta.poster,
+                if !isNTV || perf.settings.heroBackdrop {
+                    RemoteImage(url: isNTV ? (viewModel.openingBackground ?? viewModel.meta.background) : (viewModel.meta.background ?? viewModel.meta.poster),
                             maxPixels: PerformanceProfile.backdropPixelCap)
                     .allowsHitTesting(false)
                     .frame(width: geo.size.width, height: geo.size.height)
+                }
                 // MOUNTED ALWAYS, revealed by opacity — never inserted into
                 // the tree while the page is on screen. Inserting a
                 // UIViewRepresentable makes the focus engine re-resolve (the
@@ -674,10 +684,14 @@ struct DetailView: View {
     /// Changes when the delay setting or the first trailer changes, so the
     /// timed `.task` restarts appropriately.
     private var autoTrailerKey: String {
-        "\(playerSettings.settings.autoPlayTrailerSeconds)#\(viewModel.trailers.first?.youtubeKey ?? "")"
+        "\(playerSettings.settings.autoPlayTrailerSeconds)#\(viewModel.trailers.first?.youtubeKey ?? "")#\(perf.settings.heroBackdrop)"
     }
 
     private func startBackdropTrailerIfEnabled() async {
+        if isNTV, !perf.settings.heroBackdrop {
+            teardownBackdropTrailer()
+            return
+        }
         let delay = playerSettings.settings.autoPlayTrailerSeconds
         // Reduce Motion keeps the still backdrop. An auto-starting, looping
         // trailer is unrequested motion by definition, and it escalates itself
@@ -866,7 +880,7 @@ struct DetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
             // Push the logo down so it sits lower on the backdrop (APK layout).
-            Spacer().frame(height: 260)
+            Spacer().frame(height: isNTV ? 160 : 260)
 
             // Both title treatments occupy the SAME 180pt slot, bottom-aligned.
             // They did not before: a logo got a fixed 180pt box while the text
@@ -877,7 +891,7 @@ struct DetailView: View {
             // whole header. Bottom alignment is what keeps a short wide logo
             // and a two-line title sharing a baseline.
             Group {
-                if let logo = viewModel.meta.logo {
+                if let logo = isNTV ? viewModel.openingLogo : viewModel.meta.logo {
                     RemoteImage(url: logo, contentMode: .fit, alignment: .bottomLeading, maxDimension: 520)
                         // Grounds a white logo on both a light frost and dark art.
                         .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
@@ -895,16 +909,18 @@ struct DetailView: View {
 
             // Meta line 1: Genres • Full release date • IMDb.
             MetaLine(segments: primaryMetaSegments, imdbRating: viewModel.meta.imdbRating)
+                .frame(height: isNTV ? 34 : nil, alignment: .leading)
             // Meta line 2: Runtime • Country • Language.
-            if !secondaryMetaSegments.isEmpty {
+            if isNTV || !secondaryMetaSegments.isEmpty {
                 MetaLine(segments: secondaryMetaSegments)
+                    .frame(height: isNTV ? 30 : nil, alignment: .leading)
             }
 
-            if let description = viewModel.meta.description {
+            if isNTV || viewModel.meta.description != nil {
                 // Clickable teaser → full-description overlay (the Android
                 // app's scrollable hero-description feature).
                 DescriptionTeaser(
-                    text: description,
+                    text: viewModel.meta.description ?? "",
                     title: viewModel.meta.name,
                     onFocusChanged: { focused in
                         teaserFocused = focused
@@ -913,13 +929,14 @@ struct DetailView: View {
                         interactionCount += 1
                     }
                 )
+                .frame(height: isNTV ? 120 : nil, alignment: .topLeading)
                 .disabled(!teaserArmed)
             }
 
             actionRow
 
             if let director = viewModel.director {
-                Text("Director: \(director)")
+                Text("\(isNTV ? "Réalisation" : "Réalisation"): \(director)")
                     .font(FusionType.metadata(theme.font))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -959,7 +976,7 @@ struct DetailView: View {
                     // — the visible jump. Pressing it early is not lost either:
                     // `pendingSeriesPlay` fires it as soon as the target lands.
                     let target = seriesPlayTarget
-                    PlayActionButton(title: target.map(seriesPlayTitle) ?? "Play") {
+                    PlayActionButton(title: target.map(seriesPlayTitle) ?? (isNTV ? "Regarder" : "Lecture")) {
                         if let target {
                             onPlay(viewModel.meta, target)
                         } else {
@@ -967,6 +984,7 @@ struct DetailView: View {
                         }
                     }
                     .focused($actionFocus, equals: .play)
+                    .accessibilityIdentifier("ntv.detail.play")
                     // Auto Link Selector on: hold Play to pick a source
                     // manually instead of auto-playing the best match.
                     .playManuallyMenu(
@@ -990,10 +1008,11 @@ struct DetailView: View {
                         .focused($actionFocus, equals: .startOver)
                     }
                 } else {
-                    PlayActionButton(title: playButtonTitle) {
+                    PlayActionButton(title: isNTV ? (playButtonTitle == "Resume" ? "Reprendre" : "Regarder") : playButtonTitle) {
                         onPlay(viewModel.meta, nil)
                     }
                     .focused($actionFocus, equals: .play)
+                    .accessibilityIdentifier("ntv.detail.play")
                     .playManuallyMenu(
                         enabled: autoLinkOn,
                         key: viewModel.meta.id,
@@ -1007,6 +1026,21 @@ struct DetailView: View {
                         }
                         .focused($actionFocus, equals: .startOver)
                     }
+                }
+                if isNTV {
+                    Button {
+                        if viewModel.meta.isSeries {
+                            if let target = seriesPlayTarget { onPlayManually(viewModel.meta, target) }
+                            else { pendingSeriesPlay = .manual }
+                        } else {
+                            onPlayManually(viewModel.meta, nil)
+                        }
+                    } label: {
+                        Label("Sources", systemImage: "list.bullet")
+                    }
+                    .buttonStyle(NTVActionButtonStyle())
+                    .focused($actionFocus, equals: .sources)
+                    .accessibilityIdentifier("ntv.detail.sources")
                 }
                 // The secondary icons are one focus section, so a vertical
                 // move into the row resolves against the section as a unit
@@ -1023,7 +1057,7 @@ struct DetailView: View {
                 ) {
                     let wasSaved = library.contains(viewModel.meta)
                     library.toggle(viewModel.meta)
-                    ToastCenter.shared.show(wasSaved ? "Removed from Library" : "Added to Library",
+                    ToastCenter.shared.show(wasSaved ? "Retiré de la bibliothèque" : "Ajouté à la bibliothèque",
                                             icon: wasSaved ? "bookmark.slash" : "checkmark")
                 }
                 .focused($actionFocus, equals: .library)
@@ -1035,7 +1069,7 @@ struct DetailView: View {
                     ) {
                         let wasWatched = watched.isWatched(viewModel.meta)
                         watched.toggleMovie(viewModel.meta)
-                        ToastCenter.shared.show(wasWatched ? "Marked Unwatched" : "Marked Watched",
+                        ToastCenter.shared.show(wasWatched ? "Marqué comme non vu" : "Marqué comme vu",
                                                 icon: "eye.fill")
                     }
                     .focused($actionFocus, equals: .watched)
@@ -1059,7 +1093,7 @@ struct DetailView: View {
                         let pool = viewModel.allEpisodesInPlayOrder
                             .filter { ($0.season ?? 0) > 0 && $0.hasAired }
                         guard let episode = pool.randomElement() else {
-                            ToastCenter.shared.show("Episodes are still loading", icon: "dice")
+                            ToastCenter.shared.show("Chargement des épisodes en cours", icon: "dice")
                             return
                         }
                         onShuffle(viewModel.meta, episode)
@@ -1165,9 +1199,9 @@ struct DetailView: View {
     private var playButtonTitle: String {
         let key = ProgressStore.key(metaID: viewModel.meta.id, video: nil)
         if let progress = progressStore.progress(for: key), progress.fraction > 0.02 {
-            return "Resume"
+            return "Reprendre"
         }
-        return "Play"
+        return "Lecture"
     }
 
     /// Whether this episode has saved progress worth restarting from 0.
@@ -1234,7 +1268,8 @@ struct DetailView: View {
     private func seriesPlayTitle(_ episode: MetaVideo) -> String {
         let inProgress = progressStore.progress(for: episode.id).map { $0.fraction > 0.02 } ?? false
         let sxe = "S\(episode.season ?? 1):E\(episode.episode ?? 1)"
-        return "\(inProgress ? "Resume" : "Play") \(sxe)"
+        let action = isNTV ? (inProgress ? "Reprendre" : "Regarder") : (inProgress ? "Reprendre" : "Lecture")
+        return "\(action) \(sxe)"
     }
 
     private var episodesSection: some View {
@@ -1259,14 +1294,14 @@ struct DetailView: View {
 
             if let season = viewModel.selectedSeason {
                 HStack(alignment: .firstTextBaseline) {
-                    RowHeader(title: season == 0 ? "Specials" : "Season \(season)")
+                    RowHeader(title: season == 0 ? (isNTV ? "Épisodes spéciaux" : "Spéciaux") : "\(isNTV ? "Saison" : "Saison") \(season)")
                     // How many AIRED episodes are still unwatched. The count
                     // deliberately excludes anything that has not aired — a
                     // season listed through to next month's finale is not
                     // "12 left", it is however many you can actually watch.
                     let left = episodesLeft(season: season)
                     if left > 0 {
-                        Text(left == 1 ? "1 episode left" : "\(left) episodes left")
+                        Text(isNTV ? "\(left) épisode\(left > 1 ? "s" : "") à voir" : (left == 1 ? "1 episode left" : "\(left) episodes left"))
                             .font(.system(size: 21, weight: .semibold))
                             .foregroundStyle(theme.palette.textSecondary)
                             .padding(.leading, OrivioSpacing.sm)
@@ -1290,7 +1325,7 @@ struct DetailView: View {
                             watched.mark(meta: viewModel.meta, video: episode)
                         }
                     } label: {
-                        SeeAllLabel(text: "Mark Season Watched")
+                        SeeAllLabel(text: isNTV ? "Marquer la saison comme vue" : "Marquer la saison comme vue")
                     }
                     .buttonStyle(PlainCardButtonStyle())
                     .padding(.trailing, OrivioSpacing.huge)
@@ -1350,7 +1385,7 @@ struct DetailView: View {
                 // Play, the episodes are.
                 .focusSection()
             } else if viewModel.isLoading {
-                OrivioLoadingView(label: "Loading episodes")
+                OrivioLoadingView(label: isNTV ? "Chargement des épisodes" : "Chargement des épisodes")
                     .frame(height: 260)
             }
         }
@@ -1400,12 +1435,12 @@ struct DetailView: View {
     private func episodeTitle(_ episode: MetaVideo) -> String {
         var label = ""
         if let number = episode.episode { label = "\(number). " }
-        return label + (episode.title ?? "Episode")
+        return label + (episode.title ?? "Épisode")
     }
 
     private func episodeCastLine(_ cast: [TMDBService.CastMember]?) -> String? {
         guard let names = cast?.prefix(3).map(\.name), !names.isEmpty else { return nil }
-        return "Cast: \(names.joined(separator: ", "))"
+        return "Distribution : \(names.joined(separator: ", "))"
     }
 
     // MARK: - Cast
@@ -1417,7 +1452,7 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
                 // The trailer lives only in the action row above; the cast
                 // header is just a title (removed the duplicate trailer tab).
-                RowHeader(title: "Creator and Cast")
+                RowHeader(title: isNTV ? "Création et distribution" : "Créateurs et distribution")
 
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: OrivioSpacing.lg) {
@@ -1474,7 +1509,7 @@ struct DetailView: View {
     private var moreLikeThisSection: some View {
         if layout.detailShowMoreLikeThis, !viewModel.moreLikeThis.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-                RowHeader(title: "More Like This")
+                RowHeader(title: isNTV ? "À découvrir aussi" : "Titres similaires")
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: OrivioSpacing.lg) {
                         ForEach(viewModel.moreLikeThis) { item in
@@ -1529,7 +1564,7 @@ struct DetailView: View {
     private var commentsSection: some View {
         if layout.detailShowComments, !viewModel.comments.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-                RowHeader(title: "Comments")
+                RowHeader(title: isNTV ? "Commentaires" : "Commentaires")
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
                         ForEach(viewModel.comments) { comment in
@@ -1616,11 +1651,11 @@ private struct EpisodeCell: View {
             .contextMenu {
                 if let onPlayManually {
                     Button(action: onPlayManually) {
-                        Label("Play Manually", systemImage: "list.and.film")
+                        Label("Choisir une source", systemImage: "list.and.film")
                     }
                 }
                 Button(action: onToggleWatched) {
-                    Label(isWatched ? "Mark as Unwatched" : "Mark as Watched",
+                    Label(isWatched ? "Marquer comme non vu" : "Marquer comme vu",
                           systemImage: isWatched ? "eye.slash" : "checkmark.circle")
                 }
             }
@@ -1726,7 +1761,7 @@ struct CommentCard: View {
                 .foregroundStyle(theme.palette.textTertiary)
             }
             if comment.spoiler && !isFocused {
-                Text("Spoiler — focus to reveal")
+                Text("Image masquée : sélectionner pour afficher")
                     .font(.system(size: 19, weight: .medium))
                     .foregroundStyle(theme.palette.secondary)
             } else {
@@ -1808,7 +1843,12 @@ private struct CircleIconLabel: View {
                 }
             }
             // Glass circle at rest, matching the rail.
-            .liquidGlassIf(!isFocused && !active, in: Circle())
+            .liquidGlassIf(!isFocused && !active && theme.palette.id != NTVDesign.palette.id, in: Circle())
+            .background {
+                if !isFocused && !active && theme.palette.id == NTVDesign.palette.id {
+                    Circle().fill(.black.opacity(0.28))
+                }
+            }
             .overlay(Circle().strokeBorder(isFocused ? Color.white.opacity(0.95) : .clear, lineWidth: 3))
             .focusLift(OrivioFocus.control, isFocused)
             .onAppear {
@@ -1845,17 +1885,24 @@ struct PlayActionButton: View {
     let title: String
     let action: () -> Void
 
+    @ViewBuilder
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: "play.fill").font(.system(size: 24, weight: .bold))
-                Text(title).font(FusionType.button(theme.font))
-            }
-            // Keeps the capsule at ~222pt even for "Play" — comfortably past
-            // the threshold the menu needs. See the note above.
-            .frame(minWidth: 150)
+        if theme.palette.id == NTVDesign.palette.id {
+            Button(action: action) { label }
+                .buttonStyle(NTVActionButtonStyle(prominent: true))
+        } else {
+            Button(action: action) { label }
+                .buttonStyle(DetailPillButtonStyle())
         }
-        .buttonStyle(DetailPillButtonStyle())
+    }
+
+    private var label: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "play.fill").font(.system(size: 24, weight: .bold))
+            Text(title).font(FusionType.button(theme.font))
+        }
+        // Preserve the width needed by the hold-Play menu in every theme.
+        .frame(minWidth: 150)
     }
 }
 
@@ -1912,7 +1959,7 @@ struct SeasonChip: View {
     let selected: Bool
 
     var body: some View {
-        Text(season == 0 ? "Specials" : "Season \(season)")
+        Text(season == 0 ? (theme.palette.id == NTVDesign.palette.id ? "Spéciaux" : "Spéciaux") : "\(theme.palette.id == NTVDesign.palette.id ? "Saison" : "Saison") \(season)")
             .font(.system(size: 23, weight: .semibold))
             .foregroundStyle(isFocused ? .black
                              : (selected ? theme.palette.onAccentTint : theme.palette.textSecondary))
@@ -2072,8 +2119,8 @@ private struct DescriptionOverlay: View {
                 }
                 .clipped()
 
-                Text(maxOffset > 0 ? "Swipe up/down to scroll · press Back to close"
-                                   : "Press Back to close")
+                Text(maxOffset > 0 ? "Glisser pour défiler · Retour pour fermer"
+                                   : "Retour pour fermer")
                     .font(.system(size: 18))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -2114,7 +2161,7 @@ private struct RatingPickerOverlay: View {
             Color.black.opacity(0.7).ignoresSafeArea()
                 .onTapGesture { onCancel() }
             VStack(spacing: OrivioSpacing.xl) {
-                Text("Rate")
+                Text("Noter")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
                 Text(title)
@@ -2147,7 +2194,7 @@ private struct RatingPickerOverlay: View {
 
                 if current != nil {
                     Button { onRate(nil) } label: {
-                        Text("Clear rating")
+                        Text("Effacer la note")
                             .font(.system(size: 24, weight: .semibold))
                             .foregroundStyle(OrivioPrimitives.error)
                             .padding(.horizontal, 28).padding(.vertical, 12)
@@ -2158,7 +2205,7 @@ private struct RatingPickerOverlay: View {
                     .focused($focus, equals: 0)
                 }
 
-                Text("Press Menu to cancel")
+                Text("Retour pour annuler")
                     .font(.system(size: 18))
                     .foregroundStyle(theme.palette.textTertiary)
             }

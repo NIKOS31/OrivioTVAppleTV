@@ -10,7 +10,7 @@ struct PluginsSettingsDetail: View {
 
     var body: some View {
         DetailScaffold(title: SettingsCategory.plugins.title, subtitle: SettingsCategory.plugins.subtitle) {
-            SettingsGroupCard(title: "Add repository", subtitle: "Paste a scraper repository manifest URL") {
+            SettingsGroupCard(title: "Ajouter un dépôt", subtitle: "Coller le lien d’installation d’un dépôt") {
                 HStack(spacing: OrivioSpacing.md) {
                     TextField("https://…/manifest.json", text: $repoInput)
                         .font(.system(size: 22))
@@ -27,7 +27,7 @@ struct PluginsSettingsDetail: View {
                             if plugins.lastError == nil { repoInput = "" }
                         }
                     } label: {
-                        if plugins.isBusy { ProgressView() } else { SeeAllLabel(text: "Add") }
+                        if plugins.isBusy { ProgressView() } else { SeeAllLabel(text: "Ajouter") }
                     }
                     .buttonStyle(PlainCardButtonStyle())
                     .disabled(repoInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -46,7 +46,7 @@ struct PluginsSettingsDetail: View {
                         .font(.system(size: 18))
                         .foregroundStyle(theme.palette.textSecondary)
                 }
-                Text("Scrapers run in a sandboxed JS engine. Ones that only call JSON APIs work today; scrapers that parse HTML (cheerio) need that bundled and aren't supported yet. CloudStream (.cs3) extensions are Android-only and can't run on tvOS.")
+                Text("Les plugins compatibles utilisent des API JSON. L’analyse HTML et les extensions Android CloudStream ne sont pas encore prises en charge sur cette Apple TV.")
                     .font(.system(size: 17))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -54,15 +54,15 @@ struct PluginsSettingsDetail: View {
             if plugins.repositories.isEmpty {
                 OrivioEmptyState(
                     icon: "puzzlepiece.extension",
-                    title: "No plugin repositories",
-                    message: "Add a scraper repository above to pull in extra sources."
+                    title: "Aucun dépôt de plugins",
+                    message: "Ajoutez un dépôt de plugins pour obtenir des sources supplémentaires."
                 )
                 .frame(maxWidth: .infinity, minHeight: 240)
             } else {
                 ForEach(plugins.repositories) { repo in
                     SettingsGroupCard(title: repo.name, subtitle: repo.url) {
                         SettingsToggleCard(
-                            title: "Enable repository",
+                            title: "Activer ce dépôt",
                             subtitle: "\(repo.scraperCount) scraper\(repo.scraperCount == 1 ? "" : "s")",
                             isOn: Binding(
                                 get: { repo.enabled },
@@ -80,7 +80,7 @@ struct PluginsSettingsDetail: View {
                             )
                         }
                         Button { plugins.removeRepository(repo.id) } label: {
-                            SettingsValueCard(title: "Remove repository", subtitle: "Delete this repo and its scrapers", value: "", icon: "trash.fill")
+                            SettingsValueCard(title: "Supprimer ce dépôt", subtitle: "Supprimer ce dépôt et ses plugins", value: "", icon: "trash.fill")
                         }
                         .buttonStyle(PlainCardButtonStyle())
                     }

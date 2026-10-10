@@ -98,7 +98,7 @@ struct DiscoverView: View {
 
     let onSelect: (MetaItem) -> Void
 
-    @State private var type = "Movie"          // Movie / Series
+    @State private var type = "Film"          // Movie / Series
     @State private var catalogIndex = 0
     @State private var genre = ""              // "" = Default (no filter)
     @FocusState private var focusedID: String?
@@ -132,7 +132,7 @@ struct DiscoverView: View {
             ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
-                    Text("Discover")
+                    Text("Découvrir")
                         .font(FusionType.pageTitle(theme.font))
                         .foregroundStyle(theme.palette.textPrimary)
                         .padding(.leading, OrivioSpacing.huge)
@@ -141,12 +141,12 @@ struct DiscoverView: View {
                         OrivioDropdown(
                             title: "Type",
                             selection: type,
-                            options: [OrivioDropdownOption("Movie"), OrivioDropdownOption("Series")],
+                            options: [OrivioDropdownOption("Film"), OrivioDropdownOption("Séries")],
                             triggerWidth: 380
                         ) { type = $0; catalogIndex = 0; genre = "" }
 
                         OrivioDropdown(
-                            title: "Catalog",
+                            title: "Catalogue",
                             selection: String(catalogIndex),
                             options: catalogs.enumerated().map { index, entry in
                                 OrivioDropdownOption(String(index), entry.catalog.name ?? entry.catalog.id.capitalized)
@@ -157,7 +157,7 @@ struct DiscoverView: View {
                         OrivioDropdown(
                             title: "Genre",
                             selection: genre,
-                            options: [OrivioDropdownOption("", "Default")]
+                            options: [OrivioDropdownOption("", "Par défaut")]
                                 + (selected?.catalog.genreOptions ?? []).map { OrivioDropdownOption($0) },
                             triggerWidth: 380
                         ) { genre = $0 }
@@ -165,10 +165,10 @@ struct DiscoverView: View {
                     .padding(.horizontal, OrivioSpacing.huge)
 
                     if viewModel.items.isEmpty && viewModel.isLoading {
-                        OrivioLoadingView(label: "Loading").frame(height: 420)
+                        OrivioLoadingView(label: "Chargement").frame(height: 420)
                     } else if viewModel.items.isEmpty {
-                        OrivioEmptyState(icon: "safari", title: "Nothing here",
-                                        message: "No titles for this catalog. Install more add-ons in Settings.")
+                        OrivioEmptyState(icon: "safari", title: "Aucun titre disponible",
+                                        message: "Ce catalogue est vide. Ajoutez d’autres addons dans les réglages.")
                             .frame(height: 420)
                     } else {
                         LazyVGrid(columns: columns, alignment: .leading, spacing: OrivioSpacing.xl) {

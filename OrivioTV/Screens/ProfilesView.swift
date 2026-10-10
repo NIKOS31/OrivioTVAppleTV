@@ -22,11 +22,20 @@ struct ProfileAvatarView: View {
     @State private var image: UIImage?
 
     private var avatarURLString: String? { profiles.avatarURL(for: profile) }
+    private var localAvatar: NTVProfileAvatar? {
+        profile.localAvatarID.flatMap(NTVProfileAvatar.init(rawValue:))
+    }
 
     var body: some View {
         ZStack {
             Circle().fill(Color(profileHex: profile.avatarColorHex))
-            if let image {
+            if let avatar = localAvatar {
+                Image(avatar.assetName)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(Circle())
+                    .accessibilityIdentifier("ntv.profile.artwork.\(avatar.id)")
+            } else if let image {
                 // Chosen avatar fully REPLACES the initial (drawn over the
                 // colored circle, clipped to it).
                 Image(uiImage: image)
@@ -47,11 +56,12 @@ struct ProfileAvatarView: View {
     /// Cached avatar load (via the shared ImageCache) so a decoded avatar shows
     /// instantly on every re-appearance instead of re-downloading and flashing.
     private func loadAvatar() async {
-        guard let urlString = avatarURLString, let url = URL(string: urlString) else {
+        guard let urlString = avatarURLString, URL(string: urlString) != nil else {
             image = nil
             return
         }
-        if let cached = ImageCache.shared.image(for: urlString) {
+        let memoryKey = ImageCache.artworkKey(urlString, budget: 256)
+        if let cached = ImageCache.shared.image(for: memoryKey) {
             image = cached
             return
         }
@@ -60,17 +70,8 @@ struct ProfileAvatarView: View {
         // full-size (lazily, ON the render path) and then re-encoded it to
         // JPEG on the main actor inside insert(). Downsampled decode happens
         // off-main; the original bytes go to disk as-is.
-        if let disk = await ImageCache.shared.diskImage(for: urlString, budget: 256) {
-            if !Task.isCancelled { image = disk }
-            return
-        }
-        guard let data = try? await ImageCache.shared.download(url),
-              !Task.isCancelled else { return }
-        let decoded = await Task.detached(priority: .userInitiated) {
-            ImageCache.decodeDownsampled(data, budget: 256)
-        }.value
+        let decoded = try? await ImageCache.shared.loadImage(for: urlString, budget: 256, memoryKey: memoryKey)
         guard let decoded, !Task.isCancelled else { return }
-        ImageCache.shared.insert(decoded, for: urlString, data: data)
         image = decoded
     }
 
@@ -81,7 +82,7 @@ struct ProfileAvatarView: View {
     }
 }
 
-// MARK: - "Who's watching?" gate
+// MARK: - "Qui regarde ?" gate
 
 struct ProfileGateView: View {
     @EnvironmentObject private var theme: ThemeManager
@@ -92,6 +93,7 @@ struct ProfileGateView: View {
     var onCancel: (() -> Void)? = nil
 
     @State private var pinProfile: UserProfile?
+    @State private var showManagement = false
     // Open with focus on the profile you last used, so the trackpad starts on a
     // sensible tile rather than an arbitrary one.
     @FocusState private var focusedProfile: Int?
@@ -104,7 +106,7 @@ struct ProfileGateView: View {
             // switches skipped the PIN.
             if let locked = pinProfile {
                 PinEntryView(
-                    title: "Enter PIN",
+                    title: "Saisir le code",
                     subtitle: locked.name,
                     onSubmit: { pin in
                         let outcome = await profiles.verifyPin(id: locked.id, pin: pin)
@@ -115,15 +117,15 @@ struct ProfileGateView: View {
                             return nil
                         }
                         if outcome.retryAfterSeconds > 0 {
-                            return "Too many attempts. Try again in \(outcome.retryAfterSeconds)s."
+                            return "Trop de tentatives. Réessayez dans \(outcome.retryAfterSeconds) s."
                         }
-                        return outcome.message ?? "Incorrect PIN"
+                        return outcome.message ?? "Code incorrect"
                     },
                     onCancel: { pinProfile = nil }
                 )
             } else {
                 VStack(spacing: OrivioSpacing.huge) {
-                    Text("Who's watching?")
+                    Text("Qui regarde ?")
                         .font(.system(size: 58, weight: .heavy))
                         .foregroundStyle(theme.palette.textPrimary)
 
@@ -131,7 +133,7 @@ struct ProfileGateView: View {
                         ForEach(profiles.profiles) { profile in
                             Button { select(profile) } label: {
                                 GateTile(title: profile.name, locked: profile.pinEnabled) {
-                                    ProfileAvatarView(profile: profile)
+                                    ProfileAvatarView(profile: profile, size: 180)
                                 }
                             }
                             .buttonStyle(PlainCardButtonStyle())
@@ -149,13 +151,18 @@ struct ProfileGateView: View {
                         // took that away from everyone.
                         if profiles.canAddProfile, !addWouldBypassALock {
                             Button { addProfile() } label: {
-                                GateTile(title: "Add") { DashedCircle(systemName: "plus") }
+                                GateTile(title: "Ajouter") { DashedCircle(systemName: "plus").frame(width: 180, height: 180) }
                             }
                             .buttonStyle(PlainCardButtonStyle())
                         }
                         // Manage Profiles and Orivio Account moved to Settings → Account.
                     }
                     .defaultFocus($focusedProfile, profiles.active.id)
+                    if onCancel != nil {
+                        Button("Personnaliser les profils") { showManagement = true }
+                            .buttonStyle(NTVActionButtonStyle())
+                            .accessibilityIdentifier("ntv.profiles.manage")
+                    }
                 }
                 .padding(OrivioSpacing.huge)
             }
@@ -166,6 +173,9 @@ struct ProfileGateView: View {
         // or Settings, Back closes it and keeps the current profile.
         .onExitCommand { onCancel?() }
         .task { await profiles.loadAvatarCatalog() }
+        .fullScreenCover(isPresented: $showManagement) {
+            ProfileManageView { showManagement = false }
+        }
     }
 
     private func select(_ profile: UserProfile) {
@@ -191,7 +201,7 @@ struct ProfileGateView: View {
         } else {
             // Every free slot has a deletion still syncing — say so instead
             // of a button that visibly does nothing.
-            ToastCenter.shared.show("Can't add a profile just yet — try again in a moment",
+            ToastCenter.shared.show("Impossible d’ajouter un profil pour le moment. Réessayez dans quelques instants.",
                                     icon: "person.crop.circle.badge.exclamationmark")
         }
     }
@@ -226,7 +236,7 @@ private struct GateTile<Content: View>: View {
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(isFocused ? theme.palette.textPrimary : theme.palette.textSecondary)
                 .lineLimit(1)
-                .frame(maxWidth: 160)
+                .frame(maxWidth: 200)
         }
     }
 }
@@ -429,7 +439,7 @@ struct ProfileManageView: View {
                 // No Done button: Menu/Back already dismisses this screen
                 // (`onExitCommand` below), and having it here put a focusable
                 // control above the tiles that the viewer had to step past.
-                Text("Manage Profiles")
+                Text("Gérer les profils")
                     .font(.system(size: 44, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -447,11 +457,11 @@ struct ProfileManageView: View {
                     if profiles.canAddProfile {
                         Button {
                             if profiles.addProfile(name: "") == nil {
-                                ToastCenter.shared.show("Can't add a profile just yet — try again in a moment",
+                                ToastCenter.shared.show("Impossible d’ajouter un profil pour le moment. Réessayez dans quelques instants.",
                                                         icon: "person.crop.circle.badge.exclamationmark")
                             }
                         } label: {
-                            GateTile(title: "Add") { DashedCircle(systemName: "plus") }
+                            GateTile(title: "Ajouter") { DashedCircle(systemName: "plus") }
                         }
                         .buttonStyle(PlainCardButtonStyle())
                         .focused($focusedTile, equals: -1)
@@ -488,6 +498,9 @@ struct ProfileEditView: View {
     @State private var pinError: String?
     @State private var confirmingDelete = false
     @State private var editingCollection: OrivioCollection?
+    private enum EditorFocus: Hashable { case avatar(String), name, done }
+    @FocusState private var editorFocus: EditorFocus?
+    private let characterColumns = [GridItem(.adaptive(minimum: 184, maximum: 184), spacing: 24, alignment: .top)]
 
     private var current: UserProfile {
         profiles.profiles.first { $0.id == profile.id } ?? profile
@@ -498,27 +511,91 @@ struct ProfileEditView: View {
     var body: some View {
         ZStack {
             ATVBackground()
+            VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Personnaliser le profil").font(.system(size: 40, weight: .bold))
+                            .foregroundStyle(theme.palette.textPrimary)
+                            .accessibilityIdentifier("ntv.profile.edit.heading")
+                        Spacer()
+                        Button("Terminé") { commitName(); onDone() }
+                            .buttonStyle(NTVActionButtonStyle())
+                            .focused($editorFocus, equals: .done)
+                            .accessibilityIdentifier("ntv.profile.done")
+                            .onMoveCommand { direction in
+                                if direction == .down { editorFocus = .name }
+                            }
+                    }
+                    .padding(.horizontal, OrivioSpacing.huge)
+                    .padding(.vertical, OrivioSpacing.lg)
+                    .focusSection()
+
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
-                    HStack {
-                        Text("Edit Profile").font(.system(size: 40, weight: .bold))
-                            .foregroundStyle(theme.palette.textPrimary)
-                        Spacer()
-                        Button("Done") { commitName(); onDone() }
-                    }
-
                     HStack(spacing: OrivioSpacing.lg) {
                         ProfileAvatarView(profile: current, size: 120)
-                        TextField("Name", text: $name)
+                        TextField("Nom", text: $name)
                             .font(.system(size: 28))
                             .padding(.horizontal, OrivioSpacing.lg)
                             .padding(.vertical, OrivioSpacing.md)
                             .background(theme.palette.field, in: RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous))
                             .frame(maxWidth: 560)
+                            .focused($editorFocus, equals: .name)
+                            .accessibilityIdentifier("ntv.profile.name")
                             .onSubmit { commitName() }
+                            .onMoveCommand { direction in
+                                if direction == .up { editorFocus = .done }
+                                else if direction == .down {
+                                    editorFocus = .avatar(current.localAvatarID ?? "initial")
+                                }
+                            }
                     }
 
-                    sectionLabel("Color")
+                    sectionLabel("Personnage")
+                    LazyVGrid(columns: characterColumns, alignment: .center, spacing: 24) {
+                        Button { profiles.setAvatar(id: profile.id, avatarID: nil) } label: {
+                            VStack(spacing: 12) {
+                                AvatarPickLabel(selected: current.localAvatarID == nil
+                                                && current.avatarID == nil && current.avatarURL == nil) {
+                                    Circle().fill(Color(profileHex: current.avatarColorHex))
+                                        .overlay(Text(current.initial).font(.system(size: 30, weight: .medium)).foregroundStyle(.white))
+                                        .frame(width: 128, height: 128)
+                                }
+                                Text("Initiale").font(.system(size: 20)).frame(height: 48, alignment: .top)
+                            }
+                        }
+                        .buttonStyle(PlainCardButtonStyle())
+                        .accessibilityIdentifier("ntv.profile.avatar.initial")
+                        .focused($editorFocus, equals: .avatar("initial"))
+                        .onMoveCommand { moveFromAvatar($0, id: "initial") }
+                        ForEach(NTVProfileAvatar.allCases) { avatar in
+                            Button { profiles.setLocalAvatar(id: profile.id, avatar: avatar) } label: {
+                                VStack(spacing: 12) {
+                                    AvatarPickLabel(selected: current.localAvatarID == avatar.id) {
+                                        Image(avatar.assetName).resizable().scaledToFit()
+                                            .frame(width: 128, height: 128)
+                                            .background(Color(profileHex: current.avatarColorHex), in: Circle())
+                                            .clipShape(Circle())
+                                    }
+                                    Text(avatar.title).font(.system(size: 20))
+                                        .multilineTextAlignment(.center)
+                                        .lineLimit(2)
+                                        .frame(height: 48, alignment: .top)
+                                }
+                            }
+                            .buttonStyle(PlainCardButtonStyle())
+                            .accessibilityLabel(avatar.title)
+                            .accessibilityValue(current.localAvatarID == avatar.id ? "Sélectionné" : "")
+                            .accessibilityIdentifier("ntv.profile.avatar.\(avatar.id)")
+                            .focused($editorFocus, equals: .avatar(avatar.id))
+                            .onMoveCommand { moveFromAvatar($0, id: avatar.id) }
+                        }
+                    }
+                    .foregroundStyle(theme.palette.textPrimary)
+                    .frame(maxWidth: 1440, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .focusSection()
+
+                    sectionLabel("Couleur")
                     HStack(spacing: OrivioSpacing.md) {
                         ForEach(ProfileStore.avatarColors, id: \.self) { hex in
                             Button { profiles.setColor(id: profile.id, hex: hex) } label: {
@@ -529,18 +606,11 @@ struct ProfileEditView: View {
                     }
                     .focusSection()
 
-                    if profiles.avatarCatalog.isEmpty && !profiles.accountAvailable {
-                        sectionLabel("Avatar")
-                        Text("Sign in to Orivio to choose an avatar image. Colored initials are always available above.")
-                            .font(.system(size: 20))
-                            .foregroundStyle(theme.palette.textSecondary)
-                    }
-
                     if !profiles.avatarCatalog.isEmpty {
-                        sectionLabel("Avatar")
+                        sectionLabel("Autres avatars")
                         LazyVGrid(columns: columns, spacing: OrivioSpacing.md) {
                             Button { profiles.setAvatar(id: profile.id, avatarID: nil) } label: {
-                                AvatarPickLabel(selected: current.avatarID == nil) {
+                                AvatarPickLabel(selected: current.avatarID == nil && current.localAvatarID == nil) {
                                     Circle().fill(Color(profileHex: current.avatarColorHex))
                                         .overlay(Text(current.initial).font(.system(size: 30, weight: .heavy)).foregroundStyle(.white))
                                         .frame(width: 96, height: 96)
@@ -549,7 +619,7 @@ struct ProfileEditView: View {
                             .buttonStyle(PlainCardButtonStyle())
                             ForEach(profiles.avatarCatalog) { item in
                                 Button { profiles.setAvatar(id: profile.id, avatarID: item.id) } label: {
-                                    AvatarPickLabel(selected: current.avatarID == item.id) {
+                                    AvatarPickLabel(selected: current.avatarID == item.id && current.localAvatarID == nil) {
                                         AsyncImage(url: URL(string: item.imageURL)) { img in
                                             img.resizable().scaledToFill()
                                         } placeholder: {
@@ -565,7 +635,7 @@ struct ProfileEditView: View {
                         .focusSection()
                     }
 
-                    sectionLabel("PIN Lock")
+                    sectionLabel("Verrouillage par code")
                     if let pinError {
                         Text(pinError).font(.system(size: 20)).foregroundStyle(OrivioPrimitives.error)
                     }
@@ -577,15 +647,15 @@ struct ProfileEditView: View {
                                 // current PIN, so a nil-PIN remove silently failed.
                                 Button(role: .destructive) {
                                     showRemovePin = true
-                                } label: { Label("Remove PIN", systemImage: "lock.open") }
+                                } label: { Label("Retirer le code", systemImage: "lock.open") }
                             } else {
-                                Button { showSetPin = true } label: { Label("Set PIN", systemImage: "lock") }
+                                Button { showSetPin = true } label: { Label("Définir un code", systemImage: "lock") }
                             }
                         }
                     } else {
                         Text(current.pinEnabled
-                             ? "This profile is PIN-locked. Sign in to Orivio to change or remove the PIN."
-                             : "Sign in to Orivio to set a PIN for this profile.")
+                             ? "Ce profil est verrouillé. Connectez votre compte pour modifier ou retirer le code."
+                             : "Connectez votre compte pour définir un code pour ce profil.")
                             .font(.system(size: 20))
                             .foregroundStyle(theme.palette.textSecondary)
                     }
@@ -598,16 +668,22 @@ struct ProfileEditView: View {
                         Button(role: .destructive) {
                             confirmingDelete = true
                         } label: {
-                            Label("Delete Profile", systemImage: "trash").font(.system(size: 24, weight: .semibold))
+                            Label("Supprimer le profil", systemImage: "trash").font(.system(size: 24, weight: .semibold))
                         }
                         .padding(.top, OrivioSpacing.lg)
                     }
                 }
                 .padding(OrivioSpacing.huge)
             }
-            .scrollClipDisabled()
+            }
         }
-        .onAppear { name = current.name }
+        // The preference belongs to the entire editor. A preference limited
+        // to the character row lets the earlier Name field take initial focus.
+        .defaultFocus($editorFocus, .avatar(current.localAvatarID ?? "initial"))
+        .onAppear {
+            name = current.name
+            editorFocus = .avatar(current.localAvatarID.flatMap(NTVProfileAvatar.init(rawValue:))?.id ?? "initial")
+        }
         // Same as pressing Done: commit the pending name edit, then dismiss.
         .onExitCommand { commitName(); onDone() }
         .fullScreenCover(item: $editingCollection) { collection in
@@ -617,7 +693,7 @@ struct ProfileEditView: View {
         }
         .fullScreenCover(isPresented: $showSetPin) {
             PinEntryView(
-                title: "Set a 4-digit PIN",
+                title: "Créer un code à 4 chiffres",
                 subtitle: profile.name,
                 onSubmit: { pin in
                     let outcome = await profiles.setPin(id: profile.id, pin: pin, currentPin: nil)
@@ -626,7 +702,7 @@ struct ProfileEditView: View {
                         showSetPin = false
                         return nil
                     case .currentPinRequired:
-                        return "This profile already has a PIN."
+                        return "Ce profil possède déjà un code."
                     case .failure(let message):
                         return message
                     }
@@ -638,12 +714,12 @@ struct ProfileEditView: View {
         }
         .fullScreenCover(isPresented: $showRemovePin) {
             PinEntryView(
-                title: "Enter current PIN",
-                subtitle: "Remove the lock on \(profile.name)",
+                title: "Saisir le code actuel",
+                subtitle: "Déverrouiller \(profile.name)",
                 onSubmit: { pin in
                     let ok = await profiles.clearPin(id: profile.id, currentPin: pin)
                     if ok { showRemovePin = false; return nil }
-                    return "Incorrect PIN, or it couldn't be removed."
+                    return "Code incorrect ou suppression impossible."
                 },
                 onCancel: { showRemovePin = false }
             )
@@ -653,17 +729,17 @@ struct ProfileEditView: View {
         // Deleting also pushes to the Orivio account (ProfileStore.delete →
         // onLocalChange → profile sync).
         .confirmationDialog(
-            "Delete “\(current.name)”?",
+            "Supprimer « \(current.name) » ?",
             isPresented: $confirmingDelete,
             titleVisibility: .visible
         ) {
-            Button("Delete Profile", role: .destructive) {
+            Button("Supprimer le profil", role: .destructive) {
                 profiles.delete(id: profile.id)
                 onDone()
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Annuler", role: .cancel) {}
         } message: {
-            Text("This removes the profile and its settings from this device and your Orivio account. This can't be undone.")
+            Text("Le profil et ses réglages seront supprimés sur cet appareil et sur votre compte. Cette action est définitive.")
         }
     }
 
@@ -681,14 +757,14 @@ struct ProfileEditView: View {
         )
     }
 
-    /// Installed stream addons, as dropdown options (with a leading "Any"/"None").
+    /// Installed stream addons, as dropdown options (with a leading "Toutes les qualités"/"Aucun").
     private func addonOptions(includeNone: Bool) -> [OrivioDropdownOption] {
         var names: [String] = []
         for addon in addonManager.streamAddons {
             let name = addon.manifest.name
             if !name.isEmpty, !names.contains(name) { names.append(name) }
         }
-        let head = OrivioDropdownOption("", includeNone ? "None" : "Any addon")
+        let head = OrivioDropdownOption("", includeNone ? "Aucun" : "Tous les addons")
         return [head] + names.map { OrivioDropdownOption($0) }
     }
 
@@ -709,7 +785,7 @@ struct ProfileEditView: View {
                     .foregroundStyle(theme.palette.textPrimary)
 
                 if profile.id == profiles.activeProfileID {
-                    Text("Choose what this profile sees. Open a collection to pick individual folders.")
+                    Text("Choisissez les contenus visibles sur ce profil. Ouvrez une collection pour choisir ses dossiers.")
                         .font(.system(size: 20))
                         .foregroundStyle(theme.palette.textSecondary)
 
@@ -731,7 +807,7 @@ struct ProfileEditView: View {
                         .opacity(globallyOff ? 0.45 : 1)
                     }
                 } else {
-                    Text("Switch to “\(current.name)” to choose which of the \(collections.library.count) collections it shows.")
+                    Text("Activez le profil « \(current.name) » pour choisir ses collections parmi les \(collections.library.count) disponibles.")
                         .font(.system(size: 20))
                         .foregroundStyle(theme.palette.textSecondary)
                 }
@@ -743,23 +819,23 @@ struct ProfileEditView: View {
     /// "3 of 19 folders" — so the row says what's on without opening it.
     private func folderSummary(_ collection: OrivioCollection) -> String {
         guard collections.isGloballyVisible(collection.id) else {
-            return "Off for everyone — Settings → Collections"
+            return "Masqué pour tous · Réglages → Collections"
         }
-        guard collections.isVisible(collection.id) else { return "Hidden on this profile" }
+        guard collections.isVisible(collection.id) else { return "Masqué sur ce profil" }
         let total = collection.folders.count
         let on = collection.folders.filter { collections.isFolderVisible($0.id) }.count
-        return on == total ? "All \(total) folders" : "\(on) of \(total) folders"
+        return on == total ? "Les \(total) dossiers" : "\(on) dossiers sur \(total)"
     }
 
     private var autoLinkSection: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-            sectionLabel("Auto Link Selector")
-            Text("When on, pressing Play resolves and plays the best matching source directly — no source list. Hold Play to pick a source manually.")
+            sectionLabel("Sélection automatique des sources")
+            Text("Le bouton Regarder lance la source correspondant le mieux à vos préférences. Maintenez-le pour choisir une source manuellement.")
                 .font(.system(size: 20))
                 .foregroundStyle(theme.palette.textSecondary)
                 .frame(maxWidth: 820, alignment: .leading)
 
-            Toggle("Auto Link Selector", isOn: Binding(
+            Toggle("Sélection automatique des sources", isOn: Binding(
                 get: { current.autoLinkPrefs.enabled },
                 set: { on in
                     var prefs = current.autoLinkPrefs
@@ -778,23 +854,23 @@ struct ProfileEditView: View {
 
             if current.autoLinkPrefs.enabled {
                 OrivioDropdown(
-                    title: "Preferred addon",
+                    title: "Addon préféré",
                     selection: current.autoLinkPrefs.preferredAddon,
                     options: addonOptions(includeNone: false),
                     onSelect: { autoBind(\.preferredAddon).wrappedValue = $0 }
                 )
                 OrivioDropdown(
-                    title: "Secondary addon",
-                    subtitle: "Used when the preferred addon has no match",
+                    title: "Addon de secours",
+                    subtitle: "Utilisé si l’addon préféré ne propose aucune source correspondante",
                     selection: current.autoLinkPrefs.secondaryAddon,
                     options: addonOptions(includeNone: true),
                     onSelect: { autoBind(\.secondaryAddon).wrappedValue = $0 }
                 )
                 OrivioDropdown(
-                    title: "Minimum quality",
+                    title: "Qualité minimale",
                     selection: current.autoLinkPrefs.minResolution,
                     options: [
-                        .init("", "Any"),
+                        .init("", "Toutes les qualités"),
                         .init("2160p", "4K (2160p)"),
                         .init("1080p", "1080p"),
                         .init("720p", "720p"),
@@ -803,30 +879,37 @@ struct ProfileEditView: View {
                     onSelect: { autoBind(\.minResolution).wrappedValue = $0 }
                 )
                 OrivioDropdown(
-                    title: "Maximum size",
+                    title: "Taille maximale",
                     selection: String(Int(AutoLinkPreferences.sanitizedMaxSizeGB(current.autoLinkPrefs.maxSizeGB))),
                     options: [
-                        .init("0", "No limit"),
-                        .init("5", "5 GB"),
-                        .init("10", "10 GB"),
-                        .init("20", "20 GB"),
-                        .init("40", "40 GB"),
-                        .init("60", "60 GB")
+                        .init("0", "Sans limite"),
+                        .init("5", "5 Go"),
+                        .init("10", "10 Go"),
+                        .init("20", "20 Go"),
+                        .init("40", "40 Go"),
+                        .init("60", "60 Go")
                     ],
                     onSelect: { autoBind(\.maxSizeGB).wrappedValue = Double(Int($0) ?? 0) }
                 )
-                Toggle("Cached sources only", isOn: autoBind(\.cachedOnly))
+                Toggle("Sources disponibles immédiatement", isOn: autoBind(\.cachedOnly))
                     .font(.system(size: 24, weight: .medium))
                     .tint(theme.palette.secondary)
                     .frame(maxWidth: 560)
 
-                Toggle("Avoid Dolby Vision", isOn: autoBind(\.avoidDolbyVision))
+                Toggle("Éviter le Dolby Vision", isOn: autoBind(\.avoidDolbyVision))
                     .font(.system(size: 24, weight: .medium))
                     .tint(theme.palette.secondary)
                     .frame(maxWidth: 560)
             }
         }
         .padding(.top, OrivioSpacing.lg)
+    }
+
+    private func moveFromAvatar(_ direction: MoveCommandDirection, id: String) {
+        // Horizontal moves and second-row Up retain native grid navigation.
+        // From the top row, Up reaches Name, then Up reaches the pinned Done.
+        let topRow = ["initial"] + NTVProfileAvatar.allCases.prefix(6).map(\.id)
+        if direction == .up, topRow.contains(id) { editorFocus = .name }
     }
 
     private func sectionLabel(_ text: String) -> some View {
@@ -912,27 +995,27 @@ struct ProfileCollectionFoldersView: View {
                             Text(live.title)
                                 .font(.system(size: 40, weight: .bold))
                                 .foregroundStyle(theme.palette.textPrimary)
-                            Text("Choose which folders this profile sees")
+                            Text("Choisissez les dossiers visibles sur ce profil")
                                 .font(.system(size: 22))
                                 .foregroundStyle(theme.palette.textSecondary)
                         }
                         Spacer()
-                        Button("Done", action: onDone)
+                        Button("Terminé", action: onDone)
                     }
 
                     Button {
                         collections.setVisible(!collections.isVisible(live.id), id: live.id)
                     } label: {
                         ProfileCollectionRow(
-                            title: "Show this collection",
+                            title: "Afficher cette collection",
                             detail: collections.isVisible(live.id)
-                                ? "Appears on this profile" : "Hidden on this profile",
+                                ? "Visible sur ce profil" : "Masqué sur ce profil",
                             shown: collections.isVisible(live.id))
                     }
                     .buttonStyle(PlainCardButtonStyle())
 
                     if collections.isVisible(live.id) {
-                        Text("Folders")
+                        Text("Dossiers")
                             .font(.system(size: 26, weight: .semibold))
                             .foregroundStyle(theme.palette.textPrimary)
                             .padding(.top, OrivioSpacing.md)
@@ -947,8 +1030,8 @@ struct ProfileCollectionFoldersView: View {
                                 ProfileCollectionRow(
                                     title: folder.title,
                                     detail: globallyOff
-                                        ? "Off for everyone — Settings → Collections"
-                                        : (collections.isFolderVisible(folder.id) ? "Shown" : "Hidden"),
+                                        ? "Masqué pour tous · Réglages → Collections"
+                                        : (collections.isFolderVisible(folder.id) ? "Visible" : "Masqué"),
                                     shown: collections.isFolderVisible(folder.id))
                             }
                             .buttonStyle(PlainCardButtonStyle())

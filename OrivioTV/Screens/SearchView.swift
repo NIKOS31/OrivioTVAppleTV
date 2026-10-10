@@ -167,15 +167,15 @@ struct SearchView: View {
                     .zIndex(1)
                 ScrollView(.vertical) {
                     if viewModel.isSearching && viewModel.results.isEmpty {
-                        OrivioLoadingView(label: "Searching").frame(height: 480)
+                        OrivioLoadingView(label: "Recherche").frame(height: 480)
                     } else if !viewModel.results.isEmpty {
                         // Results split by type: Movies on top, Shows below.
                         VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
                             if !movieResults.isEmpty {
-                                resultSection(title: "Movies", items: movieResults)
+                                resultSection(title: "Films", items: movieResults)
                             }
                             if !showResults.isEmpty {
-                                resultSection(title: "Shows", items: showResults)
+                                resultSection(title: "Séries", items: showResults)
                             }
                         }
                         .padding(.top, OrivioSpacing.sm)
@@ -183,20 +183,20 @@ struct SearchView: View {
                     } else if viewModel.query.count >= 2 {
                         OrivioEmptyState(
                             icon: "magnifyingglass",
-                            title: "No results",
-                            message: "Nothing matched “\(viewModel.query)”."
+                            title: "Aucun résultat",
+                            message: "Aucun résultat pour « \(viewModel.query) »."
                         )
                         .frame(height: 480)
                     } else if !viewModel.trending.isEmpty {
                         // Idle: something to browse instead of an empty void.
-                        resultSection(title: "Trending", items: viewModel.trending)
+                        resultSection(title: "Tendances", items: viewModel.trending)
                             .padding(.top, OrivioSpacing.sm)
                             .padding(.bottom, OrivioSpacing.huge)
                     } else {
                         OrivioEmptyState(
                             icon: "magnifyingglass",
-                            title: "Start Searching",
-                            message: "Enter at least 2 characters"
+                            title: "Commencer une recherche",
+                            message: "Saisissez au moins deux caractères"
                         )
                         .frame(height: 480)
                     }
@@ -309,7 +309,7 @@ private struct SearchField: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(theme.palette.textTertiary)
-            TextField("Search movies & series", text: $text)
+            TextField("Rechercher un film ou une série", text: $text)
                 .textFieldStyle(.plain)
                 .focused($focused)
                 .font(.system(size: 26))

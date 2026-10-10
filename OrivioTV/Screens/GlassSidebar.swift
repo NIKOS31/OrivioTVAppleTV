@@ -10,14 +10,14 @@ enum AppTab: Int, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .home: return "Home"
-        case .movies: return "Movies"
-        case .series: return "Series"
-        case .addons: return "Add-ons"
-        case .search: return "Search"
-        case .library: return "Library"
-        case .liveTV: return "Live TV"
-        case .settings: return "Settings"
+        case .home: return "Accueil"
+        case .movies: return "Films"
+        case .series: return "Séries"
+        case .addons: return "Addons"
+        case .search: return "Recherche"
+        case .library: return "Bibliothèque"
+        case .liveTV: return "TV en direct"
+        case .settings: return "Réglages"
         }
     }
 
@@ -106,7 +106,9 @@ struct GlassSidebar: View {
         // chip ahead of the items on the same line, exactly as the vertical
         // panel keeps it above them.
         Group {
-            if horizontal {
+            if horizontal && theme.palette.id == NTVDesign.palette.id {
+                ntvHorizontalBody
+            } else if horizontal {
                 horizontalBody
             } else if theme.palette.id == NTVDesign.palette.id {
                 ntvVerticalBody
@@ -114,6 +116,75 @@ struct GlassSidebar: View {
                 verticalBody
             }
         }
+    }
+
+    /// The top layout keeps primary destinations readable and groups tools
+    /// separately. Each group uses one clear glass surface, without per-item blur.
+    private var ntvHorizontalBody: some View {
+        HStack(spacing: 24) {
+            NTVWordmark(size: 18)
+                .padding(.trailing, 8)
+
+            HStack(spacing: 4) {
+                ForEach(AppTab.sidebarOrder.filter {
+                    [AppTab.home, .movies, .series, .library, .liveTV].contains($0)
+                        && ($0 != .liveTV || liveTV.enabled)
+                }) { tab in
+                    ntvTopButton(tab, iconOnly: false)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(8)
+            .background { ntvTopGlass }
+
+            HStack(spacing: 4) {
+                ForEach([AppTab.search, .addons, .settings]) { tab in
+                    ntvTopButton(tab, iconOnly: true)
+                }
+                Button(action: onProfileTap) {
+                    NTVTopProfileLabel(profile: profiles.active)
+                }
+                .buttonStyle(PlainCardButtonStyle())
+                .focused(focusBinding, equals: -1)
+                .accessibilityLabel("Profil : \(profiles.active.name)")
+                .accessibilityIdentifier("ntv.navigation.profile")
+            }
+            .fixedSize(horizontal: true, vertical: true)
+            .padding(8)
+            .background { ntvTopGlass }
+        }
+        .padding(.horizontal, NTVViewport.horizontalInset)
+        .defaultFocus(focusBinding, selected)
+        .padding(.top, 28)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .ignoresSafeArea()
+    }
+
+    private var ntvTopGlass: some View {
+        NTVGlassSurface(shape: Capsule(style: .continuous), clear: true)
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(colors: [.white.opacity(0.48), .white.opacity(0.05),
+                                                .white.opacity(0.28)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1)
+            }
+    }
+
+    private func ntvTopButton(_ tab: AppTab, iconOnly: Bool) -> some View {
+        Button {
+            onTabSelected(tab.rawValue)
+            selected = tab.rawValue
+        } label: {
+            NTVTopNavigationLabel(tab: tab, selected: selected == tab.rawValue,
+                                  iconOnly: iconOnly)
+                .frame(maxWidth: iconOnly ? nil : .infinity)
+        }
+        .buttonStyle(PlainCardButtonStyle())
+        .focused(focusBinding, equals: tab.rawValue)
+        .accessibilityLabel(NTVBrand.navigationTitle(for: tab))
+        .accessibilityIdentifier("ntv.navigation.\(tab.rawValue)")
     }
 
     /// The top bar is ALWAYS fully drawn — every tab's word and the profile
@@ -124,7 +195,7 @@ struct GlassSidebar: View {
     /// nothing here, so there is no widening lurch when you step into it.
     private var horizontalBody: some View {
         HStack(alignment: .center, spacing: 0) {
-            NTVWordmark(size: 34)
+            NTVWordmark(size: 24)
                 .padding(.trailing, OrivioSpacing.lg)
             Button(action: onProfileTap) {
                 GlassProfileHeader(profile: profiles.active, compact: true)
@@ -159,7 +230,7 @@ struct GlassSidebar: View {
         .fixedSize(horizontal: true, vertical: true)
         .background {
             if theme.palette.id == NTVDesign.palette.id {
-                panelShape.fill(NTVDesign.surface)
+                NTVGlassSurface(shape: panelShape)
             } else {
                 Color.clear.liquidGlass(in: panelShape)
             }
@@ -177,11 +248,11 @@ struct GlassSidebar: View {
         }
     }
 
-    /// nTV uses a flat edge rail, rather than a floating glass panel. The
-    /// root's existing focus routing, Back and Right hand-off remain in charge.
+    /// One glass surface carries the rail; item highlights use lightweight fills.
+    /// The root's existing focus routing, Back and Right hand-off remain in charge.
     private var ntvVerticalBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            NTVWordmark(size: 32)
+            NTVWordmark(size: 22)
                 .frame(maxWidth: .infinity, alignment: expanded ? .leading : .center)
                 .padding(.horizontal, expanded ? OrivioSpacing.md : 0)
                 .frame(height: 64)
@@ -223,11 +294,15 @@ struct GlassSidebar: View {
                 Color.clear.frame(height: 64)
             }
         }
-        .padding(.vertical, 56)
+        .padding(.vertical, 24)
         .frame(width: expanded ? NTVDesign.sidebarExpandedWidth : 84, alignment: .leading)
         .clipped()
         .frame(maxHeight: .infinity)
-        .background(NTVDesign.background)
+        .background {
+            NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        }
+        .padding(.leading, 18)
+        .padding(.vertical, 24)
         .ignoresSafeArea()
         .animation(PerformanceSettingsStore.shared.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: expanded)
@@ -354,6 +429,51 @@ private struct GlassProfileHeader: View {
 
 /// A single rail entry: icon (+ label when expanded). Focused/selected shows a
 /// soft translucent capsule fill — no border, no scale; the glass carries it.
+private struct NTVTopNavigationLabel: View {
+    @Environment(\.isFocused) private var focused
+    let tab: AppTab
+    let selected: Bool
+    let iconOnly: Bool
+
+    var body: some View {
+        Group {
+            if iconOnly {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 24, weight: .medium))
+                    .frame(width: 56)
+            } else {
+                Text(NTVBrand.navigationTitle(for: tab))
+                    .font(.system(size: 24, weight: .medium))
+                    .lineLimit(1)
+                    .padding(.horizontal, 24)
+            }
+        }
+        .frame(height: 56)
+        .frame(maxWidth: iconOnly ? nil : .infinity)
+        .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+        .background {
+            Capsule(style: .continuous)
+                .fill(.white.opacity(focused ? 0.26 : selected ? 0.12 : 0))
+        }
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(.white.opacity(focused ? 0.65 : selected ? 0.16 : 0), lineWidth: 1.5)
+        }
+    }
+}
+
+private struct NTVTopProfileLabel: View {
+    @Environment(\.isFocused) private var focused
+    let profile: UserProfile
+
+    var body: some View {
+        ProfileAvatarView(profile: profile, size: 44)
+            .frame(width: 56, height: 56)
+            .background(Circle().fill(.white.opacity(focused ? 0.22 : 0)))
+            .overlay(Circle().strokeBorder(.white.opacity(focused ? 0.65 : 0), lineWidth: 1.5))
+    }
+}
+
 private struct GlassItemLabel: View {
     @EnvironmentObject private var theme: ThemeManager
     @Environment(\.isFocused) private var isFocused

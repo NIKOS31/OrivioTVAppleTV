@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A hand-picked "Recommended" add-on shown at the top of Discover, above the
+/// A hand-picked "Sélection" add-on shown at the top of Discover, above the
 /// full live community catalog.
 struct AddonCatalogEntry: Identifiable {
     let name: String
@@ -14,12 +14,12 @@ struct AddonCatalogEntry: Identifiable {
 }
 
 enum AddonCategory: String, CaseIterable, Identifiable {
-    case streams = "Streams"
-    case metadata = "Catalogs & Metadata"
+    case streams = "Sources"
+    case metadata = "Catalogues et métadonnées"
     case anime = "Anime"
-    case liveTV = "Live TV"
-    case subtitles = "Subtitles"
-    case other = "More Add-ons"
+    case liveTV = "TV en direct"
+    case subtitles = "Sous-titres"
+    case other = "Autres addons"
     var id: String { rawValue }
 
     var icon: String {
@@ -44,22 +44,22 @@ enum AddonDirectory {
     /// again, it's very likely another dead host, not an app bug — the row
     /// now surfaces the actual fetch error instead of failing silently.
     static let featured: [AddonCatalogEntry] = [
-        .init(name: "Cinemeta", tagline: "Official movie & series catalogs and metadata",
+        .init(name: "Cinemeta", tagline: "Catalogues et métadonnées officiels de films et séries",
               category: .metadata, manifestURL: "https://v3-cinemeta.strem.io/manifest.json"),
-        .init(name: "Torrentio", tagline: "Torrent streams from many trackers. Add a debrid key for cached, instant links.",
+        .init(name: "Torrentio", tagline: "Sources de plusieurs trackers. Une clé de débridage permet d’accéder aux liens en cache.",
               category: .streams, manifestURL: "https://torrentio.strem.fun/manifest.json", needsSetup: true),
-        .init(name: "Comet", tagline: "Debrid-focused stream scraper with strong caching",
+        .init(name: "Comet", tagline: "Sources avec débridage et mise en cache",
               category: .streams, manifestURL: "https://comet.elfhosted.com/manifest.json", needsSetup: true),
-        .init(name: "Watchio.live TV", tagline: "Free live TV channels from around the world, including US. Appears in the Live TV tab.",
+        .init(name: "Watchio.live TV", tagline: "Chaînes du monde entier, disponibles dans l’onglet TV en direct",
               category: .liveTV, manifestURL: "https://watchio-addon.pages.dev/manifest.json"),
-        .init(name: "Anime Kitsu", tagline: "Anime catalogs & metadata via Kitsu",
+        .init(name: "Anime Kitsu", tagline: "Catalogues et métadonnées d’animes via Kitsu",
               category: .anime, manifestURL: "https://anime-kitsu.strem.fun/manifest.json"),
-        .init(name: "OpenSubtitles v3", tagline: "Community subtitles in most languages",
+        .init(name: "OpenSubtitles v3", tagline: "Sous-titres de la communauté dans de nombreuses langues",
               category: .subtitles, manifestURL: "https://opensubtitles-v3.strem.io/manifest.json"),
     ]
 }
 
-/// A single row's data, unified across the curated "Recommended" picks and the
+/// A single row's data, unified across the curated "Sélection" picks and the
 /// live community catalog so one row view renders both.
 private struct DiscoverItem: Identifiable {
     let url: String
@@ -92,16 +92,16 @@ struct AddonDiscoverView: View {
         ZStack {
             ATVBackground()
             DetailScaffold(
-                title: "Discover Add-ons",
-                subtitle: "Recommended picks and the full community catalog"
+                title: "Découvrir des addons",
+                subtitle: "Une sélection et le catalogue de la communauté"
             ) {
                 LazyVStack(alignment: .leading, spacing: OrivioSpacing.xl) {
-                    section("Recommended", items: featuredItems)
+                    section("Sélection", items: featuredItems)
 
                     if loading {
                         loadingRow
                     } else if remote.isEmpty {
-                        Text("Couldn't reach the community catalog right now. The Recommended add-ons above still install, and you can paste any manifest URL in the Install Add-on box.")
+                        Text("Le catalogue de la communauté est indisponible. Vous pouvez installer les addons de la sélection ou ajouter leur lien d’installation.")
                             .font(.system(size: 19))
                             .foregroundStyle(theme.palette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -155,7 +155,7 @@ struct AddonDiscoverView: View {
                         // No destructive role — see PosterHoldMenu: tvOS
                         // won't present a menu containing one.
                         Button { uninstall(item.url) } label: {
-                            Label("Remove Add-on", systemImage: "trash")
+                            Label("Supprimer l’addon", systemImage: "trash")
                         }
                     }
                 }
@@ -166,7 +166,7 @@ struct AddonDiscoverView: View {
     private var loadingRow: some View {
         HStack(spacing: OrivioSpacing.md) {
             ProgressView().tint(theme.palette.secondary)
-            Text("Loading community add-ons…")
+            Text("Chargement des addons de la communauté…")
                 .font(.system(size: 20))
                 .foregroundStyle(theme.palette.textSecondary)
         }
@@ -204,7 +204,7 @@ struct AddonDiscoverView: View {
 
     /// The third copy of this derivation — and the one that kept the query, so
     /// for a configured addon (`…/manifest.json?token=…`) it disagreed with
-    /// `InstalledAddon.baseURL` and both "Installed" and Uninstall silently
+    /// `InstalledAddon.baseURL` and both "Installé" and Uninstall silently
     /// failed to match. There is now one source of truth.
     private static func base(_ url: String) -> String {
         InstalledAddon.baseURL(forManifestURL: AddonManager.normalizeManifestURL(url))
@@ -227,7 +227,7 @@ struct AddonDiscoverView: View {
                 // free hosting went down) rather than anything wrong on our
                 // end — say so plainly instead of leaving Install as the only
                 // visible state, which reads as "nothing happened."
-                errorsByURL[url] = "Couldn't install: \(error.localizedDescription). This add-on's server may be down."
+                errorsByURL[url] = "Installation impossible : \(error.localizedDescription). Le serveur de l’addon peut être indisponible."
             }
             installingID = nil
         }
@@ -263,7 +263,7 @@ private struct AddonDiscoverRowLabel: View {
                         .foregroundStyle(theme.palette.textPrimary)
                         .lineLimit(1)
                     if item.needsSetup {
-                        Text("Needs setup")
+                        Text("À configurer")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(theme.palette.secondary)
                             .padding(.horizontal, 8).padding(.vertical, 2)
@@ -305,14 +305,14 @@ private struct AddonDiscoverRowLabel: View {
         } else if installed {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.circle.fill")
-                Text("Installed")
+                Text("Installé")
             }
             .font(.system(size: 20, weight: .semibold))
             .foregroundStyle(OrivioPrimitives.success)
         } else {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
-                Text("Install")
+                Text("Installer")
             }
             .font(.system(size: 20, weight: .semibold))
             .foregroundStyle(isFocused ? theme.palette.onSecondary : theme.palette.secondary)

@@ -142,8 +142,11 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertFalse(app.staticTexts["ntv.twitch.player.error"].exists)
         capture("ntv-twitch-native-player")
         remote.press(.select)
-        let quality = app.buttons["Qualité"].firstMatch
-        XCTAssertTrue(quality.waitForExistence(timeout: 5), "The native transport bar must expose the quality menu.")
+        // AVKit exposes transport-bar custom menus as collection cells,
+        // including their accessibility label and remote focus behaviour.
+        let quality = app.cells["Qualité"].firstMatch
+        XCTAssertTrue(quality.waitForExistence(timeout: 5),
+                      "The native transport bar must expose the quality menu.\n" + app.debugDescription)
         capture("ntv-twitch-quality-control")
         for _ in 0..<3 {
             remote.press(.menu)

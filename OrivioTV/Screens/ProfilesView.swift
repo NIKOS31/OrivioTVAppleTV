@@ -56,11 +56,11 @@ struct ProfileAvatarView: View {
     /// Cached avatar load (via the shared ImageCache) so a decoded avatar shows
     /// instantly on every re-appearance instead of re-downloading and flashing.
     private func loadAvatar() async {
-        guard let urlString = avatarURLString, let url = URL(string: urlString) else {
+        guard let urlString = avatarURLString, URL(string: urlString) != nil else {
             image = nil
             return
         }
-        let memoryKey = urlString + "#avatar256"
+        let memoryKey = ImageCache.artworkKey(urlString, budget: 256)
         if let cached = ImageCache.shared.image(for: memoryKey) {
             image = cached
             return
@@ -70,15 +70,8 @@ struct ProfileAvatarView: View {
         // full-size (lazily, ON the render path) and then re-encoded it to
         // JPEG on the main actor inside insert(). Downsampled decode happens
         // off-main; the original bytes go to disk as-is.
-        if let disk = await ImageCache.shared.diskImage(for: urlString, budget: 256, memoryKey: memoryKey) {
-            if !Task.isCancelled { image = disk }
-            return
-        }
-        guard !Task.isCancelled, let data = try? await ImageCache.shared.download(url),
-              !Task.isCancelled else { return }
-        let decoded = try? await ImageCache.shared.preparedImage(data, budget: 256, memoryKey: memoryKey)
+        let decoded = try? await ImageCache.shared.loadImage(for: urlString, budget: 256, memoryKey: memoryKey)
         guard let decoded, !Task.isCancelled else { return }
-        ImageCache.shared.insertData(data, for: urlString)
         image = decoded
     }
 

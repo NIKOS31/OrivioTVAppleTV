@@ -3,24 +3,33 @@ import Network
 
 /// A slow, controllable response exercises URLSession's real chunk callbacks.
 final class NTVBoundedHTTPProbe: @unchecked Sendable {
-    let id = UUID().uuidString
+    let id: String
     let body: Data
     let declaredLength: Int?
     let stall: Bool
+    let statusCode: Int
+    let chunkSize: Int
+    let chunkDelay: TimeInterval
     let onHeaders: () -> Void
     let onStop: () -> Void
     private let lock = NSLock()
     private var stopped = false
     private var sent = 0
+    private var requestCount = 0
+    var requestsReceived: Int { lock.lock(); defer { lock.unlock() }; return requestCount }
     var bytesSent: Int { lock.lock(); defer { lock.unlock() }; return sent }
     var isStopped: Bool { lock.lock(); defer { lock.unlock() }; return stopped }
 
-    init(body: Data = Data(), declaredLength: Int? = nil, stall: Bool = false,
+    init(id: String = UUID().uuidString, body: Data = Data(), declaredLength: Int? = nil, stall: Bool = false,
+         statusCode: Int = 200, chunkSize: Int = 256, chunkDelay: TimeInterval = 0.005,
          onHeaders: @escaping () -> Void = {}, onStop: @escaping () -> Void = {}) {
+        self.id = id; self.statusCode = statusCode
+        self.chunkSize = max(1, chunkSize); self.chunkDelay = max(0, chunkDelay)
         self.body = body; self.declaredLength = declaredLength; self.stall = stall
         self.onHeaders = onHeaders; self.onStop = onStop
     }
     func note(_ count: Int) { lock.lock(); sent += count; lock.unlock() }
+    func noteRequest() { lock.lock(); requestCount += 1; lock.unlock() }
     func stop() {
         lock.lock()
         if stopped { lock.unlock(); return }
@@ -47,18 +56,19 @@ final class NTVBoundedHTTPFixture: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         Self.lock.lock(); probe = Self.probes[request.url!.lastPathComponent]; Self.lock.unlock()
         guard let probe else { client?.urlProtocol(self, didFailWithError: URLError(.badURL)); return }
+        probe.noteRequest()
         var headers = ["Content-Type": "application/json"]
         if let length = probe.declaredLength { headers["Content-Length"] = String(length) }
-        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!
+        let response = HTTPURLResponse(url: request.url!, statusCode: probe.statusCode, httpVersion: "HTTP/1.1", headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         probe.onHeaders()
         if !probe.stall { sendChunk(from: 0) }
     }
     private func sendChunk(from position: Int) {
-        Self.queue.asyncAfter(deadline: .now() + 0.005) { [weak self] in
+        Self.queue.asyncAfter(deadline: .now() + (probe?.chunkDelay ?? 0.005)) { [weak self] in
             guard let self, let probe = self.probe, !probe.isStopped else { return }
             guard position < probe.body.count else { self.client?.urlProtocolDidFinishLoading(self); return }
-            let end = min(position + 256, probe.body.count)
+            let end = min(position + probe.chunkSize, probe.body.count)
             let chunk = probe.body.subdata(in: position..<end)
             probe.note(chunk.count)
             self.client?.urlProtocol(self, didLoad: chunk)

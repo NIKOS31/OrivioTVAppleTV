@@ -18,26 +18,21 @@ import CoreImage
 /// Memory lookups are synchronous; disk lookups are async (off the main
 /// thread) and promote hits back into the memory layer.
 final class ImageCache: @unchecked Sendable {
-    static let shared = ImageCache()
+    static let shared = ImageCache(directory: ImageCache.diskDirectory, session: ImageCache.downloadSession)
 
     /// Dedicated artwork session. The shared work pool below bounds transfers
     /// independently of host connection counts, including HTTP/2 multiplexing.
-    static let downloadSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.httpMaximumConnectionsPerHost = PerformanceProfile.isLowPower ? 6 : (PerformanceProfile.isMidPower ? 8 : 12)
-        config.timeoutIntervalForRequest = 25
-        // NO URLCache: every body fetched here is persisted (and served back)
-        // by ImageCache's own orivio-images disk layer, so a URLCache stored
-        // each poster a SECOND time — up to 128 MB of duplicate encoded bytes
-        // on flash plus 16 MB of cache memory the 2 GB box can't spare.
-        config.urlCache = nil
-        return URLSession(configuration: config)
-    }()
+    static let downloadSession = URLSession(configuration: NTVArtworkTransfer.configuration())
+    private let session: URLSession
 
     private let memory = NSCache<NSString, UIImage>()
     /// All sharp and blurred still-image preparations share this window.
     /// UIImage is built off-main, then only read by its consumers.
     private struct PreparedArtwork: @unchecked Sendable { let image: UIImage? }
+    /// A slot covers disk/network bytes THROUGH preparation and persistence.
+    /// A fast disk cannot fill an unbounded queue with full encoded bodies.
+    private let loads: NTVSharedWorkPool<PreparedArtwork>
+    private let diskReads = NTVSharedWorkPool<Data?>(limit: PerformanceProfile.artworkDownloads)
     private let preparations = NTVSharedWorkPool<PreparedArtwork>(limit: PerformanceProfile.artworkPreparations)
     /// CONCURRENT and user-initiated. As a serial `.utility` queue this made
     /// the best-cached path the slowest one: every newly visible poster queued
@@ -46,22 +41,26 @@ final class ImageCache: @unchecked Sendable {
     /// already-cached art cost hundreds of milliseconds of placeholders over
     /// bytes sitting on local disk.
     ///
-    /// Reads and writes are independent (distinct files, and a failed read just
-    /// re-downloads), so the only ordering that ever mattered is that a clear or
-    /// a trim not run alongside them — those use `.barrier`.
+    /// Writes are atomic and serialize with clear/trim through barriers. Reads
+    /// use their own bounded file handles; an already-open handle can finish
+    /// safely when its pathname is replaced or removed.
     private let ioQueue = DispatchQueue(label: "orivio.imagecache.io",
                                         qos: .userInitiated, attributes: .concurrent)
     private let fm = FileManager.default
     private let diskURL: URL
     private let diskBudget = 512 * 1024 * 1024   // ~512 MB of encoded images
+    private var memoryWarningObserver: NSObjectProtocol?
 
-    private init() {
+    /// Injectable cache/session let tests exercise the actual production path
+    /// without touching the app's normal cache or any personal provider.
+    init(directory: URL, session: URLSession, loadLimit: Int = PerformanceProfile.artworkDownloads) {
+        self.session = session
+        loads = NTVSharedWorkPool(limit: loadLimit)
         // Sized to the hardware: the Apple TV HD has 2 GB total — a 256 MB
         // decoded-pixel cache there gets the app jetsammed.
         memory.countLimit = PerformanceProfile.imageCacheCount
         memory.totalCostLimit = PerformanceProfile.imageCacheBytes
-        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        diskURL = caches.appendingPathComponent("orivio-images", isDirectory: true)
+        diskURL = directory
         try? fm.createDirectory(at: diskURL, withIntermediateDirectories: true)
         // The LRU trim walks every cached file's attributes under a BARRIER —
         // thousands of files on a full 512 MB cache — and it used to run at
@@ -73,10 +72,25 @@ final class ImageCache: @unchecked Sendable {
         // Under real memory pressure, decoded pixels are the cheapest thing to
         // give back (they re-decode from disk on demand) — dropping them here
         // is what keeps tvOS from jetsamming the whole app instead.
-        NotificationCenter.default.addObserver(
+        memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil, queue: .main
         ) { [weak self] _ in self?.memory.removeAllObjects() }
+    }
+
+    deinit {
+        if let memoryWarningObserver { NotificationCenter.default.removeObserver(memoryWarningObserver) }
+    }
+
+    /// Kind, size and a URL digest have separate fields. A URL containing
+    /// '#340' or '#blur60' cannot impersonate another rendition's cache key.
+    static func artworkKey(_ url: String, budget: CGFloat?, kind: String = "sharp") -> String {
+        let digest = SHA256.hash(data: Data(url.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "ntv-art:\(kind):\(budget.map { String(describing: $0) } ?? "display"):\(digest)"
+    }
+
+    var loadActivity: (running: Int, queued: Int, waiters: Int) {
+        get async { await loads.activity }
     }
 
     /// Decode `data` off the render path, downsampled (via ImageIO) to
@@ -107,7 +121,41 @@ final class ImageCache: @unchecked Sendable {
     }
 
     func preparedImage(_ data: Data, budget: CGFloat?, memoryKey: String) async throws -> UIImage? {
-        try await prepare(memoryKey: memoryKey) { Self.decodeDownsampled(data, budget: budget) }
+        guard data.count <= NTVArtworkTransfer.maximumBytes else { throw NTVBoundedResponse.Failure.tooLarge }
+        return try await prepare(memoryKey: memoryKey) { Self.decodeDownsampled(data, budget: budget) }
+    }
+
+    func loadImage(for key: String, budget: CGFloat?, memoryKey: String) async throws -> UIImage? {
+        try await loadArtwork(for: key, memoryKey: memoryKey) { Self.decodeDownsampled($0, budget: budget) }
+    }
+
+    private func loadArtwork(for key: String, memoryKey: String,
+                             decode: @escaping @Sendable (Data) -> UIImage?) async throws -> UIImage? {
+        try Task.checkCancellation()
+        guard let url = URL(string: key), NTVArtworkTransfer.permits(url) else { throw URLError(.unsupportedURL) }
+        if let hit = image(for: memoryKey) { return hit }
+        let loaded = try await loads.value(for: memoryKey) { [self] in
+            if let hit = image(for: memoryKey) { return PreparedArtwork(image: hit) }
+            if let cached = await diskData(for: key) {
+                try Task.checkCancellation()
+                if let prepared = try await prepare(memoryKey: memoryKey, { decode(cached) }) {
+                    return PreparedArtwork(image: prepared)
+                }
+                // Invalid old bytes must not leave this URL stuck on a
+                // placeholder forever. A fresh response gets one attempt.
+            }
+            try Task.checkCancellation()
+            let data = try await download(url)
+            let prepared = try await prepare(memoryKey: memoryKey, { decode(data) })
+            try Task.checkCancellation()
+            if prepared != nil {
+                // Keep the load slot until the write completes too. Queued
+                // asynchronous writes otherwise retain another pile of Data.
+                await persist(data, for: key)
+            }
+            return PreparedArtwork(image: prepared)
+        }
+        return loaded.image
     }
 
     private func prepare(memoryKey: String, _ work: @escaping @Sendable () -> UIImage?) async throws -> UIImage? {
@@ -139,8 +187,12 @@ final class ImageCache: @unchecked Sendable {
     /// file's mtime is touched so it survives LRU trimming. Disk always stores
     /// the original encoded bytes keyed by URL — one file serves every size.
     func diskImage(for key: String, budget: CGFloat? = nil, memoryKey: String? = nil) async -> UIImage? {
-        guard !Task.isCancelled, let data = await diskData(for: key), !Task.isCancelled else { return nil }
-        return try? await preparedImage(data, budget: budget, memoryKey: memoryKey ?? key)
+        let rendition = memoryKey ?? Self.artworkKey(key, budget: budget)
+        let result = try? await loads.value(for: "disk:" + rendition) { [self] in
+            guard let data = await diskData(for: key) else { return PreparedArtwork(image: nil) }
+            return PreparedArtwork(image: try await preparedImage(data, budget: budget, memoryKey: rendition))
+        }
+        return result?.image
     }
 
     /// Store in memory now and persist the encoded bytes to disk in the
@@ -160,26 +212,36 @@ final class ImageCache: @unchecked Sendable {
     /// mtime so a GIF in active rotation survives LRU trimming.
     func diskData(for key: String) async -> Data? {
         let fileURL = fileURL(for: key)
-        return await withCheckedContinuation { continuation in
+        return try? await diskReads.value(for: key) { [self] in
+            let task = Task.detached(priority: .userInitiated) { try NTVArtworkTransfer.fileData(from: fileURL) }
+            let data: Data
+            do {
+                data = try await withTaskCancellationHandler {
+                    try await task.value
+                } onCancel: { task.cancel() }
+            } catch is CancellationError { throw CancellationError() }
+              catch { return nil }
+            try Task.checkCancellation()
             ioQueue.async { [weak self] in
-                guard let data = try? Data(contentsOf: fileURL) else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                continuation.resume(returning: data)
-                self?.ioQueue.async { [weak self] in
-                    try? self?.fm.setAttributes([.modificationDate: Date()],
-                                                ofItemAtPath: fileURL.path)
-                }
+                try? self?.fm.setAttributes([.modificationDate: Date()], ofItemAtPath: fileURL.path)
             }
+            return data
         }
     }
 
     /// Persist encoded bytes with no decoded image attached (same disk layer
     /// and LRU budget as artwork).
     func insertData(_ data: Data, for key: String) {
+        guard data.count <= NTVArtworkTransfer.maximumBytes else { return }
         let fileURL = fileURL(for: key)
         ioQueue.async { [self] in writeCacheFile(data, to: fileURL) }
+    }
+
+    private func persist(_ data: Data, for key: String) async {
+        let fileURL = fileURL(for: key)
+        await withCheckedContinuation { continuation in
+            ioQueue.async { self.writeCacheFile(data, to: fileURL); continuation.resume() }
+        }
     }
 
     /// Where the disk layer lives, derived the same way `init` does so callers
@@ -230,7 +292,7 @@ final class ImageCache: @unchecked Sendable {
 
     func download(_ url: URL, background: Bool = false) async throws -> Data {
         try await downloads.value(for: url.absoluteString, priority: background ? .background : .visible) {
-            try await Self.downloadSession.data(from: url).0
+            try await NTVArtworkTransfer.data(from: url, session: self.session)
         }
     }
 
@@ -240,6 +302,7 @@ final class ImageCache: @unchecked Sendable {
     /// left every subsequent write failing silently — the disk layer was dead
     /// until the next launch and every poster came off the network again.
     private func writeCacheFile(_ data: Data, to fileURL: URL) {
+        guard data.count <= NTVArtworkTransfer.maximumBytes else { return }
         do {
             try data.write(to: fileURL, options: .atomic)
         } catch {
@@ -346,7 +409,7 @@ final class ImageCache: @unchecked Sendable {
                         // and a visible cell never download the same poster
                         // twice.
                         guard let data = try? await self.download(url, background: true), !Task.isCancelled else { return }
-                        self.ioQueue.async { self.writeCacheFile(data, to: fileURL) }
+                        await self.persist(data, for: urlString)
                     }
                 }
                 for _ in 0 ..< min(window, candidates.count) { startNext() }
@@ -378,7 +441,7 @@ final class ImageCache: @unchecked Sendable {
                 // `download` coalesces, so warming a URL a visible view is
                 // already fetching costs one request, not two.
                 guard let data = try? await self.download(url, background: true), !Task.isCancelled else { return }
-                self.ioQueue.async { self.writeCacheFile(data, to: fileURL) }
+                await self.persist(data, for: urlString)
             }
         }
     }
@@ -401,25 +464,10 @@ final class ImageCache: @unchecked Sendable {
     /// the 1920pt reference width — the CI sigma is scaled to the downsampled
     /// copy so the softness matches what `.blur(radius:)` showed.
     func blurredImage(for key: String, screenBlurRadius: CGFloat = 60) async -> UIImage? {
+        guard screenBlurRadius.isFinite, screenBlurRadius >= 0 else { return nil }
         let baseWidth: CGFloat = 480
-        let blurKey = "\(key)#blur\(Int(screenBlurRadius))"
-        if let hit = image(for: blurKey) { return hit }
-
-        // Base bytes: disk first (the sharp hero rendering beneath this layer
-        // has nearly always persisted them already), then network.
-        let fileURL = fileURL(for: key)
-        var data = await diskData(for: key)
-        // Through the coalescer: at first paint the sharp RemoteImage layer is
-        // usually fetching this same backdrop — a direct session hit here
-        // downloaded it twice in parallel.
-        if data == nil, let url = URL(string: key),
-           let fetched = try? await download(url) {
-            data = fetched
-            ioQueue.async { try? fetched.write(to: fileURL, options: .atomic) }
-        }
-        guard let data, !Task.isCancelled else { return nil }
-
-        return try? await prepare(memoryKey: blurKey) {
+        let blurKey = Self.artworkKey(key, budget: baseWidth, kind: "blur:\(screenBlurRadius)")
+        return try? await loadArtwork(for: key, memoryKey: blurKey) { data in
             guard let base = Self.decodeDownsampled(data, budget: baseWidth),
                   let cg = base.cgImage else { return nil }
             let input = CIImage(cgImage: cg)
@@ -565,14 +613,14 @@ struct RemoteImage: View {
     }
 
     private static func memoryKey(_ value: String, maxDimension: CGFloat?, maxPixels: CGFloat?) -> String {
-        pixelBudget(maxDimension: maxDimension, maxPixels: maxPixels).map { "\(value)#\(Int($0))" } ?? value
+        ImageCache.artworkKey(value, budget: pixelBudget(maxDimension: maxDimension, maxPixels: maxPixels))
     }
 
     /// Memory-cache key: the URL plus the budget bucket, so a small card decode
     /// is never handed to a full-screen consumer of the same URL (and vice
     /// versa). Disk stays keyed by plain URL — encoded bytes fit every size.
     private func memoryKey(_ value: String) -> String {
-        pixelBudget.map { "\(value)#\(Int($0))" } ?? value
+        Self.memoryKey(value, maxDimension: maxDimension, maxPixels: maxPixels)
     }
 
     /// Commit a loaded image, fading only when "Artwork fade-in" is on
@@ -589,7 +637,7 @@ struct RemoteImage: View {
     }
 
     private func load(_ value: String?) async {
-        guard let value, let parsed = URL(string: value) else {
+        guard let value, URL(string: value) != nil else {
             show(nil, key: nil, duration: 0.2)
             return
         }
@@ -599,30 +647,10 @@ struct RemoteImage: View {
             show(cached, key: key, duration: 0.28)
             return
         }
-        // Disk hit: survives relaunch, so a previously seen poster shows without
-        // a network round-trip.
-        if let disk = await ImageCache.shared.diskImage(
-            for: value, budget: pixelBudget, memoryKey: memoryKey(value)
-        ) {
-            if Task.isCancelled { return }
-            show(disk, key: key, duration: 0.28)
-            return
-        }
-        // Keep the current image visible while the replacement downloads.
-        // Coalesced: the same poster can appear in two rows at once, or race the
-        // prefetch already fetching it, and each of those used to be its own
-        // download.
-        guard !Task.isCancelled,
-              let data = try? await ImageCache.shared.download(parsed),
-              !Task.isCancelled else { return }
-        // Decode off the render path (UIKit otherwise decodes lazily on first
-        // draw — a scroll hitch per newly visible poster), downsampled to this
-        // view's own pixel budget (a poster card must not decode a full-res
-        // backdrop-sized original).
-        let budget = pixelBudget
-        guard let prepared = try? await ImageCache.shared.preparedImage(data, budget: budget, memoryKey: key) else { return }
+        // One shared slot covers disk lookup, a possible download, bounded
+        // preparation and persistence; waiting cells retain only their URL.
+        guard let prepared = try? await ImageCache.shared.loadImage(for: value, budget: pixelBudget, memoryKey: key) else { return }
         if Task.isCancelled { return }
-        ImageCache.shared.insertData(data, for: value)
         show(prepared, key: key, duration: 0.35)
     }
 

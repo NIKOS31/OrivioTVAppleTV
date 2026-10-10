@@ -252,10 +252,6 @@ targets:
       - OrivioTopShelf
       - path: OrivioTV/Core/AppGroupResolver.swift
         buildPhase: sources
-      - path: "OrivioTV/Assets.xcassets/App Icon & Top Shelf Image.brandassets/Top Shelf Image Wide.imageset/topshelf-wide.png"
-        buildPhase: resources
-      - path: "OrivioTV/Assets.xcassets/App Icon & Top Shelf Image.brandassets/Top Shelf Image Wide.imageset/topshelf-wide@2x.png"
-        buildPhase: resources
     info:
       path: OrivioTopShelf/Info.plist
       properties:

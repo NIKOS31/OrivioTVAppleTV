@@ -10,9 +10,8 @@ import TVServices
 /// Selecting an item deep-links into the app via orivio://meta?type=…&id=…
 /// (handled by DeepLinkService), which opens the title's detail page.
 ///
-/// If the app group isn't available (e.g. a sideload signer that strips the
-/// entitlement), the container URL is nil and the shelf simply stays empty —
-/// the app itself is unaffected.
+/// If the app group isn't available, the bundled nTV banner is presented
+/// without requiring an account or viewing history.
 final class TopShelfProvider: TVTopShelfContentProvider {
 
     /// Mirror of TopShelfExporter.Entry — kept as its own tiny struct so the

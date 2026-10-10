@@ -186,7 +186,7 @@ final class NTVPerformanceTests: XCTestCase {
         task.cancel()
         await gate.release("0"); await gate.release("1")
         let values = await task.value
-        XCTAssertEqual(values.count, 2)
+        XCTAssertTrue(values.isEmpty, "A cancelled sweep cannot publish a partial array with shifted indices.")
         let starts = await gate.started
         XCTAssertEqual(starts.count, 2, "No refill of a cancelled sweep.")
     }

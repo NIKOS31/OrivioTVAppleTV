@@ -2,6 +2,8 @@ import Foundation
 
 /// Runs `work` over `items` with at most `limit` tasks in flight, returning the
 /// results in the ORIGINAL order of `items`.
+/// A cancelled sweep returns no results: a partial compacted array could
+/// otherwise pair later metadata with an earlier item's index at the caller.
 ///
 /// Every addon sweep in the app used to be an unbounded `withTaskGroup` — one
 /// task per addon (or per catalog). That is fine for the ~5 addons a default
@@ -40,6 +42,7 @@ func boundedConcurrentMap<Item: Sendable, Result: Sendable>(
                 next += 1
             }
         }
+        guard !Task.isCancelled else { return [] }
         return results.compactMap { $0 }
     }
 }

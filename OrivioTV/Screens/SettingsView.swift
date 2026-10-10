@@ -476,9 +476,14 @@ struct DetailScaffold<Content: View>: View {
 /// subject and the rail listed them twice.)
 struct AppearanceDetail: View {
     @EnvironmentObject private var theme: ThemeManager
+    @AppStorage("ntv.seasonal.halloween.enabled") private var halloweenEnabled = true
 
     var body: some View {
         DetailScaffold(title: SettingsCategory.appearance.title, subtitle: SettingsCategory.appearance.subtitle) {
+            SettingsGroupCard(title: "Décor saisonnier", subtitle: "De petits ornements en octobre, avec les couleurs habituelles de l’app") {
+                SettingsToggleCard(title: "Décor d’octobre", subtitle: "Citrouille, chauve-souris et détails discrets sur les bords des menus", isOn: $halloweenEnabled)
+                    .accessibilityIdentifier("ntv.settings.halloween")
+            }
             SettingsGroupCard(title: "Couleur d’accent", subtitle: "Couleur des éléments sélectionnés") {
                 ScrollView(.horizontal) {
                     HStack(spacing: OrivioSpacing.md) {

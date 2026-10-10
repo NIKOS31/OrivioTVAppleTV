@@ -301,7 +301,7 @@ final class NTVDesignSmoke: XCTestCase {
     func testTopMenuRemoteRoundTrip() {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-ntvTopMenuDemo"]
+        app.launchArguments = ["-ntvTopMenuDemo", "-ntvHalloweenDemo"]
         app.launch()
         let settings = app.buttons["ntv.navigation.3"]
         XCTAssertTrue(settings.waitForExistence(timeout: 20))

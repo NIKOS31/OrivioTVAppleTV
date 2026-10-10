@@ -136,6 +136,7 @@ struct GlassSidebar: View {
             .frame(maxWidth: .infinity)
             .padding(8)
             .background { ntvTopGlass }
+            .ntvHalloweenDecor(.navigation)
 
             HStack(spacing: 4) {
                 ForEach([AppTab.search, .addons, .settings]) { tab in

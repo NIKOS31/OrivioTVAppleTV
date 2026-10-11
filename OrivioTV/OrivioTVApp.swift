@@ -109,6 +109,11 @@ struct OrivioTVApp: App {
                 // honors its Appearance setting — light, dark, or nil to
                 // follow the TV's own system appearance.
                 .preferredColorScheme(theme.preferredColorScheme)
+                .task {
+                    _ = await Task.detached(priority: .utility) {
+                        NTVSecurePreferences.standard.migrateLegacyPrivateValues()
+                    }.value
+                }
         }
     }
 }

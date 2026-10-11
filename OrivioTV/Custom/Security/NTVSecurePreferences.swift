@@ -47,10 +47,14 @@ struct NTVKeychainStorage: NTVSecretStorage {
 
 /// Preserves legacy preference names and profile scope while moving credentials
 /// to the device-local Keychain. Ordinary settings continue using UserDefaults.
-final class NTVSecurePreferences {
+final class NTVSecurePreferences: @unchecked Sendable {
     static let standard = NTVSecurePreferences(defaults: .standard, secrets: NTVKeychainStorage())
     private let defaults: UserDefaults
     private let secrets: any NTVSecretStorage
+    // Serialize every secret-store operation, including background migration.
+    // Ordinary preferences never take this lock. UserDefaults is thread-safe.
+    private let privateLock = NSRecursiveLock()
+    private var failedLegacyKeys: Set<String> = []
     init(defaults: UserDefaults, secrets: any NTVSecretStorage) {
         self.defaults = defaults
         self.secrets = secrets
@@ -75,20 +79,24 @@ final class NTVSecurePreferences {
     }
     func object(forKey key: String) -> Any? {
         guard Self.isPrivate(key) else { return defaults.object(forKey: key) }
+        privateLock.lock(); defer { privateLock.unlock() }
         guard !defaults.bool(forKey: revocationKey(key)) else { return nil }
         do {
             if let data = try secrets.read(key) {
-                guard let value = try decode(data) else { return nil }
+                guard let value = try decode(data) else { markFailedLegacy(key); return nil }
                 defaults.removeObject(forKey: key)
+                failedLegacyKeys.remove(key)
                 return value
             }
             guard let legacy = defaults.object(forKey: key) else { return nil }
             let data = try encode(legacy)
             try secrets.write(data, key: key)
-            guard try secrets.read(key) == data else { return nil }
+            guard try secrets.read(key) == data else { markFailedLegacy(key); return nil }
             defaults.removeObject(forKey: key)
+            failedLegacyKeys.remove(key)
             return legacy
         } catch {
+            markFailedLegacy(key)
             // Never fall back to plaintext after a secure-storage failure.
             NSLog("[nTV Security] secure storage unavailable")
             return nil
@@ -101,7 +109,12 @@ final class NTVSecurePreferences {
     @discardableResult
     func set(_ value: Any?, forKey key: String) -> Bool {
         guard Self.isPrivate(key) else { defaults.set(value, forKey: key); return true }
+        privateLock.lock(); defer { privateLock.unlock() }
         guard let value else { return removeObject(forKey: key) }
+        // A store that failed to load may save its empty/default fallback.
+        // Preserve the original until a later successful read or explicit reset.
+        guard !failedLegacyKeys.contains(key) || defaults.object(forKey: key) == nil else { return false }
+        if defaults.object(forKey: key) != nil, object(forKey: key) == nil { return false }
         do {
             let data = try encode(value)
             try secrets.write(data, key: key)
@@ -117,10 +130,28 @@ final class NTVSecurePreferences {
     @discardableResult
     func removeObject(forKey key: String) -> Bool {
         guard Self.isPrivate(key) else { defaults.removeObject(forKey: key); return true }
+        privateLock.lock(); defer { privateLock.unlock() }
         // A failed Keychain deletion must never resurrect a signed-out session.
         defaults.set(true, forKey: revocationKey(key))
         defaults.removeObject(forKey: key)
+        failedLegacyKeys.remove(key)
         do { try secrets.remove(key); return true }
         catch { NSLog("[nTV Security] secure deletion pending"); return false }
+    }
+
+    private func markFailedLegacy(_ key: String) {
+        if defaults.object(forKey: key) != nil { failedLegacyKeys.insert(key) }
+    }
+
+    /// Include profiles that are not currently selected. The caller runs this
+    /// on a utility task; locks cover one value at a time, never the whole sweep.
+    @discardableResult
+    func migrateLegacyPrivateValues() -> Int {
+        let keys = defaults.dictionaryRepresentation().keys.filter(Self.isPrivate)
+        var migrated = 0
+        for key in keys {
+            if object(forKey: key) != nil, defaults.object(forKey: key) == nil { migrated += 1 }
+        }
+        return migrated
     }
 }

@@ -192,8 +192,8 @@ struct PerformanceSettingsDetail: View {
                 // then pull the log with scripts/record.sh (or probe.sh).
                 PerfToggleRow(
                     icon: "dot.radiowaves.left.and.right",
-                    title: "Partager les diagnostics sur le réseau local",
-                    subtitle: "Enregistrer les événements de navigation et de lecture et les rendre accessibles sur votre réseau local. Désactivé par défaut.",
+                    title: "Enregistrer les diagnostics sur cette TV",
+                    subtitle: "Conserver les mesures de navigation et de lecture sur cette TV. Aucun accès réseau. Désactivé par défaut.",
                     isOn: Binding(
                         get: { ProbeGate.isEnabled },
                         set: { on in

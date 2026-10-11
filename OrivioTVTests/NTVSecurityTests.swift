@@ -1,8 +1,85 @@
 import XCTest
 import UIKit
+import Network
 @testable import OrivioTV
 
 final class NTVSecurityTests: XCTestCase {
+    @MainActor func testEnablingLocalDiagnosticsDoesNotExposeALANReadout() async {
+        let previous = ProbeGate.isEnabled
+        defer { ProbeGate.set(previous); ColorProbeServer.shared.stop() }
+        ColorProbeServer.shared.stop()
+        ProbeGate.set(true)
+        ColorProbeServer.shared.start()
+        let refused = expectation(description: "Legacy diagnostic listener stays closed")
+        let connection = NWConnection(host: "127.0.0.1", port: 8123, using: .tcp)
+        defer { connection.cancel() }
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                XCTFail("Diagnostics must not expose an unauthenticated network endpoint")
+                refused.fulfill()
+            case .failed:
+                refused.fulfill()
+            default: break
+            }
+        }
+        connection.start(queue: DispatchQueue(label: "ntv.security.closed-listener"))
+        await fulfillment(of: [refused], timeout: 5)
+    }
+    func testInactiveProfileLegacyValuesMigrateWithoutMovingOrdinaryPreferences() {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let secrets = MemorySecretStorage()
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: secrets)
+        defaults.set("inactive-credential-fixture", forKey: "orivio.stremio.authKey.v1.p3")
+        defaults.set(Data("inactive-addon-fixture".utf8), forKey: "orivio.addons.v1.p2")
+        defaults.set("dark", forKey: "appearance")
+        XCTAssertEqual(prefs.migrateLegacyPrivateValues(), 2)
+        XCTAssertEqual(prefs.string(forKey: "orivio.stremio.authKey.v1.p3"), "inactive-credential-fixture")
+        XCTAssertEqual(prefs.data(forKey: "orivio.addons.v1.p2"), Data("inactive-addon-fixture".utf8))
+        XCTAssertNil(defaults.object(forKey: "orivio.addons.v1.p2"))
+        XCTAssertNil(defaults.object(forKey: "orivio.stremio.authKey.v1.p3"))
+        XCTAssertEqual(defaults.string(forKey: "appearance"), "dark")
+        XCTAssertNil(secrets.values["appearance"])
+        XCTAssertEqual(prefs.migrateLegacyPrivateValues(), 0)
+    }
+
+    func testFailedLegacyLoadCannotBeOverwrittenByAutomaticEmptySave() {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let secrets = MemorySecretStorage(); secrets.failWrite = true
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: secrets)
+        let key = "orivio.addons.v1.p2", original = Data("configured-addon-fixture".utf8)
+        defaults.set(original, forKey: key)
+        XCTAssertNil(prefs.data(forKey: key))
+        secrets.failWrite = false
+        XCTAssertFalse(prefs.set(Data(), forKey: key), "An automatic fallback save must not erase a failed legacy load")
+        XCTAssertEqual(defaults.data(forKey: key), original)
+        XCTAssertEqual(prefs.data(forKey: key), original)
+        XCTAssertTrue(prefs.set(Data("new-configuration".utf8), forKey: key))
+        XCTAssertEqual(prefs.data(forKey: key), Data("new-configuration".utf8))
+    }
+
+    func testConcurrentMigrationCannotOverwriteANewerConfiguredValue() {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let storage = GatedMigrationStorage()
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: storage)
+        let key = "orivio.addons.v1.p2"
+        defaults.set(Data("old-config".utf8), forKey: key)
+        let migrated = expectation(description: "migration finished")
+        let saved = expectation(description: "new setting saved")
+        DispatchQueue.global().async {
+            _ = prefs.migrateLegacyPrivateValues()
+            migrated.fulfill()
+        }
+        XCTAssertEqual(storage.firstWriteStarted.wait(timeout: .now() + 3), .success)
+        DispatchQueue.global().async {
+            XCTAssertTrue(prefs.set(Data("new-config".utf8), forKey: key))
+            saved.fulfill()
+        }
+        storage.releaseFirstWrite.signal()
+        wait(for: [migrated, saved], timeout: 5)
+        XCTAssertEqual(prefs.data(forKey: key), Data("new-config".utf8))
+        XCTAssertNil(defaults.data(forKey: key))
+    }
     func testConfiguredAccessStoresMigrateIntoSecureStorage() throws {
         let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
         let secrets = MemorySecretStorage()
@@ -618,6 +695,26 @@ final class NTVSecurityTests: XCTestCase {
         configuration.protocolClasses = [AccountRequestGate.self]
         return URLSession(configuration: configuration)
     }
+}
+
+private final class GatedMigrationStorage: NTVSecretStorage {
+    let firstWriteStarted = DispatchSemaphore(value: 0)
+    let releaseFirstWrite = DispatchSemaphore(value: 0)
+    private var values: [String: Data] = [:]
+    private var firstWrite = true
+    // NTVSecurePreferences serializes access to this fixture just like Keychain.
+    func read(_ key: String) throws -> Data? { values[key] }
+    func write(_ data: Data, key: String) throws {
+        if firstWrite {
+            firstWrite = false
+            firstWriteStarted.signal()
+            guard releaseFirstWrite.wait(timeout: .now() + 5) == .success else {
+                throw NTVKeychainStorage.StorageError.unavailable
+            }
+        }
+        values[key] = data
+    }
+    func remove(_ key: String) throws { values[key] = nil }
 }
 
 private final class MemorySecretStorage: NTVSecretStorage {

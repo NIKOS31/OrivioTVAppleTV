@@ -596,7 +596,10 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.movie.backdrop",
                                       contentID: String(initialMovieID.dropFirst("ntv.poster.movie.".count))),
                       "Returning left must restore this movie's backdrop, never a stale pending title.")
-        let selectedPoster = app.buttons[focusedMovie.identifier]
+        // The same title can occur in several category rows. Only one button
+        // holds focus, so this query identifies the selected copy unambiguously.
+        let selectedPoster = app.buttons.matching(NSPredicate(
+            format: "identifier == %@ AND hasFocus == true", focusedMovie.identifier)).firstMatch
         capture("ntv-films-real-catalog")
         remote.press(.select)
         XCTAssertTrue(app.descendants(matching: .any)["ntv.detail.screen"].firstMatch.waitForExistence(timeout: 30),
@@ -650,7 +653,7 @@ final class NTVDesignSmoke: XCTestCase {
         capture("ntv-detail-return-from-sources")
         remote.press(.menu)
         XCTAssertTrue(app.staticTexts["ntv.catalog.movie.heading"].waitForExistence(timeout: 15))
-        XCTAssertTrue(selectedPoster.exists, "Returning from details should retain the selected movie.")
+        XCTAssertTrue(selectedPoster.waitForExistence(timeout: 8), "Returning from details should restore focus to the selected movie.")
         // Back from a later poster first returns to the grid's start; Back
         // from that start then opens the rail, matching the upstream behavior.
         for _ in 0..<3 {

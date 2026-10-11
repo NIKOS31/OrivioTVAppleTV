@@ -43,7 +43,7 @@ private struct NTVHalloweenModifier: ViewModifier {
                 content.overlay(alignment: .topTrailing) {
                     NTVWeb().stroke(.white.opacity(0.3), lineWidth: 1.2)
                         .frame(width: 76, height: 76).rotationEffect(.degrees(90))
-                        .padding(8).allowsHitTesting(false).accessibilityHidden(true)
+                        .padding(.top, 96).padding(.trailing, 8).allowsHitTesting(false).accessibilityHidden(true)
                 }.overlay(alignment: .bottomTrailing) {
                     NTVGhost().frame(width: 34, height: 42).padding(18)
                         .allowsHitTesting(false).accessibilityHidden(true)
@@ -52,7 +52,7 @@ private struct NTVHalloweenModifier: ViewModifier {
                 content.overlay(alignment: .topTrailing) {
                     NTVWeb().stroke(.white.opacity(0.24), lineWidth: 1.1)
                         .frame(width: 96, height: 96).rotationEffect(.degrees(90))
-                        .padding(.top, 116).padding(.trailing, 18)
+                        .padding(.top, 216).padding(.trailing, 18)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }.overlay(alignment: .bottomLeading) {
                     HStack(spacing: 18) {

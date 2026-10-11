@@ -35,7 +35,16 @@ struct NTVCatalogSource: Identifiable {
             }
             try Task.checkCancellation()
             var seen = Set<String>()
-            items = Array(page.lazy.filter { seen.insert($0.id).inserted }.prefix(Self.previews))
+            // A lazy filter must be pure: Collection can evaluate its predicate
+            // repeatedly while finding indices. Mutating `seen` inside it made
+            // its bounds inconsistent and crashed both live rows and tests.
+            var preview: [MetaItem] = []
+            preview.reserveCapacity(Self.previews)
+            for item in page where seen.insert(item.id).inserted {
+                preview.append(item)
+                if preview.count == Self.previews { break }
+            }
+            items = preview
             loadedAt = Date(); failed = false
         } catch is CancellationError {} catch { failed = true }
     }

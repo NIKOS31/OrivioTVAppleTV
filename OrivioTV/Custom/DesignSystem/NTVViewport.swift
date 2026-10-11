@@ -72,6 +72,9 @@ struct NTVCanvasBackdrop: View {
         }
         .ignoresSafeArea()
         .ntvHalloweenDecor(.stage)
+        // The edge ornament uses the screen edge, not the inset content area.
+        // It cannot drift onto a shelf's See All control as that shelf scrolls.
+        .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Fond plein écran")

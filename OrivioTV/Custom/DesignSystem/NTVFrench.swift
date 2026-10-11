@@ -24,7 +24,10 @@ enum NTVFrench {
             "Presets":"Suggestions", "Discover":"Découvrir", "Trakt List":"Liste Trakt",
             "Company / Person":"Studio ou personne", "Network / List / Collection":"Chaîne, liste ou collection",
             "Streaming Services":"Plateformes", "Major Studios":"Grands studios",
-            "Trending & Top Rated":"Tendances et meilleures notes", "Dark":"Sombre", "Bright":"Clair"
+            "Trending & Top Rated":"Tendances et meilleures notes", "Dark":"Sombre", "Bright":"Clair",
+            "Sex & Nudity":"Sexualité et nudité", "Violence & Gore":"Violence",
+            "Profanity":"Langage", "Alcohol & Drugs":"Alcool et drogues", "Frightening":"Scènes effrayantes",
+            "Mild":"Léger", "Moderate":"Modéré", "Severe":"Fort"
         ]
         return names[value] ?? value
     }

@@ -55,8 +55,8 @@ private struct NTVHalloweenModifier: ViewModifier {
             case .stage:
                 content.overlay(alignment: .topTrailing) {
                     NTVWeb().stroke(.white.opacity(0.24), lineWidth: 1.1)
-                        .frame(width: 96, height: 96).rotationEffect(.degrees(90))
-                        .padding(.top, 216).padding(.trailing, 18)
+                        .frame(width: 36, height: 36).rotationEffect(.degrees(90))
+                        .padding(.top, 8).padding(.trailing, 8)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }

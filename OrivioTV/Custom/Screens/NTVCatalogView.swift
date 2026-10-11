@@ -142,7 +142,10 @@ struct NTVCatalogView: View {
                             }
                         }.padding(.top, 26).padding(.bottom, 100)
                     }
-                    .scrollClipDisabled().disabled(categoriesOpen)
+                    // Keep vertical content inside its viewport: a selected
+                    // category must not paint its old spotlight over the bar.
+                    // Rows retain their own horizontal focus-lift padding.
+                    .disabled(categoriesOpen)
                     if categoriesOpen {
                         categoryPanel(proxy).padding(.leading, NTVViewport.horizontalInset).padding(.vertical, 20)
                     }

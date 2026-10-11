@@ -1167,7 +1167,7 @@ struct DetailView: View {
     private var primaryMetaSegments: [String] {
         var segments: [String] = []
         if let genres = viewModel.meta.genres, !genres.isEmpty {
-            segments.append(genres.prefix(3).joined(separator: " • "))
+            segments.append(genres.prefix(3).map { isNTV ? NTVFrench.genre($0) : $0 }.joined(separator: " • "))
         }
         if let contentRating = viewModel.contentRating {
             segments.append(contentRating)
@@ -1993,19 +1993,20 @@ struct SeasonChip: View {
 private struct ParentalGuideRow: View {
     @EnvironmentObject private var theme: ThemeManager
     let entries: [ParentalGuideEntry]
+    private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
 
     var body: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.xs) {
-            Text("PARENTAL GUIDE")
+            Text(isNTV ? "GUIDE PARENTAL" : "PARENTAL GUIDE")
                 .font(.system(size: 17, weight: .heavy))
                 .foregroundStyle(theme.palette.textTertiary)
             HStack(spacing: OrivioSpacing.sm) {
                 ForEach(entries.sorted { $0.severity.rank > $1.severity.rank }) { entry in
                     HStack(spacing: 6) {
-                        Text(entry.label)
+                        Text(isNTV ? NTVFrench.label(entry.label) : entry.label)
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(theme.palette.textPrimary)
-                        Text(entry.severity.display)
+                        Text(isNTV ? NTVFrench.label(entry.severity.display) : entry.severity.display)
                             .font(.system(size: 16, weight: .bold))
                             .foregroundStyle(tint(entry.severity))
                     }

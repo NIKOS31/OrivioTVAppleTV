@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Static ornaments sit beside page headings, away from navigation controls.
 /// The preference is local to this installation; October is the only active month.
-enum NTVHalloweenPlacement: Equatable { case heading }
+enum NTVHalloweenPlacement: Equatable { case heading, row, panel, stage }
 
 private struct NTVHalloweenModifier: ViewModifier {
     @AppStorage("ntv.seasonal.halloween.enabled") private var enabled = true
@@ -15,21 +15,54 @@ private struct NTVHalloweenModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content
-            .overlay(alignment: .trailing) {
-                if visible && placement == .heading {
-                    HStack(alignment: .bottom, spacing: 10) {
-                        NTVPumpkin().frame(width: 24, height: 20)
-                        NTVBat().fill(.white.opacity(0.32)).frame(width: 30, height: 16)
-                    }
-                    .offset(x: 76, y: 0)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
-            }
+        decorated(content)
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { month = Calendar.current.component(.month, from: Date()) }
             }
+    }
+
+    @ViewBuilder private func decorated(_ content: Content) -> some View {
+        if !visible { content }
+        else {
+            switch placement {
+            case .heading:
+                HStack(alignment: .center, spacing: 18) {
+                    content
+                    HStack(spacing: 12) {
+                        NTVPumpkin().frame(width: 34, height: 28)
+                        NTVBat().fill(.white.opacity(0.5)).frame(width: 38, height: 22)
+                    }.allowsHitTesting(false).accessibilityHidden(true)
+                }
+            case .row:
+                content.overlay(alignment: .trailing) {
+                    NTVCandy().fill(Color(red: 0.68, green: 0.48, blue: 0.30).opacity(0.65))
+                        .frame(width: 28, height: 15).offset(x: 42)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            case .panel:
+                content.overlay(alignment: .topTrailing) {
+                    NTVWeb().stroke(.white.opacity(0.3), lineWidth: 1.2)
+                        .frame(width: 76, height: 76).rotationEffect(.degrees(90))
+                        .padding(8).allowsHitTesting(false).accessibilityHidden(true)
+                }.overlay(alignment: .bottomTrailing) {
+                    NTVGhost().frame(width: 34, height: 42).padding(18)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            case .stage:
+                content.overlay(alignment: .topTrailing) {
+                    NTVWeb().stroke(.white.opacity(0.24), lineWidth: 1.1)
+                        .frame(width: 96, height: 96).rotationEffect(.degrees(90))
+                        .padding(.top, 116).padding(.trailing, 18)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }.overlay(alignment: .bottomLeading) {
+                    HStack(spacing: 18) {
+                        NTVGhost().frame(width: 26, height: 34)
+                        NTVPumpkin().frame(width: 32, height: 26)
+                    }.padding(.leading, 16).padding(.bottom, 12)
+                        .opacity(0.75).allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
+        }
     }
 }
 

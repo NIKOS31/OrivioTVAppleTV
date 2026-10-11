@@ -1,93 +1,20 @@
 import TVServices
 
-/// Top Shelf: shows the app's Continue Watching row on the tvOS home screen
-/// when OrivioTV sits in the dock's top row — the tvOS equivalent of Android
-/// TV's "Watch Next" channel.
-///
-/// Data flows one way: the app exports a small JSON snapshot of the Continue
-/// Watching list into the shared app-group container every time progress
-/// changes (see TopShelfExporter); this extension just reads and renders it.
-/// Selecting an item deep-links into the app via orivio://meta?type=…&id=…
-/// (handled by DeepLinkService), which opens the title's detail page.
-///
-/// If the app group isn't available, the bundled nTV banner is presented
-/// without requiring an account or viewing history.
+/// The Dock always presents the supplied n, independent of shared-container
+/// entitlements, viewing history and remote images. No account data is needed.
 final class TopShelfProvider: TVTopShelfContentProvider {
-
-    /// Mirror of TopShelfExporter.Entry — kept as its own tiny struct so the
-    /// extension target doesn't need to compile any app sources.
-    private struct Entry: Codable {
-        let id: String
-        let type: String
-        let title: String
-        let subtitle: String?
-        let imageURL: String?
-        var progress: Double? = nil
-    }
-
     override func loadTopShelfContent(completionHandler: @escaping (TVTopShelfContent?) -> Void) {
-        completionHandler(Self.content())
-    }
-
-    private static func content() -> TVTopShelfContent? {
-        // AppGroupResolver is shared with the app target (see project.yml) so
-        // both sides resolve the SAME signer-assigned group at runtime.
-        guard let file = AppGroupResolver.sharedFile("topshelf.json") else { return brandContent() }
-        guard let data = try? Data(contentsOf: file),
-              let entries = try? JSONDecoder().decode([Entry].self, from: data),
-              !entries.isEmpty
-        else { return brandContent() }
-
-        // Written by the app beside the snapshot — see TopShelfExporter.
-        let scheme = AppGroupResolver.sharedFile("topshelf-scheme.txt")
-            .flatMap { try? String(contentsOf: $0, encoding: .utf8) }?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty ?? "orivio"
-
-        let items = entries.map { entry -> TVTopShelfSectionedItem in
-            let item = TVTopShelfSectionedItem(identifier: entry.id)
-            item.title = entry.subtitle.map { "\(entry.title) — \($0)" } ?? entry.title
-            item.imageShape = .hdtv   // 16:9, matching the in-app CW cards
-            // The bar across the bottom of the card — the whole point of a
-            // Continue Watching shelf is seeing how far in you are.
-            if let progress = entry.progress { item.playbackProgress = progress }
-            if let urlString = entry.imageURL, let url = URL(string: urlString) {
-                item.setImageURL(url, for: [.screenScale1x, .screenScale2x])
-            }
-            var comps = URLComponents()
-            comps.scheme = scheme
-            comps.host = "meta"
-            comps.queryItems = [
-                URLQueryItem(name: "type", value: entry.type),
-                URLQueryItem(name: "id", value: entry.id)
-            ]
-            if let url = comps.url {
-                item.displayAction = TVTopShelfAction(url: url)
-                item.playAction = TVTopShelfAction(url: url)
-            }
-            return item
+        guard let image = Bundle.main.url(forResource: "topshelf-full", withExtension: "png") else {
+            completionHandler(nil); return
         }
-
-        let section = TVTopShelfItemCollection(items: items)
-        section.title = "Continuer à regarder"
-        return TVTopShelfSectionedContent(sections: [section])
-    }
-
-    /// Branding needs no shared container, account or viewing history. Free
-    /// signing can remove the app-group entitlement, but the extension can
-    /// still present this bundled banner when the extension itself is retained.
-    private static func brandContent() -> TVTopShelfContent? {
-        guard let image = Bundle.main.url(forResource: "topshelf-wide", withExtension: "png") else { return nil }
-        let item = TVTopShelfItem(identifier: "ntv.brand")
+        let item = TVTopShelfCarouselItem(identifier: "ntv.brand.fullscreen.v1")
+        item.title = "nTV"
         item.setImageURL(image, for: [.screenScale1x, .screenScale2x])
-        if let retina = Bundle.main.url(forResource: "topshelf-wide@2x", withExtension: "png") {
-            item.setImageURL(retina, for: [.screenScale2x])
+        // The main app's callback scheme follows its signed bundle identity.
+        if let identifier = Bundle.main.bundleIdentifier, identifier.hasSuffix(".topshelf"),
+           let url = URL(string: String(identifier.dropLast(".topshelf".count)) + "://home") {
+            item.displayAction = TVTopShelfAction(url: url)
         }
-        return TVTopShelfInsetContent(items: [item])
+        completionHandler(TVTopShelfCarouselContent(style: .actions, items: [item]))
     }
-}
-
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

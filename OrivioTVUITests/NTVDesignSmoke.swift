@@ -566,7 +566,7 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.movie.backdrop",
                                       contentID: String(focusedMovie.identifier.dropFirst("ntv.poster.movie.".count))))
         remote.press(.left)
-        XCTAssertTrue(focused(app.buttons[initialMovieID], timeout: 5))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier == %@ AND hasFocus == true", initialMovieID)).firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.movie.backdrop",
                                       contentID: String(initialMovieID.dropFirst("ntv.poster.movie.".count))),
                       "Returning left must restore this movie's backdrop, never a stale pending title.")
@@ -575,12 +575,19 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.select)
         XCTAssertTrue(app.descendants(matching: .any)["ntv.detail.screen"].firstMatch.waitForExistence(timeout: 30),
                       "Selecting a poster must open the existing detail screen.")
+        let artwork = app.descendants(matching: .any)["ntv.detail.artwork"].firstMatch
+        XCTAssertTrue(artwork.waitForExistence(timeout: 5))
+        let firstArtworkFrame = artwork.frame
+        XCTAssertEqual(firstArtworkFrame.height, app.windows.firstMatch.frame.height, accuracy: 2,
+                       "A detail must have a full-screen image immediately, before late metadata.")
+        capture("ntv-detail-first-viewport")
         capture("ntv-film-detail")
         let play = app.buttons["ntv.detail.play"]
         XCTAssertTrue(focused(play, timeout: 8), "The existing Play control must keep opening focus.")
         XCTAssertEqual(play.label, "Regarder")
         let openingPlayFrame = play.frame
         Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(artwork.frame, firstArtworkFrame, "The hidden top menu must never resize the detail background.")
         XCTAssertEqual(play.frame.minY, openingPlayFrame.minY, accuracy: 2,
                        "Late metadata must not move the focused action or recenter the page.")
         capture("ntv-detail-settled")

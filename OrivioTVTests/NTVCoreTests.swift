@@ -3,6 +3,35 @@ import XCTest
 
 final class NTVCoreTests: XCTestCase {
     @MainActor
+    func testCatalogShelvesReuseTheirStateAcrossVisitsAndSeparateProfiles() throws {
+        let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"fixture","name":"Fixture","version":"1","types":["movie","series"],"resources":["catalog"],"catalogs":[{"type":"movie","id":"new","name":"Latest"},{"type":"series","id":"new"},{"type":"movie","id":"search","extraRequired":["search"]}]}"#.utf8))
+        let addon = InstalledAddon(manifestURL: "https://example.invalid/manifest.json", manifest: manifest)
+        let model = NTVCatalogBrowserModel()
+        model.configure(addons: [addon], type: "movie", scope: "1")
+        XCTAssertEqual(model.sources.count, 1, "Search-only catalogs and other media types must not create shelves.")
+        let source = try XCTUnwrap(model.sources.first), shelf = model.shelf(source)
+        model.configure(addons: [addon], type: "movie", scope: "1")
+        XCTAssertTrue(shelf === model.shelf(source), "Returning from a detail must retain loaded catalog state.")
+        model.configure(addons: [addon], type: "movie", scope: "2")
+        XCTAssertFalse(shelf === model.shelf(source), "A different profile must not inherit the former profile's cache.")
+    }
+
+    @MainActor
+    func testCatalogPreviewIsBoundedDeduplicatedAndDoesNotReloadOnReturn() async throws {
+        let addon = try fixtureAddon(), source = NTVCatalogSource(addon: addon, catalog: try catalog(type: "movie"))
+        let fixture = CatalogPreviewFixture()
+        let shelf = NTVCatalogShelfModel(source: source, scope: UUID().uuidString) { _ in
+            await fixture.page()
+        }
+        XCTAssertTrue(shelf.items.isEmpty, "Constructing an offscreen row must not request its catalog.")
+        await shelf.load(); await shelf.load()
+        let calls = await fixture.calls
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(shelf.items.count, 24)
+        XCTAssertEqual(Set(shelf.items.map(\.id)).count, 24)
+        XCTAssertFalse(shelf.failed)
+    }
+    @MainActor
     func testDetailOpeningArtworkSurvivesLateProviderMetadata() {
         let model = DetailViewModel(item: MetaItem(id: "fixture", type: "movie", name: "Opening", poster: "https://example.invalid/poster.jpg", background: "https://example.invalid/catalog.jpg", logo: "https://example.invalid/first-logo.png"))
         model.meta = MetaItem(id: "fixture", type: "movie", name: "Enriched", poster: "https://example.invalid/new-poster.jpg", background: "https://example.invalid/alternate-crop.jpg", logo: "https://example.invalid/second-logo.png")
@@ -223,6 +252,16 @@ final class NTVCoreTests: XCTestCase {
 private actor TVCategoryTestGate {
     private(set) var oldRequestStarted = false
     func started(_ genre: String?) { if genre == nil { oldRequestStarted = true } }
+}
+
+private actor CatalogPreviewFixture {
+    private(set) var calls = 0
+    func page() -> [MetaItem] {
+        calls += 1
+        return (0..<200).flatMap { index in
+            [MetaItem(id: String(index), type: "movie", name: "Fixture"), MetaItem(id: String(index), type: "movie", name: "Duplicate")]
+        }
+    }
 }
 private actor TVPageRetryFixture {
     private(set) var offsets: [Int] = []

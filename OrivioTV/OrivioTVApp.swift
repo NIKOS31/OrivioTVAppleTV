@@ -253,8 +253,8 @@ struct RootView: View {
     @State private var liveTVPath = NavigationPath()
     @State private var moviesPath = NavigationPath()
     @State private var seriesPath = NavigationPath()
-    @StateObject private var moviesViewModel = DiscoverViewModel()
-    @StateObject private var seriesViewModel = DiscoverViewModel()
+    @StateObject private var moviesViewModel = NTVCatalogBrowserModel()
+    @StateObject private var seriesViewModel = NTVCatalogBrowserModel()
     // Persisted here (not inside HomeView) so switching tabs and coming back
     // doesn't rebuild it and re-trigger the catalog load / loading spinner.
     @StateObject private var homeViewModel = HomeViewModel()
@@ -1299,11 +1299,8 @@ struct RootView: View {
                 // is text rather than bleed.
                 .padding(.leading, !navIsTop && showSidebar && selectedTab != 0
                          ? GlassSidebar.collapsedWidth : 0)
-                // Reserve physical space for nTV's top menu before offering a
-                // viewport to each NavigationStack. Safe-area-only padding was
-                // not honoured consistently by the inherited full-screen pages.
-                .padding(.top, navIsTop && showSidebar && theme.palette.id == NTVDesign.palette.id
-                         ? NTVDesign.topChromeClearance : 0)
+                // nTV root pages reserve menu space inside their stack. The
+                // stack viewport stays constant while a detail is pushed.
                 .safeAreaPadding(.top, navIsTop && showSidebar && selectedTab != 0
                                  && theme.palette.id != NTVDesign.palette.id
                                  ? GlassSidebar.topBarClearance : 0)
@@ -1479,24 +1476,28 @@ struct RootView: View {
         case 1:
             NavigationStack(path: $searchPath) {
                 searchRoot
+                    .modifier(NTVPageTopClearance())
                     .onExitCommand { focusSidebar(1) }
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $searchPath) }
             }
         case 2:
             NavigationStack(path: $libraryPath) {
                 libraryRoot
+                    .modifier(NTVPageTopClearance())
                     .onExitCommand { focusSidebar(2) }
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $libraryPath) }
             }
         case 3:
             NavigationStack {
                 ATVSettingsView(onOpenProfiles: { profileGateCancellable = true; showProfileGate = true })
+                    .modifier(NTVPageTopClearance())
                     .onExitCommand { focusSidebar(3) }
                     .probeScreen("Settings")
             }
         case 4:
             NavigationStack(path: $liveTVPath) {
                 liveTVRoot
+                    .modifier(NTVPageTopClearance())
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $liveTVPath) }
             }
         case 5:
@@ -1504,8 +1505,10 @@ struct RootView: View {
                 NTVCatalogView(viewModel: moviesViewModel, mediaType: "movie", title: "Films",
                     onSelect: { moviesPath.append(Route.detail($0)) },
                     onPlayManually: { moviesPath.append(Route.streamsManual($0, $1)) },
+                    onSeeAll: { moviesPath.append(Route.catalogSeeAll(addon: $0, catalog: $1, title: $2)) },
                     onBackAtRoot: { focusSidebar(5) },
                     onOpenSettings: { selectTab(7) })
+                    .modifier(NTVPageTopClearance())
                     .probeScreen("Movies")
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $moviesPath) }
             }
@@ -1514,19 +1517,23 @@ struct RootView: View {
                 NTVCatalogView(viewModel: seriesViewModel, mediaType: "series", title: "Séries",
                     onSelect: { seriesPath.append(Route.detail($0)) },
                     onPlayManually: { seriesPath.append(Route.streamsManual($0, $1)) },
+                    onSeeAll: { seriesPath.append(Route.catalogSeeAll(addon: $0, catalog: $1, title: $2)) },
                     onBackAtRoot: { focusSidebar(6) },
                     onOpenSettings: { selectTab(7) })
+                    .modifier(NTVPageTopClearance())
                     .probeScreen("Series")
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $seriesPath) }
             }
         case 7:
             NavigationStack {
                 NTVAddonsView(onBackAtRoot: { focusSidebar(7) })
+                    .modifier(NTVPageTopClearance())
                     .probeScreen("Addons")
             }
         default:
             NavigationStack(path: $homePath) {
                 homeRoot
+                    .modifier(NTVPageTopClearance())
                     .onExitCommand {
                         // Ignore a Menu that lands right after popping back from
                         // a pushed screen — tvOS sometimes delivers a lingering

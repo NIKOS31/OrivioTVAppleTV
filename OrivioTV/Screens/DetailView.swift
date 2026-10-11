@@ -510,6 +510,7 @@ struct DetailView: View {
                     .onTapGesture { exitTrailerFullscreen() }
             }
         }
+        .toolbar(isNTV ? .hidden : .automatic, for: .navigationBar)
         // Arm the idle → full-screen countdown only while the viewer is resting
         // on the SYNOPSIS — never while focus is on the action row.
         //
@@ -659,6 +660,9 @@ struct DetailView: View {
                             maxPixels: PerformanceProfile.backdropPixelCap)
                     .allowsHitTesting(false)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Fond de la fiche")
+                    .accessibilityIdentifier("ntv.detail.artwork")
                 }
                 // MOUNTED ALWAYS, revealed by opacity — never inserted into
                 // the tree while the page is on screen. Inserting a
@@ -679,6 +683,7 @@ struct DetailView: View {
             }
         }
         .ignoresSafeArea()
+        .accessibilityIdentifier("ntv.detail.viewport")
     }
 
     /// Changes when the delay setting or the first trailer changes, so the

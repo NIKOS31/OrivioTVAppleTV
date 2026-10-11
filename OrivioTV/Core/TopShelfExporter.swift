@@ -1,4 +1,5 @@
 import Foundation
+import TVServices
 
 /// Writes the Continue Watching list into the shared app-group container so
 /// the Top Shelf extension can render it on the tvOS home screen. Called from
@@ -85,36 +86,15 @@ enum TopShelfExporter {
         await TopShelfWriter.shared.write(entries, sequence: sequence)
     }
 
-    /// Persist to the shared container. Safe to call from any thread.
+    /// Branding uses no viewing history or remote URLs. Remove the obsolete
+    /// snapshot once; repeated progress saves need no Top Shelf disk writes.
     static func write(_ entries: [Entry]) {
-        guard let file = AppGroupResolver.sharedFile("topshelf.json") else {
-            NSLog("[TopShelf] no shared container — app group unavailable")
-            return
+        for name in ["topshelf.json", "topshelf-scheme.txt"] {
+            if let file = AppGroupResolver.sharedFile(name) { try? FileManager.default.removeItem(at: file) }
         }
-        // A locked profile writes an EMPTY shelf rather than skipping the
-        // write. Skipping would leave whatever the previous profile exported
-        // sitting on the home screen, which is the leak being closed.
-        let payload = activeProfileIsLocked ? [] : entries
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        // Reported, not swallowed: a `try?` here is what let the unwritable
-        // container root go unnoticed for as long as it did.
-        do {
-            try data.write(to: file, options: .atomic)
-        } catch {
-            NSLog("[TopShelf] snapshot write failed at %@: %@",
-                  file.path, String(describing: error))
-        }
-        // The scheme the extension must deep-link on, published by the ONE
-        // side that knows it for certain: `orivio` is claimed by every other
-        // sideload of this app on the box, so a card opened on the shelf could
-        // land in one of those instead of here (the same collision that sent
-        // Infuse's callback to NuvioTVOS). The extension cannot derive it —
-        // its own bundle id is not what the app registered — so it is written
-        // next to the snapshot.
-        if let schemeFile = AppGroupResolver.sharedFile("topshelf-scheme.txt") {
-            try? Data(AppCallbackScheme.value.utf8).write(to: schemeFile, options: .atomic)
-        }
+        TVTopShelfContentProvider.topShelfContentDidChange()
     }
+
 }
 
 /// Serialises Top Shelf snapshot writes and enforces their ticket order.
@@ -123,7 +103,7 @@ private actor TopShelfWriter {
     private var lastSequence: UInt64 = 0
 
     func write(_ entries: [TopShelfExporter.Entry], sequence: UInt64) {
-        guard sequence > lastSequence else { return }
+        guard lastSequence == 0 else { return }
         lastSequence = sequence
         TopShelfExporter.write(entries)
     }

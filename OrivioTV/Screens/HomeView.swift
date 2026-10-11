@@ -2381,6 +2381,7 @@ struct HomeView: View {
     private func catalogHeader(_ row: HomeRow) -> some View {
         HStack(alignment: .firstTextBaseline) {
             RowHeader(title: row.title)
+                .ntvHalloweenDecor(.row)
             if let addon = row.addon, let catalog = row.catalog {
                 Spacer()
                 Button {
@@ -2494,7 +2495,7 @@ struct HomeView: View {
 /// only this row (not all of Home) and the row can implement Back navigation:
 /// Back while scrolled into the row jumps to the first card; Back on the first
 /// card bubbles up (`onBackAtStart`) to open the sidebar / focus the tab bar.
-private struct HomePosterRow: View {
+struct HomePosterRow: View {
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var homeCatalogSettings: HomeCatalogSettingsStore
     let row: HomeRow
@@ -2504,6 +2505,8 @@ private struct HomePosterRow: View {
     let onPlayManually: (MetaItem, MetaVideo?) -> Void
     let onSeeAll: (InstalledAddon, ManifestCatalog, String) -> Void
     let onBackAtStart: () -> Void
+
+    var accessibilityPrefix = "ntv.home.poster"
 
     @FocusState private var focusedID: String?
 
@@ -2531,7 +2534,8 @@ private struct HomePosterRow: View {
                                 showLabel: homeCatalogSettings.showPosterLabels,
                                 hero: hero,
                                 onSelect: onSelect,
-                                onPlayManually: onPlayManually
+                                onPlayManually: onPlayManually,
+                                accessibilityPrefix: accessibilityPrefix
                             )
                             .equatable()
                             .focused($focusedID, equals: item.id)
@@ -2639,6 +2643,7 @@ private struct HomePosterCell: View, Equatable {
     let hero: HeroFocus
     let onSelect: (MetaItem) -> Void
     let onPlayManually: (MetaItem, MetaVideo?) -> Void
+    let accessibilityPrefix: String
     @State private var focused = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -2646,6 +2651,7 @@ private struct HomePosterCell: View, Equatable {
             && lhs.useLandscape == rhs.useLandscape
             && lhs.captionWidth == rhs.captionWidth
             && lhs.showLabel == rhs.showLabel
+            && lhs.accessibilityPrefix == rhs.accessibilityPrefix
     }
 
     var body: some View {
@@ -2686,7 +2692,7 @@ private struct HomePosterCell: View, Equatable {
             .holdProbe("poster \(item.name)", enabled: PerformanceSettingsStore.shared.settings.showHoldProbe)
             .posterHoldMenu(item) { onSelect(item) }
             .onPlayPauseCommand { onPlayManually(item, nil) }
-            .accessibilityIdentifier("ntv.home.poster.\(item.type).\(item.id)")
+            .accessibilityIdentifier("\(accessibilityPrefix).\(item.type).\(item.id)")
 
             if showLabel {
                 ATVCardCaption(

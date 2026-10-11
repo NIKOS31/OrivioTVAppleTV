@@ -19,6 +19,18 @@ struct NTVFullWidthViewport: ViewModifier {
     }
 }
 
+/// Reserve menu clearance on root pages, never on the NavigationStack itself.
+/// A pushed detail gets the same full-screen viewport from its first frame;
+/// removing the menu must not resize its image during the push transition.
+struct NTVPageTopClearance: ViewModifier {
+    @EnvironmentObject private var theme: ThemeManager
+    @Environment(\.navigationIsTop) private var navigationIsTop
+    func body(content: Content) -> some View {
+        content.padding(.top, navigationIsTop && theme.palette.id == NTVDesign.palette.id
+                        ? NTVDesign.topChromeClearance : 0)
+    }
+}
+
 /// The root owns this object without observing its artwork. Only the canvas
 /// redraws when focus changes, preserving the catalog rows' rendering policy.
 @MainActor final class NTVBackdropCanvas: ObservableObject {
@@ -56,6 +68,7 @@ struct NTVCanvasBackdrop: View {
             }
         }
         .ignoresSafeArea()
+        .ntvHalloweenDecor(.stage)
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Fond plein écran")

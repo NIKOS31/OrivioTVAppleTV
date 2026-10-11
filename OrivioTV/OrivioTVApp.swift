@@ -1388,6 +1388,13 @@ struct RootView: View {
                         // Out of the rail and into the content: Right off the
                         // edge rail, Down off the top bar.
                         guard direction == (navIsTop ? .down : .right) else { return }
+                        if navIsTop, ntvCatalogMenuRouterID != nil {
+                            // The nTV bar never expands. A deliberate Down
+                            // enters its own category menu immediately; the
+                            // old side-panel echo guard need not swallow it.
+                            collapseSidebarFromExit()
+                            return
+                        }
                         // …unless this is the tail of the swipe that just
                         // OPENED the rail.
                         //

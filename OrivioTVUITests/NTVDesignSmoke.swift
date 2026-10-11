@@ -16,6 +16,19 @@ final class NTVDesignSmoke: XCTestCase {
         let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.movie.")).firstMatch
         XCTAssertTrue(first.waitForExistence(timeout: 30))
         let remote = XCUIRemote.shared
+        // Reach the categories from the real top bar, rather than relying
+        // on the demo's initial focus already being inside the side menu.
+        let topMovies = app.buttons["ntv.navigation.5"]
+        for _ in 0..<3 {
+            if topMovies.hasFocus { break }
+            remote.press(.menu)
+            if focused(topMovies, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(topMovies, timeout: 8))
+        remote.press(.down)
+        let categoryHeader = app.buttons["ntv.catalog.movie.categories"]
+        XCTAssertTrue(focused(categoryHeader, timeout: 8), "Down from the top menu must reach the Categories button.")
+        remote.press(.select)
         for _ in 0..<4 {
             if first.hasFocus { break }
             remote.press(.down)

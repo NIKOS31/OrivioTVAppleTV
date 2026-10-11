@@ -594,11 +594,11 @@ struct RootView: View {
                     AppProbe.life("root appeared — tab=\(Self.tabName(selectedTab))")
                     // Skipped in the demo modes so the screen isn't covered.
                     let args = ProcessInfo.processInfo.arguments
-                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvProfileDemo", "-ntvPlayerDemo", "-ntvTwitchDemo"]
+                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvProfileDemo", "-ntvPlayerDemo", "-ntvTwitchDemo", "-ntvCatalogCategoriesDemo"]
                     let demoMode = demoArgs.contains { args.contains($0) }
                     #if DEBUG
                     if demoMode {
-                        homeCatalogSettings.navigationPosition = args.contains("-ntvTopMenuDemo") ? .top : .left
+                        homeCatalogSettings.navigationPosition = (args.contains("-ntvTopMenuDemo") || args.contains("-ntvCatalogCategoriesDemo")) ? .top : .left
                     }
                     #endif
                     // The selected design is applied once; subsequent layout
@@ -622,6 +622,7 @@ struct RootView: View {
                     if args.contains("-settingsTabDemo") { selectedTab = 3 }
                     #if DEBUG
                     if args.contains("-ntvTopMenuDemo") { selectedTab = 3 }
+                    if args.contains("-ntvCatalogCategoriesDemo") { selectedTab = 5 }
                     if args.contains("-ntvProfileDemo") { showProfileGate = true }
                     #endif
                     if args.contains("-liveTVDemo") { selectedTab = 4 }
@@ -1297,7 +1298,7 @@ struct RootView: View {
                 // exempt there: the left rail floats beside the hero's art,
                 // but a top bar sits across the hero's own title block, which
                 // is text rather than bleed.
-                .padding(.leading, !navIsTop && showSidebar && selectedTab != 0
+                .padding(.leading, !navIsTop && showSidebar && selectedTab != 0 && theme.palette.id != NTVDesign.palette.id
                          ? GlassSidebar.collapsedWidth : 0)
                 // nTV root pages reserve menu space inside their stack. The
                 // stack viewport stays constant while a detail is pushed.
@@ -1533,7 +1534,7 @@ struct RootView: View {
         default:
             NavigationStack(path: $homePath) {
                 homeRoot
-                    .modifier(NTVPageTopClearance())
+                    .modifier(NTVPageTopClearance(isHome: true))
                     .onExitCommand {
                         // Ignore a Menu that lands right after popping back from
                         // a pushed screen — tvOS sometimes delivers a lingering

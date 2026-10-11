@@ -23,11 +23,14 @@ struct NTVFullWidthViewport: ViewModifier {
 /// A pushed detail gets the same full-screen viewport from its first frame;
 /// removing the menu must not resize its image during the push transition.
 struct NTVPageTopClearance: ViewModifier {
+    var isHome = false
     @EnvironmentObject private var theme: ThemeManager
     @Environment(\.navigationIsTop) private var navigationIsTop
     func body(content: Content) -> some View {
         content.padding(.top, navigationIsTop && theme.palette.id == NTVDesign.palette.id
                         ? NTVDesign.topChromeClearance : 0)
+            .padding(.leading, !navigationIsTop && !isHome && theme.palette.id == NTVDesign.palette.id
+                     ? GlassSidebar.collapsedWidth : 0)
     }
 }
 

@@ -4,6 +4,32 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testCatalogCategoryPanelReturnsToItsPosterRow() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvCatalogCategoriesDemo", "-ntvHalloweenDemo"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        let panel = app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch
+        XCTAssertTrue(panel.waitForExistence(timeout: 30))
+        let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.movie.")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 30))
+        let remote = XCUIRemote.shared
+        for _ in 0..<4 {
+            if first.hasFocus { break }
+            remote.press(.down)
+            if focused(first, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(first, timeout: 8))
+        capture("ntv-catalog-categories")
+        remote.press(.select)
+        let poster = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(poster.waitForExistence(timeout: 60), "Selecting a category must land on a loaded poster row.")
+        XCTAssertFalse(panel.exists)
+        capture("ntv-catalog-category-selected")
+        app.terminate()
+    }
     func testLiveTabSeparatesTelevisionAndTwitchWithoutATVAddon() {
         continueAfterFailure = false
         let app = XCUIApplication()

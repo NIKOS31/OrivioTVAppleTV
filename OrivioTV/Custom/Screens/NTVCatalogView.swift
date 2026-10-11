@@ -80,6 +80,7 @@ struct NTVCatalogView: View {
     let onOpenSettings: () -> Void
     @State private var hero = HeroFocus()
     @State private var categoriesOpen = false
+    @State private var requestedCategory: String?
     @FocusState private var categoryFocus: String?
     private var loadKey: String {
         String(profiles.activeProfileID) + "#" + addons.catalogAddons.map { "\($0.id)#\($0.manifest.catalogs?.hashValue ?? 0)" }.joined(separator: "#")
@@ -111,7 +112,8 @@ struct NTVCatalogView: View {
                             ForEach(viewModel.sources) { source in
                                 NTVCatalogShelf(model: viewModel.shelf(source), hero: hero,
                                     onSelect: onSelect, onPlayManually: onPlayManually,
-                                    onSeeAll: onSeeAll, onBackAtRoot: onBackAtRoot)
+                                    onSeeAll: onSeeAll, onBackAtRoot: onBackAtRoot,
+                                    focusRequested: requestedCategory == source.id)
                                     .id(source.id)
                             }
                         }.padding(.top, 26).padding(.bottom, 100)
@@ -129,6 +131,9 @@ struct NTVCatalogView: View {
         .task(id: loadKey) {
             hero.layout = .pinnedFocus
             viewModel.configure(addons: addons.catalogAddons, type: mediaType, scope: String(profiles.activeProfileID))
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-ntvCatalogCategoriesDemo") { categoriesOpen = true }
+            #endif
             if let first = viewModel.sources.first {
                 let shelf = viewModel.shelf(first)
                 await shelf.load()
@@ -154,8 +159,8 @@ struct NTVCatalogView: View {
                     ForEach(viewModel.sources) { source in
                         Button {
                             categoriesOpen = false
+                            requestedCategory = source.id
                             proxy.scrollTo(source.id, anchor: .top)
-                            DispatchQueue.main.async { _ = ContentFocusRouter.shared.focusRowStart("ntv.catalog.shelf.\(source.id)") }
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(source.title).font(.system(size: 23, weight: .medium)).lineLimit(2)
@@ -163,6 +168,7 @@ struct NTVCatalogView: View {
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(NTVActionButtonStyle()).focused($categoryFocus, equals: source.id)
+                        .accessibilityIdentifier("ntv.category.\(mediaType).\(source.id)")
                     }
                 }.padding(8)
             }
@@ -189,6 +195,7 @@ private struct NTVCatalogShelf: View {
     let onPlayManually: (MetaItem, MetaVideo?) -> Void
     let onSeeAll: (InstalledAddon, ManifestCatalog, String) -> Void
     let onBackAtRoot: () -> Void
+    let focusRequested: Bool
     var body: some View {
         Group {
             if !model.items.isEmpty {
@@ -209,5 +216,13 @@ private struct NTVCatalogShelf: View {
                 .padding(.horizontal, NTVViewport.horizontalInset)
             }
         }.task { await model.load() }
+        .task(id: "\(focusRequested)#\(model.items.first?.id ?? "")") {
+            guard focusRequested, !model.items.isEmpty else { return }
+            for _ in 0..<12 {
+                guard !Task.isCancelled else { return }
+                if ContentFocusRouter.shared.focusRowStart("ntv.catalog.shelf.\(model.source.id)") { return }
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+        }
     }
 }

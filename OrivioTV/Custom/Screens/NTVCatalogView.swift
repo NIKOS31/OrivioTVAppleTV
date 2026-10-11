@@ -137,6 +137,9 @@ struct NTVCatalogView: View {
         .foregroundStyle(theme.palette.textPrimary)
         .ignoresSafeArea(edges: .horizontal)
         .toolbar(.hidden, for: .navigationBar)
+        .onExitCommand {
+            if categoriesOpen { closeCategories() } else { onBackAtRoot() }
+        }
         .task(id: loadKey) {
             hero.layout = .pinnedFocus
             viewModel.configure(addons: addons.catalogAddons, type: mediaType, scope: String(profiles.activeProfileID))

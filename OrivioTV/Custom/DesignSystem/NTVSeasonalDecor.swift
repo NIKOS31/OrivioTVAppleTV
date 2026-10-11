@@ -40,12 +40,16 @@ private struct NTVHalloweenModifier: ViewModifier {
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             case .panel:
-                content.overlay(alignment: .topTrailing) {
-                    NTVWeb().stroke(.white.opacity(0.3), lineWidth: 1.2)
-                        .frame(width: 76, height: 76).rotationEffect(.degrees(90))
-                        .padding(.top, 96).padding(.trailing, 8).allowsHitTesting(false).accessibilityHidden(true)
-                }.overlay(alignment: .bottomTrailing) {
-                    NTVGhost().frame(width: 34, height: 42).padding(18)
+                VStack(spacing: 12) {
+                    content
+                    HStack {
+                        NTVWeb().stroke(.white.opacity(0.3), lineWidth: 1.2)
+                            .frame(width: 42, height: 42).rotationEffect(.degrees(90))
+                        Spacer()
+                        NTVPumpkin().frame(width: 30, height: 24)
+                        NTVGhost().frame(width: 30, height: 38)
+                    }
+                    .padding(.horizontal, 8)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             case .stage:
@@ -54,12 +58,6 @@ private struct NTVHalloweenModifier: ViewModifier {
                         .frame(width: 96, height: 96).rotationEffect(.degrees(90))
                         .padding(.top, 216).padding(.trailing, 18)
                         .allowsHitTesting(false).accessibilityHidden(true)
-                }.overlay(alignment: .bottomLeading) {
-                    HStack(spacing: 18) {
-                        NTVGhost().frame(width: 26, height: 34)
-                        NTVPumpkin().frame(width: 32, height: 26)
-                    }.padding(.leading, 16).padding(.bottom, 12)
-                        .opacity(0.75).allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
         }

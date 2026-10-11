@@ -683,6 +683,7 @@ struct DetailView: View {
             }
         }
         .ignoresSafeArea()
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ntv.detail.viewport")
     }
 

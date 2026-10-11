@@ -184,12 +184,13 @@ struct NTVCatalogView: View {
                     }
                 }.padding(8)
             }
+            // A reserved footer keeps seasonal ornaments outside focusable rows.
+            .ntvHalloweenDecor(.panel)
         }
         .padding(28).frame(width: 420).frame(maxHeight: .infinity)
         .defaultFocus($categoryFocus, viewModel.sources.first?.id)
         .background(NTVDesign.background.opacity(0.97), in: RoundedRectangle(cornerRadius: 28))
         .overlay(RoundedRectangle(cornerRadius: 28).stroke(.white.opacity(0.14)))
-        .ntvHalloweenDecor(.panel)
         .onExitCommand { closeCategories() }
         .accessibilityIdentifier("ntv.catalog.\(mediaType).categoryPanel")
     }

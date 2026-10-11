@@ -1821,6 +1821,9 @@ struct RootView: View {
                     onSelectPerson: { id, name in path.wrappedValue.append(Route.person(id: id, name: name)) },
                     onSelectCompany: { id, name in path.wrappedValue.append(Route.tmdbCompany(id: id, name: name)) }
             )
+            // Contain preserves the backdrop's own accessibility identifier;
+            // an identifier on a transparent parent otherwise replaces it.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ntv.detail.screen")
         case .collection(let collection):
             CollectionView(collection: collection) { path.wrappedValue.append(Route.detail($0)) }

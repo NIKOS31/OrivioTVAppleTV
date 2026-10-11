@@ -137,7 +137,8 @@ targets:
         # script sandboxing must be off or the phase is denied file access.
         ENABLE_USER_SCRIPT_SANDBOXING: false
         ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
-        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "NTV System Icon"
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES:
+          - "NTV System Icon"
         # ─── TOP SHELF (2 of 3) ─── App group entitlement, shared with the
         # extension. Both sides must name the SAME group or the container
         # they each resolve is a different directory and the shelf is empty.

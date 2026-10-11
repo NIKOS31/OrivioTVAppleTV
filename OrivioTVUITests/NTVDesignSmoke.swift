@@ -7,7 +7,7 @@ final class NTVDesignSmoke: XCTestCase {
     func testCatalogCategoryPanelReturnsToItsPosterRow() {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-homeDemo", "-ntvCatalogCategoriesDemo", "-ntvHalloweenDemo"]
+        app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvCatalogCategoriesDemo", "-ntvHalloweenDemo"]
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
@@ -26,8 +26,56 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.select)
         let poster = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.poster.movie.")).firstMatch
         XCTAssertTrue(poster.waitForExistence(timeout: 60), "Selecting a category must land on a loaded poster row.")
-        XCTAssertFalse(panel.exists)
+        XCTAssertTrue(panel.exists, "Categories must remain visible at the left of the catalog.")
         capture("ntv-catalog-category-selected")
+        let categories = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.movie.")).allElementsBoundByIndex
+        XCTAssertGreaterThanOrEqual(categories.count, 2, "The row-change regression needs two distinct catalogs.")
+        let prefix = "ntv.category.movie."
+        let firstRow = app.descendants(matching: .any)["ntv.catalog.shelf." + String(first.identifier.dropFirst(prefix.count))].firstMatch
+        let firstPoster = firstRow.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(focused(firstPoster, timeout: 8))
+        // Start away from the first column, exactly as the physical report.
+        for _ in 0..<3 { remote.press(.right) }
+        XCTAssertFalse(firstPoster.hasFocus)
+        remote.press(.down)
+        let nextRow = app.descendants(matching: .any)["ntv.catalog.shelf." + String(categories[1].identifier.dropFirst(prefix.count))].firstMatch
+        let nextFirst = nextRow.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(focused(nextFirst, timeout: 15), "Down from a later column must select the FIRST poster of the next row.")
+        capture("ntv-catalog-down-first-poster")
+        remote.press(.up)
+        XCTAssertTrue(focused(firstPoster, timeout: 8), "Up must return to the first poster, without a far-end landing.")
+        remote.press(.left)
+        XCTAssertTrue(focused(first, timeout: 8), "Left from the first poster must reach its visible category.")
+        remote.press(.up)
+        let header = app.buttons["ntv.catalog.movie.categories"]
+        XCTAssertTrue(focused(header, timeout: 8), "The Categories button must be reachable with the remote.")
+        capture("ntv-catalog-categories-header-focused")
+        remote.press(.select)
+        XCTAssertTrue(focused(first, timeout: 8))
+        remote.press(.right)
+        XCTAssertTrue(focused(firstPoster, timeout: 8), "Right from categories must land on a poster, without bouncing back to the top bar.")
+        remote.press(.left)
+        remote.press(.menu)
+        let movies = app.buttons["ntv.navigation.5"]
+        XCTAssertTrue(focused(movies, timeout: 8), "Back from categories must still reach the top menu.")
+        let moviesFrame = movies.frame
+        remote.press(.right)
+        let series = app.buttons["ntv.navigation.6"]
+        XCTAssertTrue(focused(series, timeout: 8))
+        XCTAssertEqual(movies.frame, moviesFrame, "The underline/focus marker must not resize the top menu.")
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["ntv.catalog.series.heading"].waitForExistence(timeout: 20))
+        let seriesCategory = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.series.")).firstMatch
+        for _ in 0..<5 {
+            if seriesCategory.hasFocus { break }
+            remote.press(.down)
+            if focused(seriesCategory, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(seriesCategory, timeout: 8))
+        remote.press(.right)
+        let seriesPoster = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.poster.series.")).firstMatch
+        XCTAssertTrue(seriesPoster.waitForExistence(timeout: 60), "The same side menu hand-off must work on Séries.")
+        capture("ntv-series-categories-reachable")
         app.terminate()
     }
     func testLiveTabSeparatesTelevisionAndTwitchWithoutATVAddon() {

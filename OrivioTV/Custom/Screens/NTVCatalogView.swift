@@ -97,10 +97,11 @@ struct NTVCatalogView: View {
     let onBackAtRoot: () -> Void
     let onOpenSettings: () -> Void
     @State private var hero = HeroFocus()
-    @State private var categoriesOpen = false
-    @State private var requestedCategory: String?
+    private struct FocusRequest { let sourceID: String; let token = UUID() }
+    @State private var requestedCategory: FocusRequest?
     @State private var restoreSelection: NTVCatalogBrowserModel.Selection?
     @FocusState private var categoryFocus: String?
+    private var routerID: String { "ntv.catalog.\(mediaType).categories" }
     private var loadKey: String {
         String(profiles.activeProfileID) + "#" + addons.catalogAddons.map { "\($0.id)#\($0.manifest.catalogs?.hashValue ?? 0)" }.joined(separator: "#")
     }
@@ -108,25 +109,26 @@ struct NTVCatalogView: View {
         ZStack(alignment: .leading) {
             NTVFocusBackdrop(hero: hero, identifier: "ntv.catalog.\(mediaType).backdrop")
             ScrollViewReader { proxy in
-                ZStack(alignment: .leading) {
+                HStack(alignment: .top, spacing: 24) {
+                    categoryPanel(proxy)
+                        .frame(width: 250)
+                        .padding(.leading, 24)
+                        .padding(.vertical, 26)
                     ScrollView(.vertical) {
                         LazyVStack(alignment: .leading, spacing: 22) {
-                            HStack {
-                                Text(title).font(.system(size: 38, weight: .semibold))
-                                    .ntvHalloweenDecor(.heading)
-                                    .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
-                                Spacer()
-                                Button { categoriesOpen = true } label: { Label("Catégories", systemImage: "line.3.horizontal.decrease") }
-                                    .buttonStyle(NTVActionButtonStyle())
-                                    .accessibilityIdentifier("ntv.catalog.\(mediaType).categories")
-                            }.padding(.horizontal, NTVViewport.horizontalInset)
+                            Text(title).font(.system(size: 38, weight: .semibold))
+                                .ntvHalloweenDecor(.heading)
+                                .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 24)
+                                .id("catalogTop")
                             NTVCatalogSpotlight(hero: hero)
                                 .frame(height: 230, alignment: .topLeading)
                                 .transaction { $0.animation = nil }
-                                .padding(.horizontal, NTVViewport.horizontalInset)
+                                .padding(.horizontal, 24)
                             if viewModel.sources.isEmpty {
                                 NTVEmptyCatalog(message: "Ajoutez un addon proposant des catalogues de \(title.lowercased()).", onOpenSettings: onOpenSettings)
-                                    .padding(.horizontal, NTVViewport.horizontalInset)
+                                    .padding(.horizontal, 24)
                             }
                             ForEach(viewModel.sources) { source in
                                 NTVCatalogShelf(model: viewModel.shelf(source), hero: hero,
@@ -135,44 +137,47 @@ struct NTVCatalogView: View {
                                         viewModel.rememberSelection(sourceID: source.id, itemID: item.id)
                                         onSelect(item)
                                     }, onPlayManually: onPlayManually,
-                                    onSeeAll: onSeeAll, onBackAtRoot: onBackAtRoot,
-                                    focusRequested: requestedCategory == source.id,
+                                    onSeeAll: onSeeAll,
+                                    onBackAtRoot: { focusCategory(source.id) },
+                                    onVerticalMove: { move in moveFromRow(source.id, direction: move, proxy: proxy) },
+                                    focusRequestID: requestedCategory?.sourceID == source.id ? requestedCategory?.token : nil,
                                     restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil)
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityIdentifier("ntv.catalog.shelf.\(source.id)")
                                     .id(source.id)
                             }
                         }.padding(.top, 26).padding(.bottom, 100)
                     }
-                    // Keep vertical content inside its viewport: a selected
-                    // category must not paint its old spotlight over the bar.
-                    // Rows retain their own horizontal focus-lift padding.
-                    .disabled(categoriesOpen)
-                    if categoriesOpen {
-                        categoryPanel(proxy).padding(.leading, NTVViewport.horizontalInset).padding(.vertical, 20)
-                    }
+                    // Vertical clipping reserves the top bar; horizontal rows
+                    // retain their own focus-lift margin.
+                    .focusSection()
                 }
                 .task(id: isAtRoot) {
                     restoreSelection = nil
-                    // A tab round-trip can recreate this view while a pushed
-                    // detail remains open. Never take focus from that detail.
                     guard isAtRoot, let selection = viewModel.lastSelection else { return }
                     restoreSelection = selection
                     if selection.sourceID != viewModel.sources.first?.id {
                         proxy.scrollTo(selection.sourceID, anchor: .top)
                     }
                 }
+                .onAppear {
+                    ContentFocusRouter.shared.register(routerID) {
+                        categoryFocus = "header"; return true
+                    }
+                }
+                .onDisappear { ContentFocusRouter.shared.unregister(routerID) }
             }
         }
         .foregroundStyle(theme.palette.textPrimary)
         .ignoresSafeArea(edges: .horizontal)
         .toolbar(.hidden, for: .navigationBar)
-        .onExitCommand {
-            if categoriesOpen { closeCategories() } else { onBackAtRoot() }
-        }
         .task(id: loadKey) {
             hero.layout = .pinnedFocus
             viewModel.configure(addons: addons.catalogAddons, type: mediaType, scope: String(profiles.activeProfileID))
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-ntvCatalogCategoriesDemo") { categoriesOpen = true }
+            if ProcessInfo.processInfo.arguments.contains("-ntvCatalogCategoriesDemo") {
+                categoryFocus = viewModel.sources.first?.id
+            }
             #endif
             if let first = viewModel.sources.first {
                 let shelf = viewModel.shelf(first)
@@ -184,50 +189,71 @@ struct NTVCatalogView: View {
         .onChange(of: profiles.activeProfileID) { _, _ in
             hero.item = nil; restoreSelection = nil; requestedCategory = nil
         }
-        .onChange(of: categoriesOpen) { _, open in
-            if open { categoryFocus = viewModel.sources.first?.id }
-        }
+        .onExitCommand { onBackAtRoot() }
     }
     private func categoryPanel(_ proxy: ScrollViewProxy) -> some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack {
-                Text("Catégories").font(.system(size: 30, weight: .semibold))
-                Spacer()
-                Button { closeCategories() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(NTVActionButtonStyle()).accessibilityLabel("Fermer les catégories")
+        VStack(alignment: .leading, spacing: 18) {
+            Button {
+                categoryFocus = viewModel.sources.first?.id
+            } label: {
+                Label("Catégories", systemImage: "line.3.horizontal.decrease")
+                    .font(.system(size: 23, weight: .semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .buttonStyle(NTVActionButtonStyle())
+            .focused($categoryFocus, equals: "header")
+            .accessibilityIdentifier("ntv.catalog.\(mediaType).categories")
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(viewModel.sources) { source in
-                        Button {
-                            viewModel.forgetSelection(); restoreSelection = nil
-                            categoriesOpen = false
-                            requestedCategory = source.id
-                            proxy.scrollTo(source.id, anchor: .top)
-                        } label: {
+                        Button { requestRow(source.id, proxy: proxy) } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(source.title).font(.system(size: 23, weight: .medium)).lineLimit(2)
-                                Text(source.addon.manifest.name).font(.system(size: 16)).foregroundStyle(NTVDesign.textSecondary)
+                                Text(source.title).font(.system(size: 21, weight: .medium)).lineLimit(2)
+                                Text(source.addon.manifest.name).font(.system(size: 15)).foregroundStyle(NTVDesign.textSecondary)
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .buttonStyle(NTVActionButtonStyle()).focused($categoryFocus, equals: source.id)
+                        .buttonStyle(NTVActionButtonStyle())
+                        .focused($categoryFocus, equals: source.id)
                         .accessibilityIdentifier("ntv.category.\(mediaType).\(source.id)")
                     }
-                }.padding(8)
+                }.padding(6)
             }
-            // A reserved footer keeps seasonal ornaments outside focusable rows.
             .ntvHalloweenDecor(.panel)
         }
-        .padding(28).frame(width: 420).frame(maxHeight: .infinity)
-        .defaultFocus($categoryFocus, viewModel.sources.first?.id)
-        .background(NTVDesign.background.opacity(0.97), in: RoundedRectangle(cornerRadius: 28))
-        .overlay(RoundedRectangle(cornerRadius: 28).stroke(.white.opacity(0.14)))
-        .onExitCommand { closeCategories() }
+        .padding(16).frame(maxHeight: .infinity)
+        .background { NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24)) }
+        .focusSection()
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ntv.catalog.\(mediaType).categoryPanel")
+        .onChange(of: categoryFocus) { _, value in
+            if value != nil { ContentFocusRouter.shared.noteFocused(row: routerID) }
+        }
+        .onMoveCommand { direction in
+            guard let focused = categoryFocus else { return }
+            if direction == .right, let source = focused == "header" ? viewModel.sources.first?.id : focused {
+                requestRow(source, proxy: proxy)
+            } else if direction == .up, focused == "header" {
+                onBackAtRoot()
+            }
+        }
+        .onExitCommand { onBackAtRoot() }
     }
-    private func closeCategories() {
-        categoriesOpen = false
-        DispatchQueue.main.async { _ = ContentFocusRouter.shared.focusRowStart(ContentFocusRouter.shared.lastRowID) }
+    private func focusCategory(_ sourceID: String) {
+        requestedCategory = nil; categoryFocus = sourceID
+    }
+    private func requestRow(_ sourceID: String, proxy: ScrollViewProxy) {
+        viewModel.forgetSelection(); restoreSelection = nil
+        requestedCategory = FocusRequest(sourceID: sourceID)
+        proxy.scrollTo(sourceID, anchor: .top)
+    }
+    private func moveFromRow(_ sourceID: String, direction: MoveCommandDirection, proxy: ScrollViewProxy) {
+        guard let index = viewModel.sources.firstIndex(where: { $0.id == sourceID }) else { return }
+        let target = direction == .down ? index + 1 : index - 1
+        if viewModel.sources.indices.contains(target) {
+            requestRow(viewModel.sources[target].id, proxy: proxy)
+        } else if direction == .up {
+            categoryFocus = "header"
+        }
     }
 }
 
@@ -239,7 +265,8 @@ private struct NTVCatalogShelf: View {
     let onPlayManually: (MetaItem, MetaVideo?) -> Void
     let onSeeAll: (InstalledAddon, ManifestCatalog, String) -> Void
     let onBackAtRoot: () -> Void
-    let focusRequested: Bool
+    let onVerticalMove: (MoveCommandDirection) -> Void
+    let focusRequestID: UUID?
     let restoreItemID: String?
     var body: some View {
         Group {
@@ -249,7 +276,7 @@ private struct NTVCatalogShelf: View {
                     useLandscape: false, hero: hero, onSelect: onSelect,
                     onPlayManually: onPlayManually, onSeeAll: onSeeAll,
                     onBackAtStart: onBackAtRoot, accessibilityPrefix: "ntv.poster",
-                    restoreItemID: restoreItemID)
+                    restoreItemID: restoreItemID, onVerticalMove: onVerticalMove)
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(model.source.title).font(.system(size: 28, weight: .semibold))
@@ -262,8 +289,8 @@ private struct NTVCatalogShelf: View {
                 .padding(.horizontal, NTVViewport.horizontalInset)
             }
         }.task { await model.load() }
-        .task(id: "\(focusRequested)#\(model.items.first?.id ?? "")") {
-            guard focusRequested, !model.items.isEmpty else { return }
+        .task(id: "\(focusRequestID?.uuidString ?? "")#\(model.items.first?.id ?? "")") {
+            guard focusRequestID != nil, !model.items.isEmpty else { return }
             for _ in 0..<12 {
                 guard !Task.isCancelled else { return }
                 if ContentFocusRouter.shared.focusRowStart("ntv.catalog.shelf.\(model.source.id)") { return }

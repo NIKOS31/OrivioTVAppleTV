@@ -427,8 +427,8 @@ private struct GlassProfileHeader: View {
     }
 }
 
-/// A single rail entry: icon (+ label when expanded). Focused/selected shows a
-/// soft translucent capsule fill — no border, no scale; the glass carries it.
+/// Page selection uses an underline; remote focus uses a separate soft fill.
+/// Neither changes the tab's dimensions or moves neighbouring labels.
 private struct NTVTopNavigationLabel: View {
     @Environment(\.isFocused) private var focused
     let tab: AppTab
@@ -452,13 +452,18 @@ private struct NTVTopNavigationLabel: View {
         .frame(maxWidth: iconOnly ? nil : .infinity)
         .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .background {
-            Capsule(style: .continuous)
-                .fill(.white.opacity(focused ? 0.26 : selected ? 0.12 : 0))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.white.opacity(focused ? 0.12 : 0))
         }
-        .overlay {
-            Capsule(style: .continuous)
-                .strokeBorder(.white.opacity(focused ? 0.65 : selected ? 0.16 : 0), lineWidth: 1.5)
+        .overlay(alignment: .bottom) {
+            if selected {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(NTVDesign.textPrimary)
+                    .frame(width: iconOnly ? 20 : 36, height: 3)
+                    .padding(.bottom, 3)
+            }
         }
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

@@ -40,16 +40,34 @@ struct NTVPageTopClearance: ViewModifier {
     @Published private(set) var url: String?
     private var active: String?
     private var images: [String: String] = [:]
+    private var pending: Task<Void, Never>?
+    private let settleDelay: Duration
+
+    init(settleDelay: Duration = .milliseconds(180)) { self.settleDelay = settleDelay }
 
     func activate(_ identifier: String?) {
+        guard active != identifier else { return }
+        pending?.cancel()
         active = identifier
-        url = identifier.flatMap { images[$0] }
+        let next = identifier.flatMap { images[$0] }
+        if url != next { url = next }
     }
     func update(_ identifier: String, url: String?) {
         images[identifier] = url
-        if active == identifier { self.url = url }
+        guard active == identifier else { return }
+        // Cancel before equality: X → Y → X must cancel the pending Y.
+        pending?.cancel()
+        guard self.url != url else { return }
+        // First artwork and explicitly cleared artwork do not wait.
+        guard self.url != nil, url != nil else { self.url = url; return }
+        pending = Task { @MainActor [weak self, settleDelay] in
+            do { try await Task.sleep(for: settleDelay) } catch { return }
+            guard let self, !Task.isCancelled, self.active == identifier,
+                  self.images[identifier] == url, self.url != url else { return }
+            self.url = url
+        }
     }
-    func clear() { images = [:]; url = nil }
+    func clear() { pending?.cancel(); images = [:]; url = nil }
 }
 
 struct NTVCanvasBackdrop: View {

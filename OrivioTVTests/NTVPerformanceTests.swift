@@ -2,9 +2,48 @@ import XCTest
 import UIKit
 import ImageIO
 import UniformTypeIdentifiers
+import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    @MainActor
+    func testRapidBackdropUpdatesCommitOnlyTheFinalSelection() async throws {
+        let canvas = NTVBackdropCanvas(settleDelay: .milliseconds(40))
+        canvas.activate("films")
+        canvas.update("films", url: "https://example.invalid/initial.jpg")
+        var updates: [String?] = []
+        let observer = canvas.$url.dropFirst().sink { updates.append($0) }
+        for index in 0..<30 { canvas.update("films", url: "https://example.invalid/\(index).jpg") }
+        XCTAssertEqual(canvas.url, "https://example.invalid/initial.jpg")
+        try await Task.sleep(for: .milliseconds(160))
+        XCTAssertEqual(updates, ["https://example.invalid/29.jpg"], "Fast browsing must not launch thirty full-screen image replacements.")
+        withExtendedLifetime(observer) {}
+    }
+    @MainActor
+    func testReturningToDisplayedBackdropCancelsThePendingOtherTitle() async throws {
+        let canvas = NTVBackdropCanvas(settleDelay: .milliseconds(40))
+        canvas.activate("films")
+        canvas.update("films", url: "https://example.invalid/x.jpg")
+        canvas.update("films", url: "https://example.invalid/y.jpg")
+        canvas.update("films", url: "https://example.invalid/x.jpg")
+        try await Task.sleep(for: .milliseconds(160))
+        XCTAssertEqual(canvas.url, "https://example.invalid/x.jpg")
+    }
+    @MainActor
+    func testLeavingASectionCancelsItsPendingBackdropWithoutLeakingAcrossProfiles() async throws {
+        let canvas = NTVBackdropCanvas(settleDelay: .milliseconds(40))
+        canvas.activate("films")
+        canvas.update("films", url: "https://example.invalid/initial.jpg")
+        canvas.update("films", url: "https://example.invalid/pending.jpg")
+        canvas.update("series", url: "https://example.invalid/series.jpg")
+        canvas.activate("series")
+        try await Task.sleep(for: .milliseconds(160))
+        XCTAssertEqual(canvas.url, "https://example.invalid/series.jpg")
+        canvas.update("series", url: "https://example.invalid/late.jpg")
+        canvas.clear()
+        try await Task.sleep(for: .milliseconds(160))
+        XCTAssertNil(canvas.url)
+    }
     @MainActor
     func testNormalPosterDecodeKeepsFocusHeadroomWithoutAnOversizedBitmap() async throws {
         let height: CGFloat = 330

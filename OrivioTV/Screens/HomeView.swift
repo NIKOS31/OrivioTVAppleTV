@@ -2508,6 +2508,7 @@ struct HomePosterRow: View {
 
     var accessibilityPrefix = "ntv.home.poster"
     var restoreItemID: String? = nil
+    var onVerticalMove: ((MoveCommandDirection) -> Void)? = nil
 
     @FocusState private var focusedID: String?
 
@@ -2556,6 +2557,14 @@ struct HomePosterRow: View {
                 // Back: jump to the first card if scrolled in; on the first
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
+                .onMoveCommand { direction in
+                    guard let focusedID, let onVerticalMove else { return }
+                    if direction == .up || direction == .down {
+                        onVerticalMove(direction)
+                    } else if direction == .left, focusedID == row.items.first?.id {
+                        onBackAtStart()
+                    }
+                }
                 // Coming back out of the rail lands on THIS row's first card
                 // when this was the row the viewer left (ContentFocusRouter).
                 // Re-registered whenever the first card CHANGES, not just on

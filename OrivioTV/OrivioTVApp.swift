@@ -364,6 +364,7 @@ struct RootView: View {
             // Refresh a QR-linked Real-Debrid token at launch (its device-flow
             // access token is short-lived).
             .task { await debrid.refreshRealDebridIfNeeded() }
+            .task { await NTVSystemIconUpdater.shared.applyIfNeeded() }
             .onAppear {
                 NSLog("[OrivioPlayer] RootView content onAppear")
                 FocusTrace.installIfRequested()
@@ -871,6 +872,7 @@ struct RootView: View {
                 AppProbe.scene = "\(phase)"
                 AppProbe.life("scene → \(phase)")
                 if phase == .active {
+                    Task { await NTVSystemIconUpdater.shared.applyIfNeeded() }
                     // First foreground after an external handoff is the return
                     // from that app. Players that don't call back (VLC, nPlayer,
                     // VidHub, SenPlayer) have no deep link, so this marker is
@@ -1419,7 +1421,7 @@ struct RootView: View {
                         // rows without a hand-off (and other tabs) keep the
                         // engine's pick as before. The row is read NOW, before
                         // the engine's landing can re-note a different one.
-                        let rowAtExit = ContentFocusRouter.shared.lastRowID
+                        let rowAtExit = ntvCatalogMenuRouterID ?? ContentFocusRouter.shared.lastRowID
                         DispatchQueue.main.async {
                             if sidebarFocus != nil {
                                 collapseSidebarFromExit()
@@ -1451,7 +1453,7 @@ struct RootView: View {
         .onChange(of: account.currentUserID) { _, _ in ntvCanvas.clear() }
         .animation(perf.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: showSidebar)
-        .animation(perf.sidebarAnimationEffective
+        .animation(perf.sidebarAnimationEffective && !(navIsTop && theme.palette.id == NTVDesign.palette.id)
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: sidebarFocus != nil)
         // Focus ARRIVING in the rail counts as engaging it, however it got
         // there. `focusSidebar` and `revealSidebar` stamp their own way in, but
@@ -1656,7 +1658,8 @@ struct RootView: View {
         // rail's centre — the fourth along, with the first two under the
         // panel. The rail stays enabled for the turn the hand-off needs; a
         // request into a `.disabled` view is silently dropped.
-        if ContentFocusRouter.shared.focusLastRowStart() {
+        let destination = ntvCatalogMenuRouterID ?? ContentFocusRouter.shared.lastRowID
+        if ContentFocusRouter.shared.focusRowStart(destination) {
             DispatchQueue.main.async {
                 sidebarFocus = nil   // a no-op once the tile holds focus
                 setSidebarEnabled(false, reenableAfter: 0.4)
@@ -1665,6 +1668,15 @@ struct RootView: View {
         }
         sidebarFocus = nil
         setSidebarEnabled(false, reenableAfter: 0.4)
+    }
+
+    /// The top menu enters the current catalog's own menu, never a row saved
+    /// by Home or the other tab. A pushed detail keeps its existing routing.
+    private var ntvCatalogMenuRouterID: String? {
+        guard theme.palette.id == NTVDesign.palette.id else { return nil }
+        if selectedTab == 5, moviesPath.isEmpty { return "ntv.catalog.movie.categories" }
+        if selectedTab == 6, seriesPath.isEmpty { return "ntv.catalog.series.categories" }
+        return nil
     }
 
     /// The ONE owner of every timed rail re-enable. Five independent timers

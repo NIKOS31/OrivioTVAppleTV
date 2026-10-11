@@ -276,7 +276,8 @@ private struct NTVCatalogShelf: View {
                     useLandscape: false, hero: hero, onSelect: onSelect,
                     onPlayManually: onPlayManually, onSeeAll: onSeeAll,
                     onBackAtStart: onBackAtRoot, accessibilityPrefix: "ntv.poster",
-                    restoreItemID: restoreItemID, onVerticalMove: onVerticalMove)
+                    restoreItemID: restoreItemID, onVerticalMove: onVerticalMove,
+                    focusFirstRequestID: focusRequestID)
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(model.source.title).font(.system(size: 28, weight: .semibold))
@@ -289,13 +290,5 @@ private struct NTVCatalogShelf: View {
                 .padding(.horizontal, NTVViewport.horizontalInset)
             }
         }.task { await model.load() }
-        .task(id: "\(focusRequestID?.uuidString ?? "")#\(model.items.first?.id ?? "")") {
-            guard focusRequestID != nil, !model.items.isEmpty else { return }
-            for _ in 0..<12 {
-                guard !Task.isCancelled else { return }
-                if ContentFocusRouter.shared.focusRowStart("ntv.catalog.shelf.\(model.source.id)") { return }
-                try? await Task.sleep(for: .milliseconds(40))
-            }
-        }
     }
 }

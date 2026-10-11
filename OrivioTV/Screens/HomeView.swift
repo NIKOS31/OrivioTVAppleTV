@@ -2509,6 +2509,7 @@ struct HomePosterRow: View {
     var accessibilityPrefix = "ntv.home.poster"
     var restoreItemID: String? = nil
     var onVerticalMove: ((MoveCommandDirection) -> Void)? = nil
+    var focusFirstRequestID: UUID? = nil
 
     @FocusState private var focusedID: String?
 
@@ -2577,6 +2578,23 @@ struct HomePosterRow: View {
                 .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
                 .onChange(of: focusedID) { _, new in
                     if new != nil { ContentFocusRouter.shared.noteFocused(row: row.id) }
+                }
+                .task(id: focusFirstRequestID) {
+                    guard focusFirstRequestID != nil, let first = row.items.first?.id else { return }
+                    // This task belongs to ONE catalog move. A newer move, a
+                    // detail push or disappearance cancels it; no detached
+                    // router retry may drag focus back to an obsolete row.
+                    proxy.scrollTo(first, anchor: .leading)
+                    focusedID = first
+                    var previous: String?
+                    for _ in 0..<12 {
+                        do { try await Task.sleep(for: .milliseconds(40)) } catch { return }
+                        guard !Task.isCancelled else { return }
+                        if focusedID == first { return }
+                        if let current = focusedID, current == previous { return }
+                        previous = focusedID
+                        focusedID = first
+                    }
                 }
                 .task(id: restoreItemID) {
                     guard let target = restoreItemID, row.items.contains(where: { $0.id == target }) else { return }

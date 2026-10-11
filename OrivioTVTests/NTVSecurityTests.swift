@@ -47,10 +47,19 @@ final class NTVSecurityTests: XCTestCase {
         connection.stateUpdateHandler = { state in
             switch state {
             case .ready:
+                connection.stateUpdateHandler = nil
                 XCTFail("Diagnostics must not expose an unauthenticated network endpoint")
                 refused.fulfill()
-            case .failed:
+                connection.cancel()
+            case .failed(let error), .waiting(let error):
+                connection.stateUpdateHandler = nil
+                if case .posix(let code) = error, code == .ECONNREFUSED {
+                    // Network.framework reports refusal as .waiting on tvOS.
+                } else {
+                    XCTFail("Expected an explicit connection refusal, received \(error)")
+                }
                 refused.fulfill()
+                connection.cancel()
             default: break
             }
         }

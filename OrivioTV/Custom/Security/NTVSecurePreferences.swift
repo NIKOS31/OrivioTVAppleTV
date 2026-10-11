@@ -77,6 +77,16 @@ final class NTVSecurePreferences: @unchecked Sendable {
     private func decode(_ data: Data) throws -> Any? {
         (try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any])?["value"]
     }
+    private func legacyAlias(_ key: String) -> String {
+        "nuvio." + key.dropFirst("orivio.".count)
+    }
+    private func legacyValue(_ key: String) -> Any? {
+        defaults.object(forKey: key) ?? defaults.object(forKey: legacyAlias(key))
+    }
+    private func removeLegacyCopies(_ key: String) {
+        defaults.removeObject(forKey: key)
+        defaults.removeObject(forKey: legacyAlias(key))
+    }
     func object(forKey key: String) -> Any? {
         guard Self.isPrivate(key) else { return defaults.object(forKey: key) }
         privateLock.lock(); defer { privateLock.unlock() }
@@ -84,15 +94,15 @@ final class NTVSecurePreferences: @unchecked Sendable {
         do {
             if let data = try secrets.read(key) {
                 guard let value = try decode(data) else { markFailedLegacy(key); return nil }
-                defaults.removeObject(forKey: key)
+                removeLegacyCopies(key)
                 failedLegacyKeys.remove(key)
                 return value
             }
-            guard let legacy = defaults.object(forKey: key) else { return nil }
+            guard let legacy = legacyValue(key) else { return nil }
             let data = try encode(legacy)
             try secrets.write(data, key: key)
             guard try secrets.read(key) == data else { markFailedLegacy(key); return nil }
-            defaults.removeObject(forKey: key)
+            removeLegacyCopies(key)
             failedLegacyKeys.remove(key)
             return legacy
         } catch {
@@ -113,13 +123,13 @@ final class NTVSecurePreferences: @unchecked Sendable {
         guard let value else { return removeObject(forKey: key) }
         // A store that failed to load may save its empty/default fallback.
         // Preserve the original until a later successful read or explicit reset.
-        guard !failedLegacyKeys.contains(key) || defaults.object(forKey: key) == nil else { return false }
-        if defaults.object(forKey: key) != nil, object(forKey: key) == nil { return false }
+        guard !failedLegacyKeys.contains(key) || legacyValue(key) == nil else { return false }
+        if legacyValue(key) != nil, object(forKey: key) == nil { return false }
         do {
             let data = try encode(value)
             try secrets.write(data, key: key)
             guard try secrets.read(key) == data else { return false }
-            defaults.removeObject(forKey: key)
+            removeLegacyCopies(key)
             defaults.removeObject(forKey: revocationKey(key))
             return true
         } catch {
@@ -133,24 +143,27 @@ final class NTVSecurePreferences: @unchecked Sendable {
         privateLock.lock(); defer { privateLock.unlock() }
         // A failed Keychain deletion must never resurrect a signed-out session.
         defaults.set(true, forKey: revocationKey(key))
-        defaults.removeObject(forKey: key)
+        removeLegacyCopies(key)
         failedLegacyKeys.remove(key)
         do { try secrets.remove(key); return true }
         catch { NSLog("[nTV Security] secure deletion pending"); return false }
     }
 
     private func markFailedLegacy(_ key: String) {
-        if defaults.object(forKey: key) != nil { failedLegacyKeys.insert(key) }
+        if legacyValue(key) != nil { failedLegacyKeys.insert(key) }
     }
 
     /// Include profiles that are not currently selected. The caller runs this
     /// on a utility task; locks cover one value at a time, never the whole sweep.
     @discardableResult
     func migrateLegacyPrivateValues() -> Int {
-        let keys = defaults.dictionaryRepresentation().keys.filter(Self.isPrivate)
+        let keys = Set(defaults.dictionaryRepresentation().keys.compactMap { key -> String? in
+            let current = key.hasPrefix("nuvio.") ? "orivio." + key.dropFirst("nuvio.".count) : key
+            return Self.isPrivate(current) ? current : nil
+        })
         var migrated = 0
         for key in keys {
-            if object(forKey: key) != nil, defaults.object(forKey: key) == nil { migrated += 1 }
+            if object(forKey: key) != nil, legacyValue(key) == nil { migrated += 1 }
         }
         return migrated
     }

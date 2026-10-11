@@ -4,6 +4,37 @@ import Network
 @testable import OrivioTV
 
 final class NTVSecurityTests: XCTestCase {
+    func testLegacyRenameCopiesAreRemovedOnlyAfterVerifiedSecureMigration() {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let secrets = MemorySecretStorage(); secrets.failWrite = true
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: secrets)
+        let key = "orivio.stremio.authKey.v1.p2", alias = "nuvio.stremio.authKey.v1.p2"
+        defaults.set("old-credential-fixture", forKey: alias)
+        defaults.set("ordinary-setting", forKey: "nuvio.appearance")
+        XCTAssertNil(prefs.string(forKey: key))
+        XCTAssertEqual(defaults.string(forKey: alias), "old-credential-fixture")
+        secrets.failWrite = false
+        XCTAssertEqual(prefs.migrateLegacyPrivateValues(), 1)
+        XCTAssertEqual(prefs.string(forKey: key), "old-credential-fixture")
+        XCTAssertNil(defaults.object(forKey: alias))
+        XCTAssertEqual(defaults.string(forKey: "nuvio.appearance"), "ordinary-setting")
+    }
+
+    func testCurrentConfigurationWinsOverOldAliasAndRevocationRemovesBothCopies() {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let secrets = MemorySecretStorage()
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: secrets)
+        let key = "orivio.addons.v1.p2", alias = "nuvio.addons.v1.p2"
+        defaults.set(Data("old-config".utf8), forKey: alias)
+        defaults.set(Data("current-config".utf8), forKey: key)
+        XCTAssertEqual(prefs.data(forKey: key), Data("current-config".utf8))
+        XCTAssertNil(defaults.object(forKey: alias))
+        defaults.set(Data("stale-config".utf8), forKey: alias)
+        secrets.failDelete = true
+        XCTAssertFalse(prefs.removeObject(forKey: key))
+        XCTAssertNil(defaults.object(forKey: alias))
+        XCTAssertNil(NTVSecurePreferences(defaults: defaults, secrets: secrets).data(forKey: key))
+    }
     @MainActor func testEnablingLocalDiagnosticsDoesNotExposeALANReadout() async {
         let previous = ProbeGate.isEnabled
         defer { ProbeGate.set(previous); ColorProbeServer.shared.stop() }

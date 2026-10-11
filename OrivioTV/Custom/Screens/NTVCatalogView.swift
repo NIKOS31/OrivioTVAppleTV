@@ -52,6 +52,9 @@ struct NTVCatalogSource: Identifiable {
 
 @MainActor final class NTVCatalogBrowserModel: ObservableObject {
     @Published private(set) var sources: [NTVCatalogSource] = []
+    struct Selection: Equatable { let sourceID: String; let itemID: String }
+    // Unpublished: remembering a clicked poster must not redraw the shelves.
+    private(set) var lastSelection: Selection?
     private var fingerprint = ""
     private var shelves: [String: NTVCatalogShelfModel] = [:]
     private var order: [String] = []
@@ -62,7 +65,7 @@ struct NTVCatalogSource: Identifiable {
         }
         let next = scope + "#" + available.map { "\($0.id)#\($0.catalog.hashValue)" }.joined(separator: "#")
         guard next != fingerprint else { return }
-        fingerprint = next; shelves = [:]; order = []
+        fingerprint = next; shelves = [:]; order = []; lastSelection = nil
         var seen = Set<String>()
         sources = available.filter { seen.insert($0.id).inserted }
     }
@@ -73,6 +76,11 @@ struct NTVCatalogSource: Identifiable {
         while order.count > 24 { shelves.removeValue(forKey: order.removeFirst()) }
         return value
     }
+    func rememberSelection(sourceID: String, itemID: String) {
+        guard sources.contains(where: { $0.id == sourceID }) else { return }
+        lastSelection = Selection(sourceID: sourceID, itemID: itemID)
+    }
+    func forgetSelection() { lastSelection = nil }
 }
 
 struct NTVCatalogView: View {
@@ -82,6 +90,7 @@ struct NTVCatalogView: View {
     @ObservedObject var viewModel: NTVCatalogBrowserModel
     let mediaType: String
     let title: String
+    let isAtRoot: Bool
     let onSelect: (MetaItem) -> Void
     let onPlayManually: (MetaItem, MetaVideo?) -> Void
     let onSeeAll: (InstalledAddon, ManifestCatalog, String) -> Void
@@ -90,6 +99,7 @@ struct NTVCatalogView: View {
     @State private var hero = HeroFocus()
     @State private var categoriesOpen = false
     @State private var requestedCategory: String?
+    @State private var restoreSelection: NTVCatalogBrowserModel.Selection?
     @FocusState private var categoryFocus: String?
     private var loadKey: String {
         String(profiles.activeProfileID) + "#" + addons.catalogAddons.map { "\($0.id)#\($0.manifest.catalogs?.hashValue ?? 0)" }.joined(separator: "#")
@@ -120,9 +130,14 @@ struct NTVCatalogView: View {
                             }
                             ForEach(viewModel.sources) { source in
                                 NTVCatalogShelf(model: viewModel.shelf(source), hero: hero,
-                                    onSelect: onSelect, onPlayManually: onPlayManually,
+                                    onSelect: { item in
+                                        requestedCategory = nil
+                                        viewModel.rememberSelection(sourceID: source.id, itemID: item.id)
+                                        onSelect(item)
+                                    }, onPlayManually: onPlayManually,
                                     onSeeAll: onSeeAll, onBackAtRoot: onBackAtRoot,
-                                    focusRequested: requestedCategory == source.id)
+                                    focusRequested: requestedCategory == source.id,
+                                    restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil)
                                     .id(source.id)
                             }
                         }.padding(.top, 26).padding(.bottom, 100)
@@ -130,6 +145,16 @@ struct NTVCatalogView: View {
                     .scrollClipDisabled().disabled(categoriesOpen)
                     if categoriesOpen {
                         categoryPanel(proxy).padding(.leading, NTVViewport.horizontalInset).padding(.vertical, 20)
+                    }
+                }
+                .task(id: isAtRoot) {
+                    restoreSelection = nil
+                    // A tab round-trip can recreate this view while a pushed
+                    // detail remains open. Never take focus from that detail.
+                    guard isAtRoot, let selection = viewModel.lastSelection else { return }
+                    restoreSelection = selection
+                    if selection.sourceID != viewModel.sources.first?.id {
+                        proxy.scrollTo(selection.sourceID, anchor: .top)
                     }
                 }
             }
@@ -153,7 +178,9 @@ struct NTVCatalogView: View {
                 if hero.item == nil, let item = shelf.items.first { hero.focus(item) }
             }
         }
-        .onChange(of: profiles.activeProfileID) { _, _ in hero.item = nil }
+        .onChange(of: profiles.activeProfileID) { _, _ in
+            hero.item = nil; restoreSelection = nil; requestedCategory = nil
+        }
         .onChange(of: categoriesOpen) { _, open in
             if open { categoryFocus = viewModel.sources.first?.id }
         }
@@ -170,6 +197,7 @@ struct NTVCatalogView: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(viewModel.sources) { source in
                         Button {
+                            viewModel.forgetSelection(); restoreSelection = nil
                             categoriesOpen = false
                             requestedCategory = source.id
                             proxy.scrollTo(source.id, anchor: .top)
@@ -209,6 +237,7 @@ private struct NTVCatalogShelf: View {
     let onSeeAll: (InstalledAddon, ManifestCatalog, String) -> Void
     let onBackAtRoot: () -> Void
     let focusRequested: Bool
+    let restoreItemID: String?
     var body: some View {
         Group {
             if !model.items.isEmpty {
@@ -216,7 +245,8 @@ private struct NTVCatalogShelf: View {
                     items: model.items, addon: model.source.addon, catalog: model.source.catalog),
                     useLandscape: false, hero: hero, onSelect: onSelect,
                     onPlayManually: onPlayManually, onSeeAll: onSeeAll,
-                    onBackAtStart: onBackAtRoot, accessibilityPrefix: "ntv.poster")
+                    onBackAtStart: onBackAtRoot, accessibilityPrefix: "ntv.poster",
+                    restoreItemID: restoreItemID)
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(model.source.title).font(.system(size: 28, weight: .semibold))

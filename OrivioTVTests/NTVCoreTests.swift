@@ -10,10 +10,13 @@ final class NTVCoreTests: XCTestCase {
         model.configure(addons: [addon], type: "movie", scope: "1")
         XCTAssertEqual(model.sources.count, 1, "Search-only catalogs and other media types must not create shelves.")
         let source = try XCTUnwrap(model.sources.first), shelf = model.shelf(source)
+        model.rememberSelection(sourceID: source.id, itemID: "selected-fixture")
         model.configure(addons: [addon], type: "movie", scope: "1")
         XCTAssertTrue(shelf === model.shelf(source), "Returning from a detail must retain loaded catalog state.")
+        XCTAssertEqual(model.lastSelection?.itemID, "selected-fixture", "A tab round-trip must retain the selected poster without a new catalog request.")
         model.configure(addons: [addon], type: "movie", scope: "2")
         XCTAssertFalse(shelf === model.shelf(source), "A different profile must not inherit the former profile's cache.")
+        XCTAssertNil(model.lastSelection, "Focus must not cross profile boundaries.")
     }
 
     @MainActor

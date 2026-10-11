@@ -2507,6 +2507,7 @@ struct HomePosterRow: View {
     let onBackAtStart: () -> Void
 
     var accessibilityPrefix = "ntv.home.poster"
+    var restoreItemID: String? = nil
 
     @FocusState private var focusedID: String?
 
@@ -2567,6 +2568,21 @@ struct HomePosterRow: View {
                 .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
                 .onChange(of: focusedID) { _, new in
                     if new != nil { ContentFocusRouter.shared.noteFocused(row: row.id) }
+                }
+                .task(id: restoreItemID) {
+                    guard let target = restoreItemID, row.items.contains(where: { $0.id == target }) else { return }
+                    // Allow the pop transition to mount this row before a focus
+                    // write. Reuse its loaded data and scroll only this shelf.
+                    try? await Task.sleep(for: .milliseconds(320))
+                    guard !Task.isCancelled else { return }
+                    proxy.scrollTo(target, anchor: .center)
+                    focusedID = target
+                    for _ in 0..<8 {
+                        try? await Task.sleep(for: .milliseconds(50))
+                        guard !Task.isCancelled else { return }
+                        if focusedID == target { return }
+                        focusedID = target
+                    }
                 }
             }
         }

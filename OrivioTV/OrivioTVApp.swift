@@ -1503,7 +1503,7 @@ struct RootView: View {
             }
         case 5:
             NavigationStack(path: $moviesPath) {
-                NTVCatalogView(viewModel: moviesViewModel, mediaType: "movie", title: "Films",
+                NTVCatalogView(viewModel: moviesViewModel, mediaType: "movie", title: "Films", isAtRoot: moviesPath.isEmpty,
                     onSelect: { moviesPath.append(Route.detail($0)) },
                     onPlayManually: { moviesPath.append(Route.streamsManual($0, $1)) },
                     onSeeAll: { moviesPath.append(Route.catalogSeeAll(addon: $0, catalog: $1, title: $2)) },
@@ -1515,7 +1515,7 @@ struct RootView: View {
             }
         case 6:
             NavigationStack(path: $seriesPath) {
-                NTVCatalogView(viewModel: seriesViewModel, mediaType: "series", title: "Séries",
+                NTVCatalogView(viewModel: seriesViewModel, mediaType: "series", title: "Séries", isAtRoot: seriesPath.isEmpty,
                     onSelect: { seriesPath.append(Route.detail($0)) },
                     onPlayManually: { seriesPath.append(Route.streamsManual($0, $1)) },
                     onSeeAll: { seriesPath.append(Route.catalogSeeAll(addon: $0, catalog: $1, title: $2)) },

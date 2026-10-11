@@ -168,6 +168,7 @@ struct NTVCatalogView: View {
             }
         }
         .padding(28).frame(width: 420).frame(maxHeight: .infinity)
+        .defaultFocus($categoryFocus, viewModel.sources.first?.id)
         .background(NTVDesign.background.opacity(0.97), in: RoundedRectangle(cornerRadius: 28))
         .overlay(RoundedRectangle(cornerRadius: 28).stroke(.white.opacity(0.14)))
         .ntvHalloweenDecor(.panel)

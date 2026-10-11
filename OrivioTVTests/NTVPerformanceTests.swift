@@ -5,6 +5,23 @@ import UniformTypeIdentifiers
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    @MainActor
+    func testNormalPosterDecodeKeepsFocusHeadroomWithoutAnOversizedBitmap() async throws {
+        let height: CGFloat = 330
+        let budget = try XCTUnwrap(RemoteImage.pixelBudget(maxDimension: height, maxPixels: nil))
+        XCTAssertGreaterThanOrEqual(budget, height * UIScreen.main.scale * 1.1,
+                                    "The focused poster must retain sufficient display resolution.")
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let original = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 1800), format: format).image { context in
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 1200, height: 1800))
+        }
+        let data = try XCTUnwrap(original.pngData())
+        let image = try await ImageCache.shared.preparedImage(data, budget: budget, memoryKey: UUID().uuidString)
+        let bitmap = try XCTUnwrap(image?.cgImage)
+        XCTAssertLessThanOrEqual(bitmap.height, 960)
+        XCTAssertLessThan(bitmap.bytesPerRow * bitmap.height, 4_000_000,
+                          "A small catalog poster must not occupy a full 5 MB rendition in normal mode.")
+    }
     private actor Gate {
         private(set) var started: [String] = []
         private var held: [String: CheckedContinuation<Int, Error>] = [:]

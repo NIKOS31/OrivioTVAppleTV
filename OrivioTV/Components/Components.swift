@@ -553,7 +553,7 @@ struct RemoteImage: View {
     var contentMode: ContentMode = .fill
     var alignment: Alignment = .center
     /// Longest rendered side in POINTS, when the caller knows it (poster and
-    /// episode cards do). Decoding is capped at 1.5× this size in pixels —
+    /// episode cards do). Decoding keeps 10% headroom above the displayed pixels
     /// still supersampled relative to what's drawn, so the rendered output is
     /// identical, but a grid of cards stops decoding full "original" TMDB art
     /// it can never show. `nil` (heroes/backdrops) = device framebuffer cap.
@@ -613,7 +613,7 @@ struct RemoteImage: View {
     private static let budgetLadder: [CGFloat] = [240, 340, 480, 680, 960, 1360, 1920, 2720, 3840]
 
     static func pixelBudget(maxDimension: CGFloat?, maxPixels: CGFloat?) -> CGFloat? {
-        let fromPoints = maxDimension.map { $0 * UIScreen.main.scale * 1.5 }
+        let fromPoints = maxDimension.map { $0 * UIScreen.main.scale * 1.1 }
         let raw: CGFloat?
         switch (fromPoints, maxPixels) {
         case (let a?, let b?): raw = min(a, b)

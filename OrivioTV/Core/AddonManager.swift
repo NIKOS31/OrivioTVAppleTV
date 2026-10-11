@@ -84,7 +84,7 @@ final class AddonManager: ObservableObject {
     /// from the seed instead of inheriting them.
     func forgetProfile(_ id: Int) {
         if id == profileID { scopeEpoch &+= 1 }
-        UserDefaults.standard.removeObject(forKey: Self.storageKey + ".p\(id)")
+        NTVSecurePreferences.standard.removeObject(forKey: Self.storageKey + ".p\(id)")
         UserDefaults.standard.removeObject(forKey: Self.forgottenDefaultsKey + ".p\(id)")
         if id == profileID {
             addons = []
@@ -413,9 +413,9 @@ final class AddonManager: ObservableObject {
         suppressChange = false
         missedLocalChangeWhileSuppressed = false
         addons.removeAll()
-        UserDefaults.standard.removeObject(forKey: Self.storageKey)
+        NTVSecurePreferences.standard.removeObject(forKey: Self.storageKey)
         for id in 1...ProfileStore.maxProfiles {
-            UserDefaults.standard.removeObject(forKey: Self.storageKey + ".p\(id)")
+            NTVSecurePreferences.standard.removeObject(forKey: Self.storageKey + ".p\(id)")
         }
     }
 
@@ -479,7 +479,7 @@ final class AddonManager: ObservableObject {
     }
 
     var exportedManifestList: String {
-        addons.map(\.manifestURL).joined(separator: "\n")
+        addons.map(\.manifestURL).filter(NTVExportPolicy.permitsPublicManifest).joined(separator: "\n")
     }
 
     private static func extractManifestURLs(from text: String) -> [String] {
@@ -695,13 +695,15 @@ final class AddonManager: ObservableObject {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(addons) else { return }
-        UserDefaults.standard.set(
+        NTVSecurePreferences.standard.set(
             Self.deflated(data),
             forKey: ProfileScopedDefaults.writeKey(Self.storageKey, feature: Self.feature, profileID)
         )
     }
 
-    /// The list is stored COMPRESSED, because a manifest is not a preference.
+    /// The list is compressed before the device-local Keychain write. Existing
+    /// preference blobs migrate through NTVSecurePreferences only after a
+    /// verified write/read; compression itself is not encryption.
     ///
     /// Every installed addon is persisted here with its whole manifest, and a
     /// catalog pack's manifest is enormous: one real Xperience profile is 746

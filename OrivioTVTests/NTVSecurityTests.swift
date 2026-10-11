@@ -3,6 +3,83 @@ import UIKit
 @testable import OrivioTV
 
 final class NTVSecurityTests: XCTestCase {
+    func testConfiguredAccessStoresMigrateIntoSecureStorage() throws {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let secrets = MemorySecretStorage()
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: secrets)
+        let bases = ["orivio.addons.v1", "orivio.mediaservers.v1", "orivio.mdblist.settings.v1",
+                     "orivio.torrent.settings.v1", "orivio.livetv.customurl.v1", "orivio.badges.url.v1"]
+        for base in bases {
+            for key in [base, base + ".p1", base + ".p2"] {
+                let payload = Data("https://fixture.invalid/PRIVATE-MIGRATION-SENTINEL/manifest.json".utf8)
+                defaults.set(payload, forKey: key)
+                XCTAssertEqual(prefs.data(forKey: key), payload)
+                XCTAssertNil(defaults.data(forKey: key))
+                XCTAssertNotNil(secrets.values[key])
+            }
+        }
+    }
+
+    func testAddonMigrationRetainsLegacyDataWhenSecureWriteFails() {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let secrets = MemorySecretStorage(); secrets.failWrite = true
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: secrets)
+        let key = "orivio.addons.v1.p2", payload = Data("compressed-addon-fixture".utf8)
+        defaults.set(payload, forKey: key)
+        XCTAssertNil(prefs.data(forKey: key))
+        XCTAssertEqual(defaults.data(forKey: key), payload)
+        secrets.failWrite = false
+        XCTAssertEqual(prefs.data(forKey: key), payload)
+        XCTAssertNil(defaults.data(forKey: key))
+    }
+
+    func testAddonMigrationDoesNotDeleteLegacyCopyAfterMismatchedRead() {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let secrets = MemorySecretStorage(); secrets.corruptRead = true
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: secrets)
+        let key = "orivio.addons.v1.p1", payload = Data("original-addon-fixture".utf8)
+        defaults.set(payload, forKey: key)
+        XCTAssertNil(prefs.data(forKey: key))
+        XCTAssertEqual(defaults.data(forKey: key), payload)
+    }
+
+    func testDeletedAddonScopeCannotReturnAfterFailedSecureDeletion() {
+        let defaults = UserDefaults(suiteName: "ntv.audit." + UUID().uuidString)!
+        let secrets = MemorySecretStorage()
+        let prefs = NTVSecurePreferences(defaults: defaults, secrets: secrets)
+        let a = "orivio.addons.v1.p1", b = "orivio.addons.v1.p2"
+        XCTAssertTrue(prefs.set(Data("profile-a".utf8), forKey: a))
+        XCTAssertTrue(prefs.set(Data("profile-b".utf8), forKey: b))
+        secrets.failDelete = true
+        XCTAssertFalse(prefs.removeObject(forKey: a))
+        let reopened = NTVSecurePreferences(defaults: defaults, secrets: secrets)
+        XCTAssertNil(reopened.data(forKey: a))
+        XCTAssertEqual(reopened.data(forKey: b), Data("profile-b".utf8))
+    }
+
+    @MainActor func testPlainAddonExportRejectsUnknownConfiguredURLs() {
+        XCTAssertTrue(NTVExportPolicy.permitsPublicManifest(AddonManager.cinemetaURL))
+        for value in [AddonManager.cinemetaURL + "?token=PRIVATE-EXPORT-SENTINEL",
+                      "https://addon.invalid/opaque-config/manifest.json",
+                      "https://addon.invalid/manifest.json", "http://v3-cinemeta.strem.io/manifest.json"] {
+            XCTAssertFalse(NTVExportPolicy.permitsPublicManifest(value))
+        }
+    }
+
+    func testBackupScrubsNestedLinksAndCredentialsWhileKeepingResumeData() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "library": [["id": "tt123", "name": "Fixture", "poster": "https://fixture.invalid/PRIVATE-EXPORT-SENTINEL"]],
+            "progress": [["id": "tt123", "position": 42, "streamURL": "https://fixture.invalid/video?token=PRIVATE-EXPORT-SENTINEL"]],
+            "metadata": ["api_key": "PRIVATE-EXPORT-SENTINEL", "proxyHeaders": ["Authorization": "Bearer PRIVATE-EXPORT-SENTINEL"]]
+        ])
+        let sanitized = try NTVExportPolicy.sanitizedJSON(data)
+        XCTAssertFalse(String(decoding: sanitized, as: UTF8.self).contains("PRIVATE-EXPORT-SENTINEL"))
+        let output = try XCTUnwrap(JSONSerialization.jsonObject(with: sanitized) as? [String: Any])
+        let progress = try XCTUnwrap(output["progress"] as? [[String: Any]])
+        XCTAssertEqual(progress.first?["position"] as? Int, 42)
+        XCTAssertEqual(progress.first?["id"] as? String, "tt123")
+    }
+
     func testPublicCinemetaCatalogAliasDoesNotAcceptConfiguredURLs() throws {
         let source = try XCTUnwrap(URL(string: "https://v3-cinemeta.strem.io/catalog/movie/top.json"))
         let destination = try XCTUnwrap(URL(string: "https://cinemeta-catalogs.strem.io/top/catalog/movie/top.json"))
@@ -545,8 +622,11 @@ final class NTVSecurityTests: XCTestCase {
 
 private final class MemorySecretStorage: NTVSecretStorage {
     var values: [String: Data] = [:]
-    var failWrite = false, failDelete = false
-    func read(_ key: String) throws -> Data? { values[key] }
+    var failWrite = false, failDelete = false, corruptRead = false
+    func read(_ key: String) throws -> Data? {
+        guard let data = values[key] else { return nil }
+        return corruptRead ? Data("corrupted-fixture".utf8) : data
+    }
     func write(_ data: Data, key: String) throws {
         if failWrite { throw NTVKeychainStorage.StorageError.unavailable }
         values[key] = data

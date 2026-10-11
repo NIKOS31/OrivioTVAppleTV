@@ -59,7 +59,10 @@ final class NTVSecurePreferences {
     static func isPrivate(_ key: String) -> Bool {
         ["orivio.session.v1", "orivio.stremio.authKey.v1", "orivio.trakt.tokens.v1",
          "orivio.trakt.secret.v1", "orivio.simkl.token.v1", "orivio.debrid.keys.v1",
-         "orivio.debrid.rdrefresh.v1", "orivio.tmdb.settings.v1"].contains { key == $0 || key.hasPrefix($0 + ".p") }
+         "orivio.debrid.rdrefresh.v1", "orivio.tmdb.settings.v1",
+         "orivio.addons.v1", "orivio.mediaservers.v1", "orivio.mdblist.settings.v1",
+         "orivio.torrent.settings.v1", "orivio.livetv.customurl.v1",
+         "orivio.badges.url.v1"].contains { key == $0 || key.hasPrefix($0 + ".p") }
     }
     private func revocationKey(_ key: String) -> String {
         "ntv.secure.revoked." + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()

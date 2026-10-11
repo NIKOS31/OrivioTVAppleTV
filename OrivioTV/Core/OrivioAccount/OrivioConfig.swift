@@ -11,22 +11,24 @@ import Foundation
 /// a password.
 enum OrivioConfig {
     /// Primary Supabase base URL.
-    static let supabaseURL = Secrets.supabaseURL
+    // nTV uses local configuration and direct provider connections. Cloud
+    // account/sync remain disabled until a separate server and E2E audit exists.
+    static let supabaseURL = ""
 
     /// Origin fallback used when the primary edge (Cloudflare) returns a 5xx /
     /// network error, mirroring the Android client's retry behavior.
-    static let supabaseFallbackURL = Secrets.supabaseFallbackURL
+    static let supabaseFallbackURL = ""
 
     /// Public `anon` API key (role=anon, valid 2026-2031).
-    static let anonKey = Secrets.supabaseAnonKey
+    static let anonKey = ""
 
     /// Web page the TV directs the user to (rendered as the QR target). The
     /// backend appends the login code to this base.
-    static let tvLoginWebBaseURL = Secrets.tvLoginWebBaseURL
+    static let tvLoginWebBaseURL = ""
 
     /// Public storage base for profile avatar images. Image URL is this joined
     /// with an avatar catalog item's `storage_path`.
-    static let avatarPublicBaseURL = Secrets.avatarPublicBaseURL
+    static let avatarPublicBaseURL = ""
 
     static var isConfigured: Bool {
         !supabaseURL.isEmpty && !anonKey.isEmpty

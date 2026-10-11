@@ -227,7 +227,7 @@ final class StreamBadgeStore: ObservableObject {
                 lastStatus = "No usable filters in that config"
                 return lastStatus
             }
-            UserDefaults.standard.set(trimmed, forKey: scopedURLKey)
+            NTVSecurePreferences.standard.set(trimmed, forKey: scopedURLKey)
             UserDefaults.standard.set(data, forKey: scopedPayloadKey)
             sourceURL = trimmed
             compileFilters(from: data)
@@ -264,7 +264,7 @@ final class StreamBadgeStore: ObservableObject {
     func removeConfig() {
         // Empty markers, not removal: an absent scoped key falls back to the
         // legacy seed, which would bring the removed pack straight back.
-        UserDefaults.standard.set("", forKey: scopedURLKey)
+        NTVSecurePreferences.standard.set("", forKey: scopedURLKey)
         UserDefaults.standard.set(Data(), forKey: scopedPayloadKey)
         sourceURL = ""
         compiled = []
@@ -304,7 +304,7 @@ final class StreamBadgeStore: ObservableObject {
 
         guard let payload = try? JSONSerialization.data(withJSONObject: ["filters": filters]) else { return }
         suppressChange = true
-        UserDefaults.standard.set(remoteURL, forKey: scopedURLKey)
+        NTVSecurePreferences.standard.set(remoteURL, forKey: scopedURLKey)
         UserDefaults.standard.set(payload, forKey: scopedPayloadKey)
         sourceURL = remoteURL
         compileFilters(from: payload)

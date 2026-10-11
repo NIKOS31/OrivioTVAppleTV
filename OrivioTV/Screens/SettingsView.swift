@@ -1672,7 +1672,7 @@ struct AboutDetail: View {
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 44))
                             .foregroundStyle(theme.palette.secondary)
-                        Text("ORIVIO")
+                        Text("nTV")
                             .font(.system(size: 40, weight: .heavy))
                             .foregroundStyle(theme.palette.textPrimary)
                     }
@@ -1689,6 +1689,10 @@ struct AboutDetail: View {
                 Button { info = .licenses } label: {
                     SettingsValueCard(title: "Licences et crédits", subtitle: "Composants libres utilisés dans l’app", value: "", icon: "doc.text.fill")
                 }.buttonStyle(PlainCardButtonStyle())
+                Button { info = .terms } label: {
+                    SettingsValueCard(title: "Conditions d’utilisation", subtitle: "Rôle du lecteur et utilisation des services tiers", value: "", icon: "doc.plaintext")
+                }.buttonStyle(PlainCardButtonStyle())
+                    .accessibilityIdentifier("ntv.settings.terms")
             }
 
             SettingsGroupCard(title: "Diagnostic", subtitle: "Informations sur l’appareil et le stockage") {
@@ -1736,13 +1740,14 @@ struct AboutDetail: View {
 
 /// The static info pages reachable from About.
 private enum AboutInfo: String, Identifiable {
-    case privacy, licenses
+    case privacy, licenses, terms
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .privacy: return "Confidentialité"
         case .licenses: return "Licences et crédits"
+        case .terms: return "Conditions d’utilisation"
         }
     }
 
@@ -1752,6 +1757,8 @@ private enum AboutInfo: String, Identifiable {
             return "nTV conserve vos réglages, votre bibliothèque et vos sessions sur cette TV. Les services que vous connectez gèrent leurs propres données. Les liens d’addons et sauvegardes peuvent contenir des accès privés. Aucun suivi publicitaire n’est ajouté par nTV."
         case .licenses:
             return "nTV utilise notamment KSPlayer, FFmpeg et VLC, ainsi que les métadonnées TMDB lorsque ce service est configuré. Ce produit utilise l’API TMDB sans être approuvé ou certifié par TMDB. Les licences et crédits des composants sont disponibles dans le dépôt source ; les licences FFmpeg sont aussi embarquées dans l’app."
+        case .terms:
+            return "nTV est un lecteur multimédia et un agrégateur de services configurés par vous. nTV n’héberge ni ne redistribue les fichiers de films, séries ou directs de vos fournisseurs. Les métadonnées, affiches et sous-titres peuvent provenir de services tiers.\n\nUtilisez uniquement des contenus auxquels vous avez légalement accès. Ajouter un addon, un lien ou un abonnement ne confère aucun droit sur les œuvres. Vous choisissez vos sources et devez respecter les droits d’auteur, les restrictions d’accès et les conditions de chaque fournisseur.\n\nLes fournisseurs gèrent leurs offres, leurs autorisations et leur disponibilité. nTV ne vend aucun abonnement à ces services et n’est pas leur représentant. Gardez vos clés et liens configurés privés.\n\nCes conditions ne suppriment ni vos droits impératifs ni les obligations légales de l’éditeur. Version de ces informations : 11 octobre 2026."
         }
     }
 }
@@ -1765,6 +1772,7 @@ private struct AboutInfoView: View {
         DetailScaffold(title: info.title, subtitle: "") {
             SettingsGroupCard(title: "") {
                 Text(info.body)
+                    .accessibilityIdentifier(info == .terms ? "ntv.terms.body" : "ntv.about.info.body")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textSecondary)
                     .lineSpacing(6)
@@ -2018,6 +2026,7 @@ private struct AddonExportView: View {
     @EnvironmentObject private var theme: ThemeManager
     let urls: [String]
     let onDone: () -> Void
+    private var publicURLs: [String] { urls.filter(NTVExportPolicy.permitsPublicManifest) }
 
     var body: some View {
         ZStack {
@@ -2026,14 +2035,14 @@ private struct AddonExportView: View {
                 Text("Exporter mes addons")
                     .font(FusionType.pageTitle(theme.font))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("Scannez le QR avec votre téléphone. Collez les liens dans nTV pour restaurer vos addons.")
+                Text("Ce QR contient uniquement les addons publics intégrés. Les liens configurés privés ne sont pas exportés : récupérez-les auprès de leurs fournisseurs.")
                     .font(FusionType.bodyText(theme.font))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 900)
-                QRCodeView(string: urls.joined(separator: "\n"))
+                QRCodeView(string: publicURLs.joined(separator: "\n"))
                     .frame(width: 460, height: 460)
-                Text("\(urls.count) addon\(urls.count == 1 ? "" : "s")")
+                Text("\(publicURLs.count) addon\(publicURLs.count == 1 ? "" : "s") public\(publicURLs.count == 1 ? "" : "s")")
                     .font(.system(size: 21, weight: .medium))
                     .foregroundStyle(theme.palette.textTertiary)
                 Button("Terminer", action: onDone)

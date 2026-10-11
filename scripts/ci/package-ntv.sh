@@ -26,6 +26,8 @@ with open(sys.argv[2], encoding="utf-8") as handle:
 head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 if info.get("CFBundleDisplayName") != "nTV" or info.get("CFBundleName") != "nTV":
     raise SystemExit("Unexpected app display name.")
+if info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon") != "NTVPrimaryIcon":
+    raise SystemExit("The system must reference the dedicated nTV icon, including the app switcher.")
 if info.get("CFBundleSupportedPlatforms") != ["AppleTVOS"] or 3 not in info.get("UIDeviceFamily", []):
     raise SystemExit("Expected a device tvOS app, never simulator output.")
 if build.get("commit") != head or build.get("ui_tests_executed") is not True:

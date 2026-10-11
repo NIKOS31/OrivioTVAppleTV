@@ -20,7 +20,7 @@ final class LiveTVSettingsStore: ObservableObject {
     /// language filters don't apply (those are paths into iptv-org's playlist
     /// tree, meaningless against someone else's server). Cleared = the
     /// built-in list is right back; nothing about it is forgotten.
-    @Published var customPlaylistURL: String { didSet { UserDefaults.standard.set(customPlaylistURL, forKey: Self.customURLKey) } }
+    @Published var customPlaylistURL: String { didSet { NTVSecurePreferences.standard.set(customPlaylistURL, forKey: Self.customURLKey) } }
 
     private static let enabledKey = "orivio.livetv.enabled.v1"
     private static let countryKey = "orivio.livetv.country.v1"
@@ -32,7 +32,7 @@ final class LiveTVSettingsStore: ObservableObject {
         enabled = (UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool) ?? true
         countryCode = UserDefaults.standard.string(forKey: Self.countryKey) ?? ""
         languageCode = UserDefaults.standard.string(forKey: Self.langKey) ?? ""
-        customPlaylistURL = UserDefaults.standard.string(forKey: Self.customURLKey) ?? ""
+        customPlaylistURL = NTVSecurePreferences.standard.string(forKey: Self.customURLKey) ?? ""
     }
 
     static let base = "https://iptv-org.github.io/iptv"

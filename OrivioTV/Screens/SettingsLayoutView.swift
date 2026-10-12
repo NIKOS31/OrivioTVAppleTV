@@ -160,9 +160,14 @@ struct LayoutSettingsDetail: View {
                 ) { settings.posterCornerRadius = Int($0) ?? 12 }
 
                 SettingsToggleCard(
-                    title: "Masquer les titres non sortis",
-                    subtitle: "Afficher seulement les titres déjà sortis",
+                    title: "Masquer les sorties à venir",
+                    subtitle: "Masquer les films et séries dont la date de sortie connue est à venir.",
                     isOn: $settings.hideUnreleasedContent
+                )
+                SettingsToggleCard(
+                    title: "Masquer les titres sans source",
+                    subtitle: "Vérifier progressivement vos addons de lecture. Les titres non vérifiés restent visibles ; une panne ne les masque pas.",
+                    isOn: $settings.hideUnavailableSources
                 )
             }
 

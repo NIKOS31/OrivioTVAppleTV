@@ -346,6 +346,15 @@ enum StremioAPI {
         let lang: String?
     }
 
+    /// A missing/invalid list is not evidence that a title has no sources.
+    /// Availability probes neither read nor retain a stream-body cache.
+    static func streamsForAvailability(addon: InstalledAddon, type: String, id: String) async throws -> [Stream] {
+        let url = try addon.resourceURL("/stream/\(encodePathComponent(type))/\(encodePathComponent(id)).json")
+        let response: StreamsResponse = try await get(url, ttl: 0, timeout: 20, resource: .streams)
+        guard let streams = response.streams else { throw StremioAPIError.emptyBody }
+        return streams
+    }
+
     private struct SubtitlesResponse: Codable {
         let subtitles: [AddonSubtitle]?
     }

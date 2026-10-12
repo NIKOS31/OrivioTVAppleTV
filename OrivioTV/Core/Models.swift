@@ -361,6 +361,8 @@ struct MetaItem: Codable, Identifiable, Hashable {
     let logo: String?
     let description: String?
     let releaseInfo: String?
+    /// Precise addon date, separate from the display year/range.
+    let released: String?
     let imdbRating: String?
     let runtime: String?
     let genres: [String]?
@@ -372,7 +374,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case id, type, name, poster, background, logo, description
-        case releaseInfo, imdbRating, runtime, genres, cast, videos, year
+        case releaseInfo, released, imdbRating, runtime, genres, cast, videos, year
         case posterFallback
     }
 
@@ -385,6 +387,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         background = try? c.decode(String.self, forKey: .background)
         logo = try? c.decode(String.self, forKey: .logo)
         description = try? c.decode(String.self, forKey: .description)
+        released = try? c.decode(String.self, forKey: .released)
         if let info = try? c.decode(String.self, forKey: .releaseInfo) {
             releaseInfo = info
         } else if let year = try? c.decode(Int.self, forKey: .year) {
@@ -420,6 +423,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(logo, forKey: .logo)
         try c.encodeIfPresent(description, forKey: .description)
         try c.encodeIfPresent(releaseInfo, forKey: .releaseInfo)
+        try c.encodeIfPresent(released, forKey: .released)
         try c.encodeIfPresent(imdbRating, forKey: .imdbRating)
         try c.encodeIfPresent(runtime, forKey: .runtime)
         try c.encodeIfPresent(genres, forKey: .genres)
@@ -433,7 +437,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         poster: String? = nil, background: String? = nil, logo: String? = nil,
         description: String? = nil, releaseInfo: String? = nil, imdbRating: String? = nil,
         runtime: String? = nil, genres: [String]? = nil, cast: [String]? = nil,
-        videos: [MetaVideo]? = nil, posterFallback: String? = nil
+        videos: [MetaVideo]? = nil, posterFallback: String? = nil, released: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -443,6 +447,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         self.logo = logo
         self.description = description
         self.releaseInfo = releaseInfo
+        self.released = released
         self.imdbRating = imdbRating
         self.runtime = runtime
         self.genres = genres
@@ -468,7 +473,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         MetaItem(id: newID, type: type, name: name, poster: poster, background: background,
                  logo: logo, description: description, releaseInfo: releaseInfo,
                  imdbRating: imdbRating, runtime: runtime, genres: genres, cast: cast,
-                 videos: videos, posterFallback: posterFallback)
+                 videos: videos, posterFallback: posterFallback, released: released)
     }
 
     /// The show behind an add-on's synthesised "Up Next" id, or nil when `id`
@@ -520,6 +525,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
     /// leave the field off constantly, and hiding undated items would quietly
     /// empty half of most catalogs.
     var isUnreleased: Bool {
+        if let released, let date = ReleaseDateParser.parse(released) { return date > Date() }
         guard let releaseInfo, !releaseInfo.isEmpty else { return false }
         // Full date: compare properly, so something due later THIS year is
         // still correctly hidden.

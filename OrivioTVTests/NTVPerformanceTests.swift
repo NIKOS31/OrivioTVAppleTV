@@ -6,6 +6,39 @@ import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    private actor AvailabilityProbe {
+        var active = 0
+        var maximum = 0
+        var calls = 0
+        func load() async throws -> [Stream] {
+            active += 1; maximum = max(maximum, active); calls += 1
+            defer { active -= 1 }
+            try await Task.sleep(for: .milliseconds(30))
+            return []
+        }
+        func snapshot() -> (Int, Int) { (maximum, calls) }
+    }
+
+    func testAvailabilityWindowBoundsActualProviderCallsAndSharesDuplicateTitles() async throws {
+        let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"fixture","name":"Fixture","version":"1","types":["movie"],"resources":["stream"]}"#.utf8))
+        let addon = InstalledAddon(manifestURL: "https://example.invalid/manifest.json", manifest: manifest)
+        let store = NTVSourceAvailabilityStore()
+        let probe = AvailabilityProbe()
+        try await withThrowingTaskGroup(of: NTVSourceAvailability.self) { group in
+            for id in ["one", "two", "three", "four", "one"] {
+                group.addTask {
+                    try await store.check(item: MetaItem(id: id, type: "movie", name: "Fixture"), sources: [addon], scope: "fixture") { _, _, _ in
+                        try await probe.load()
+                    }
+                }
+            }
+            for try await result in group { XCTAssertEqual(result, .absent) }
+        }
+        let (maximum, calls) = await probe.snapshot()
+        XCTAssertEqual(maximum, 1, "Several rows must not fan out source searches concurrently.")
+        XCTAssertEqual(calls, 4, "A duplicate title must reuse the same probe or its result.")
+    }
+
     func testSharedAddonCancellationKeepsAnotherWaiterThenStopsActualHTTP() async throws {
         let probe = NTVBoundedHTTPProbe(stall: true)
         let (session, request) = NTVBoundedHTTPFixture.register(probe)

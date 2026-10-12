@@ -319,6 +319,13 @@ final class HomeCatalogSettingsStore: ObservableObject {
             notifyLocalChange()
         }
     }
+    /// Device-local: availability depends on this TV's configured sources.
+    @Published var hideUnavailableSources = UserDefaults.standard.bool(forKey: "ntv.catalog.hideUnavailableSources.v1") {
+        didSet {
+            guard hideUnavailableSources != oldValue else { return }
+            UserDefaults.standard.set(hideUnavailableSources, forKey: "ntv.catalog.hideUnavailableSources.v1")
+        }
+    }
     /// Presentation style. Device-local (not part of the cross-platform sync
     /// payload — Android keeps layout local too).
     @Published var homeLayout: HomeLayout = .modern {

@@ -2571,6 +2571,9 @@ struct HomeView: View {
 struct HomePosterRow: View {
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var homeCatalogSettings: HomeCatalogSettingsStore
+    @EnvironmentObject private var addonManager: AddonManager
+    @EnvironmentObject private var profiles: ProfileStore
+    @State private var unavailableIDs: Set<String> = []
     let row: HomeRow
     let useLandscape: Bool
     let hero: HeroFocus
@@ -2587,13 +2590,28 @@ struct HomePosterRow: View {
 
     @FocusState private var focusedID: String?
 
+    private var displayedItems: [MetaItem] {
+        row.items.filter {
+            (!homeCatalogSettings.hideUnreleasedContent || !$0.isUnreleased) &&
+            (!homeCatalogSettings.hideUnavailableSources || !unavailableIDs.contains($0.id) || $0.id == focusedID)
+        }
+    }
+    private var availabilityScope: String {
+        guard homeCatalogSettings.hideUnavailableSources else { return "disabled" }
+        return NTVSourceAvailabilityStore.scope(profile: profiles.activeProfileID, addons: addonManager.addons.filter(\.enabled))
+    }
+    private var availabilityTaskKey: String {
+        guard homeCatalogSettings.hideUnavailableSources else { return "disabled" }
+        return availabilityScope + "#\(focusedID ?? "")#" + row.items.map(\.id).joined(separator: "#")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             header
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
-                        ForEach(row.items) { item in
+                        ForEach(displayedItems) { item in
                             // Equatable cell: a focus step writes the row's
                             // @FocusState, which re-runs THIS row body — with
                             // plain cells every materialized card re-built its
@@ -2609,6 +2627,7 @@ struct HomePosterRow: View {
                                 useLandscape: useLandscape,
                                 captionWidth: useLandscape ? 340 : homeCatalogSettings.posterSize.posterWidth,
                                 showLabel: homeCatalogSettings.showPosterLabels,
+                                cornerRadius: CGFloat(homeCatalogSettings.posterCornerRadius),
                                 hero: hero,
                                 onSelect: onSelect,
                                 onPlayManually: onPlayManually,
@@ -2639,11 +2658,28 @@ struct HomePosterRow: View {
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(
+                    for: UIFocusSystem.didUpdateNotification)) { note in
+                    guard onVerticalMove != nil,
+                          let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                            as? UIFocusUpdateContext,
+                          context.focusHeading.contains(.up) || context.focusHeading.contains(.down) else { return }
+                    // Touch-driven focus can change rows without delivering
+                    // the same MoveCommand path as a directional click. Wait
+                    // one main-loop turn for the native focus binding, then
+                    // correct only the row that actually received focus.
+                    DispatchQueue.main.async {
+                        guard focusedID != nil, let first = displayedItems.first?.id,
+                              focusedID != first else { return }
+                        proxy.scrollTo(first, anchor: .leading)
+                        focusedID = first
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(
                     for: UIFocusSystem.movementDidFailNotification)) { note in
                     // A move command also fires when UIKit successfully moves
                     // second -> first. Only a failed LEFT is the extra press
                     // at the boundary, after the first poster already has focus.
-                    guard let onLeftAtStart, focusedID == row.items.first?.id,
+                    guard let onLeftAtStart, focusedID == displayedItems.first?.id,
                           let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
                             as? UIFocusUpdateContext,
                           context.focusHeading == .left else { return }
@@ -2657,13 +2693,13 @@ struct HomePosterRow: View {
                 // handler scrolled to a card that no longer exists and its
                 // focus write was silently dropped.
                 .onAppear { registerRowHandler(proxy) }
-                .onChange(of: row.items.first?.id) { _, _ in registerRowHandler(proxy) }
+                .onChange(of: displayedItems.first?.id) { _, _ in registerRowHandler(proxy) }
                 .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
                 .onChange(of: focusedID) { _, new in
                     if new != nil { ContentFocusRouter.shared.noteFocused(row: row.id) }
                 }
                 .task(id: focusFirstRequestID) {
-                    guard focusFirstRequestID != nil, let first = row.items.first?.id else { return }
+                    guard focusFirstRequestID != nil, let first = displayedItems.first?.id else { return }
                     // This task belongs to ONE catalog move. A newer move, a
                     // detail push or disappearance cancels it; no detached
                     // router retry may drag focus back to an obsolete row.
@@ -2693,10 +2729,34 @@ struct HomePosterRow: View {
                 }
             }
         }
+        .onChange(of: availabilityScope) { _, _ in unavailableIDs = [] }
+        .task(id: availabilityTaskKey) {
+            guard homeCatalogSettings.hideUnavailableSources else { unavailableIDs = []; return }
+            guard focusedID != nil else { return }
+            let scope = availabilityScope
+            let sources = addonManager.streamAddons
+            let items = row.items
+            let start = max(0, (items.firstIndex { $0.id == focusedID } ?? 0) - 1)
+            // Do not query during touch navigation, and never sweep a catalog.
+            do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
+            var absent = unavailableIDs
+            for item in items.dropFirst(start).prefix(6) {
+                guard !Task.isCancelled else { return }
+                if homeCatalogSettings.hideUnreleasedContent && item.isUnreleased { continue }
+                do {
+                    let metadata = addonManager.metaAddons(for: item.type, id: item.id)
+                    let result = try await NTVSourceAvailabilityStore.shared.check(item: item, sources: sources, metadata: metadata, scope: scope)
+                    guard !Task.isCancelled, scope == availabilityScope else { return }
+                    if result == .absent { absent.insert(item.id) } else { absent.remove(item.id) }
+                } catch { return }
+            }
+            // One update after the small window, with the focused card preserved.
+            if unavailableIDs != absent { unavailableIDs = absent }
+        }
     }
 
     private func registerRowHandler(_ proxy: ScrollViewProxy) {
-        let firstID = row.items.first?.id
+        let firstID = displayedItems.first?.id
         ContentFocusRouter.shared.register(row.id) {
             guard let first = firstID else { return false }
             // Retry until the card actually holds focus: deep in the row the
@@ -2717,7 +2777,7 @@ struct HomePosterRow: View {
     /// focus alone fails (the "doesn't work far into the row" bug). Scrolling it
     /// into view renders it, then focus can land on it.
     private func backToStart(_ proxy: ScrollViewProxy) {
-        guard let first = row.items.first?.id, focusedID != first else {
+        guard let first = displayedItems.first?.id, focusedID != first else {
             onBackAtStart()
             return
         }
@@ -2763,6 +2823,7 @@ private struct HomePosterCell: View, Equatable {
     /// comparison and the row would keep its captions until something else
     /// forced a rebuild. Included in `==` below for the same reason.
     let showLabel: Bool
+    let cornerRadius: CGFloat
     let hero: HeroFocus
     let onSelect: (MetaItem) -> Void
     let onPlayManually: (MetaItem, MetaVideo?) -> Void
@@ -2774,6 +2835,7 @@ private struct HomePosterCell: View, Equatable {
             && lhs.useLandscape == rhs.useLandscape
             && lhs.captionWidth == rhs.captionWidth
             && lhs.showLabel == rhs.showLabel
+            && lhs.cornerRadius == rhs.cornerRadius
             && lhs.accessibilityPrefix == rhs.accessibilityPrefix
     }
 
@@ -2812,6 +2874,7 @@ private struct HomePosterCell: View, Equatable {
                 }
             }
             .mediaCardButtonStyle()
+            .buttonBorderShape(.roundedRectangle(radius: useLandscape ? 16 : cornerRadius))
             .holdProbe("poster \(item.name)", enabled: PerformanceSettingsStore.shared.settings.showHoldProbe)
             .posterHoldMenu(item) { onSelect(item) }
             .onPlayPauseCommand { onPlayManually(item, nil) }

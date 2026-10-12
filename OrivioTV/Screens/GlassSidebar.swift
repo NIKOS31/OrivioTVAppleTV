@@ -121,7 +121,7 @@ struct GlassSidebar: View {
     /// The top layout keeps primary destinations readable and groups tools
     /// separately. Each group uses one clear glass surface, without per-item blur.
     private var ntvHorizontalBody: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 16) {
             NTVWordmark(size: 18)
                 .padding(.trailing, 8)
 
@@ -133,8 +133,8 @@ struct GlassSidebar: View {
                     ntvTopButton(tab, iconOnly: false)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(8)
+            .frame(maxWidth: 1120)
+            .padding(6)
             .background { ntvTopGlass }
 
             HStack(spacing: 4) {
@@ -150,12 +150,12 @@ struct GlassSidebar: View {
                 .accessibilityIdentifier("ntv.navigation.profile")
             }
             .fixedSize(horizontal: true, vertical: true)
-            .padding(8)
+            .padding(6)
             .background { ntvTopGlass }
         }
         .padding(.horizontal, NTVViewport.horizontalInset)
         .defaultFocus(focusBinding, selected)
-        .padding(.top, 28)
+        .padding(.top, 22)
         .frame(maxWidth: .infinity, alignment: .center)
         .ignoresSafeArea()
     }
@@ -427,7 +427,7 @@ private struct GlassProfileHeader: View {
     }
 }
 
-/// Page selection uses an underline; remote focus uses a separate soft fill.
+/// Page selection uses text weight; remote focus uses a separate soft fill.
 /// Neither changes the tab's dimensions or moves neighbouring labels.
 private struct NTVTopNavigationLabel: View {
     @Environment(\.isFocused) private var focused
@@ -445,27 +445,20 @@ private struct NTVTopNavigationLabel: View {
                     .frame(width: 56)
             } else {
                 Text(NTVBrand.navigationTitle(for: tab))
-                    .font(.system(size: labelSize, weight: legibility == .bold ? .bold : .medium))
+                    .font(.system(size: labelSize, weight: legibility == .bold ? .bold : selected ? .semibold : .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, 16)
             }
         }
-        .frame(minHeight: 56)
+        .frame(minHeight: 48)
         .frame(maxWidth: iconOnly ? nil : .infinity)
         .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.white.opacity(focused ? 0.12 : 0))
+            Capsule(style: .continuous)
+                .fill(.white.opacity(focused ? 0.18 : 0))
         }
-        .overlay(alignment: .bottom) {
-            if selected {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(NTVDesign.textPrimary)
-                    .frame(width: iconOnly ? 20 : 36, height: 3)
-                    .padding(.bottom, 3)
-            }
-        }
+        .focusLift(1.035, focused)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -475,8 +468,8 @@ private struct NTVTopProfileLabel: View {
     let profile: UserProfile
 
     var body: some View {
-        ProfileAvatarView(profile: profile, size: 44)
-            .frame(width: 56, height: 56)
+        ProfileAvatarView(profile: profile, size: 38)
+            .frame(width: 48, height: 48)
             .background(Circle().fill(.white.opacity(focused ? 0.22 : 0)))
             .overlay(Circle().strokeBorder(.white.opacity(focused ? 0.65 : 0), lineWidth: 1.5))
     }

@@ -897,8 +897,8 @@ struct PosterCard: View {
             NTVPosterArtwork(
                 imageURL: item.poster, title: item.name,
                 width: cardWidth, height: cardHeight,
-                focused: isFocused, watched: watched.isWatched(item),
-                progress: effectiveProgress, shadowsEnabled: perf.settings.cardShadows,
+                focused: isFocused && !perf.cardParallaxEffective, watched: watched.isWatched(item),
+                progress: effectiveProgress, shadowsEnabled: perf.settings.cardShadows && !perf.cardParallaxEffective,
                 placeholderSymbol: item.isSeries ? "tv" : "film", cornerRadius: cornerRadius
             )
         } else {

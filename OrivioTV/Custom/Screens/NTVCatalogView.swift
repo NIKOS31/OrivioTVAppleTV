@@ -152,13 +152,16 @@ struct NTVCatalogView: View {
                     // retain their own focus-lift margin.
                     .focusSection()
                     .disabled(menuVisible)
+                    .overlay {
+                        if menuVisible { Color.black.opacity(0.3).allowsHitTesting(false) }
+                    }
                     if menuVisible {
                         // Overlay the gallery: opening the menu never changes
                         // poster sizes, row spacing or the backdrop viewport.
                         categoryPanel(proxy)
-                            .frame(width: 280)
-                            .padding(.leading, 24)
-                            .padding(.vertical, 26)
+                            .frame(width: 360)
+                            .padding(.leading, NTVViewport.horizontalInset)
+                            .padding(.vertical, 20)
                             .transition(.opacity)
                             .zIndex(1)
                     }
@@ -205,33 +208,36 @@ struct NTVCatalogView: View {
                 categoryFocus = viewModel.sources.first?.id
             } label: {
                 Label("Catégories", systemImage: "line.3.horizontal.decrease")
-                    .font(.system(size: 23, weight: .semibold))
+                    .font(.system(size: 29, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(NTVActionButtonStyle())
+            .buttonStyle(NTVCategoryButtonStyle())
             .focused($categoryFocus, equals: "header")
             .accessibilityIdentifier("ntv.catalog.\(mediaType).categories")
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(viewModel.sources) { source in
                         Button { requestRow(source.id, proxy: proxy) } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(source.title).font(.system(size: 25, weight: .medium)).lineLimit(2)
+                                Text(source.title).font(.system(size: 29, weight: .medium)).lineLimit(2)
                                 Text(source.addon.manifest.name).font(.system(size: 25))
                                     .foregroundStyle(categoryFocus == source.id ? NTVDesign.background.opacity(0.7) : NTVDesign.textSecondary)
                                     .lineLimit(1)
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .buttonStyle(NTVActionButtonStyle())
+                        .buttonStyle(NTVCategoryButtonStyle())
                         .focused($categoryFocus, equals: source.id)
                         .accessibilityIdentifier("ntv.category.\(mediaType).\(source.id)")
                     }
-                }.padding(6)
+                }.padding(4)
             }
             .ntvHalloweenDecor(.panel)
         }
-        .padding(16).frame(maxHeight: .infinity)
-        .background { NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24)) }
+        .padding(20).frame(maxHeight: .infinity)
+        .background {
+            RoundedRectangle(cornerRadius: 24).fill(NTVDesign.background.opacity(0.82))
+            NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24))
+        }
         .focusSection()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ntv.catalog.\(mediaType).categoryPanel")
@@ -286,6 +292,24 @@ struct NTVCatalogView: View {
             requestRow(viewModel.sources[target].id, proxy: proxy)
         } else if direction == .up {
             onBackAtRoot()
+        }
+    }
+}
+
+/// One glazed panel, simple rows: no blur or protruding focus ring per category.
+private struct NTVCategoryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { Chrome(configuration: configuration) }
+    private struct Chrome: View {
+        @Environment(\.isFocused) private var focused
+        let configuration: ButtonStyle.Configuration
+        var body: some View {
+            configuration.label
+                .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 14).fill(focused ? .white.opacity(0.96) : .black.opacity(0.2)))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(focused ? 0.6 : 0.08), lineWidth: 1))
+                .cardPressDip(configuration.isPressed)
         }
     }
 }

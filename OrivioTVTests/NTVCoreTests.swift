@@ -1,7 +1,77 @@
 import XCTest
+import UIKit
 @testable import OrivioTV
 
 final class NTVCoreTests: XCTestCase {
+    func testSystemIconAcceptsTheActualMergedDictionaryAndTVArray() {
+        let name = "NTVSystemIcon"
+        XCTAssertTrue(NTVSystemIconManifest.declares(name, in: ["CFBundleIcons": [
+            "CFBundlePrimaryIcon": "NTVPrimaryIcon",
+            "CFBundleAlternateIcons": [name: ["CFBundleIconName": name]]]]))
+        XCTAssertTrue(NTVSystemIconManifest.declares(name, in: ["CFBundleIcons": [
+            "CFBundleAlternateIcons": [name]]]))
+        XCTAssertFalse(NTVSystemIconManifest.declares(name, in: ["CFBundleIcons": [
+            "CFBundleAlternateIcons": [name: ["CFBundleIconName": "OtherIcon"]]]]))
+        XCTAssertFalse(NTVSystemIconManifest.declares(name, in: [:]))
+    }
+
+    func testSystemIconRecognizerAcceptsTheRealHostBundleDeclaration() {
+        XCTAssertTrue(NTVSystemIconManifest.declares("NTVSystemIcon", in: Bundle.main.infoDictionary ?? [:]),
+                      "The runtime recognizer must accept the actual Xcode-merged app plist, not just actool's intermediate plist.")
+    }
+
+    @MainActor
+    func testCompiledAppSupportsTheSystemIconAPI() {
+        XCTAssertTrue(UIApplication.shared.supportsAlternateIcons,
+                      "Recognizing plist entries alone must not mask a declaration UIKit cannot use.")
+    }
+
+    func testFutureAddonDateDoesNotOverwriteTheDisplayYearAndSurvivesIdentityRepair() throws {
+        let future = try JSONDecoder().decode(MetaItem.self, from: Data(#"{"id":"future","type":"movie","name":"Future","releaseInfo":"2026","released":"2999-01-01T00:00:00Z"}"#.utf8))
+        XCTAssertEqual(future.releaseInfo, "2026")
+        XCTAssertTrue(future.isUnreleased)
+        XCTAssertTrue(future.withID("canonical").isUnreleased)
+        let restored = try JSONDecoder().decode(MetaItem.self, from: JSONEncoder().encode(future))
+        XCTAssertEqual(restored.released, future.released)
+        XCTAssertFalse(MetaItem(id: "unknown", type: "movie", name: "Unknown").isUnreleased)
+    }
+
+    func testAvailabilityUsesAllSourcesAndNeverTreatsFailureAsAbsence() async throws {
+        func addon(_ id: String) throws -> InstalledAddon {
+            let manifest = try JSONDecoder().decode(AddonManifest.self, from: JSONSerialization.data(withJSONObject:
+                ["id": id, "name": "Fixture", "version": "1", "types": ["movie", "series"], "resources": ["stream"]]))
+            return InstalledAddon(manifestURL: "https://example.invalid/\(id)/manifest.json", manifest: manifest)
+        }
+        let sources = try [addon("empty"), addon("available")]
+        let item = MetaItem(id: "title", type: "movie", name: "Fixture")
+        let stream = try JSONDecoder().decode(Stream.self, from: Data(#"{"url":"https://example.invalid/video.mp4"}"#.utf8))
+        let store = NTVSourceAvailabilityStore()
+        let positive = try await store.check(item: item, sources: sources, scope: "positive") { addon, _, _ in
+            addon.manifest.id == "available" ? [stream] : []
+        }
+        XCTAssertEqual(positive, .available, "One source must preserve the title even when another returns empty.")
+        let absent = try await store.check(item: item, sources: sources, scope: "empty") { _, _, _ in [] }
+        XCTAssertEqual(absent, .absent)
+        let uncertain = try await store.check(item: item, sources: sources, scope: "failed") { addon, _, _ in
+            if addon.manifest.id == "available" { throw URLError(.timedOut) }
+            return []
+        }
+        XCTAssertEqual(uncertain, .unknown)
+        let unconfigured = try await store.check(item: item, sources: [], scope: "none") { _, _, _ in XCTFail("No unconfigured request"); return [] }
+        XCTAssertEqual(unconfigured, .unknown)
+        XCTAssertNotEqual(NTVSourceAvailabilityStore.scope(profile: 1, addons: sources),
+                          NTVSourceAvailabilityStore.scope(profile: 2, addons: sources))
+    }
+
+    func testAvailabilityCannotHideAWholeSeriesAfterOnlyCheckingItsFirstEpisodes() async throws {
+        let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"fixture","name":"Fixture","version":"1","types":["series"],"resources":["stream"]}"#.utf8))
+        let addon = InstalledAddon(manifestURL: "https://example.invalid/manifest.json", manifest: manifest)
+        let item = try JSONDecoder().decode(MetaItem.self, from: Data(#"{"id":"series","type":"series","name":"Fixture","videos":[{"id":"series:1:1","season":1,"episode":1,"released":"2000-01-01"},{"id":"series:1:2","season":1,"episode":2,"released":"2000-01-01"},{"id":"series:1:3","season":1,"episode":3,"released":"2000-01-01"},{"id":"series:1:4","season":1,"episode":4,"released":"2000-01-01"}]}"#.utf8))
+        let store = NTVSourceAvailabilityStore()
+        let result = try await store.check(item: item, sources: [addon], scope: "series") { _, _, _ in [] }
+        XCTAssertEqual(result, .unknown, "A later season or episode may still be playable.")
+    }
+
     func testHomeRecommendationsUseXperienceIdentityAndEnabledCatalogs() throws {
         func addon(_ id: String, name: String = "Fixture", enabled: Bool = true) throws -> InstalledAddon {
             let manifest = try JSONDecoder().decode(AddonManifest.self, from: JSONSerialization.data(withJSONObject: [

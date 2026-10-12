@@ -60,32 +60,41 @@ enum NTVHomeSources {
 }
 
 enum HomeCatalogCache {
+    private static let writes = DispatchQueue(label: "ntv.home.catalog-cache", qos: .utility)
     private static let fileURL: URL = {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return caches.appendingPathComponent("orivio-home-catalogs.json")
     }()
 
-    static func load() -> [String: [MetaItem]] {
-        guard let data = try? Data(contentsOf: fileURL),
+    static func load(from url: URL? = nil) -> [String: [MetaItem]] {
+        guard let data = try? Data(contentsOf: url ?? fileURL),
               let decoded = try? JSONDecoder().decode([String: [MetaItem]].self, from: data) else { return [:] }
         return decoded
     }
 
-    static func save(_ rows: [String: [MetaItem]]) {
+    static func save(_ rows: [String: [MetaItem]], to url: URL? = nil) {
         // Encode + write OFF the main thread. This is called from the @MainActor
         // Home load right after a refresh; encoding ~15 rows × 30 MetaItems and
         // writing the file synchronously there is a visible hitch on the A8 the
         // moment Home finishes loading. It's fire-and-forget persistence, so a
         // utility-queue hop costs the UI nothing.
-        DispatchQueue.global(qos: .utility).async {
+        let destination = url ?? fileURL
+        writes.async {
             guard let data = try? JSONEncoder().encode(rows) else { return }
-            try? data.write(to: fileURL, options: .atomic)
+            try? data.write(to: destination, options: .atomic)
+        }
+    }
+
+    static func waitForPendingWrites() async {
+        await withCheckedContinuation { continuation in
+            writes.async { continuation.resume() }
         }
     }
 }
 
 @MainActor
 final class HomeViewModel: ObservableObject {
+    private var recommendationIdentity: String?
     @Published var entries: [HomeEntry] = [] {
         didSet { rebuildItemIndex() }
     }
@@ -317,7 +326,7 @@ final class HomeViewModel: ObservableObject {
         let generation = loadGeneration
         /// False once a newer load has started; a superseded run stops
         /// publishing instead of overwriting the newer one's rows.
-        func isCurrent() -> Bool { loadGeneration == generation }
+        func isCurrent() -> Bool { loadGeneration == generation && !Task.isCancelled }
 
         isLoading = entries.isEmpty
         loadError = nil
@@ -334,6 +343,16 @@ final class HomeViewModel: ObservableObject {
         }
         heroCatalogKey = resolvedHeroKey
 
+        let activeCatalogAddons = recommendationAddons(addonManager, xperienceOnly: xperienceOnly)
+        let identity = "\(xperienceOnly)/\(addonManager.profileID)/" + activeCatalogAddons.map(\.id).joined(separator: "|")
+        if recommendationIdentity != identity {
+            recommendationIdentity = identity
+            entries = []
+            initialHero = nil
+            heroSourceRevision &+= 1
+            isLoading = true
+        }
+
         // Assemble the available rows keyed the same way the sync payload is,
         // then let the layout settings decide order and visibility.
         var catalogByKey: [String: (addon: InstalledAddon, catalog: ManifestCatalog)] = [:]
@@ -346,7 +365,7 @@ final class HomeViewModel: ObservableObject {
         // rescue them because the cut was taken in MANIFEST order, before the
         // user's order was merged in. `maxHomeRows` below is the real ceiling,
         // and it cuts in the user's own order.
-        for addon in recommendationAddons(addonManager, xperienceOnly: xperienceOnly) {
+        for addon in activeCatalogAddons {
             for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
                 let key = HomeCatalogSettingsStore.catalogKey(
                     addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id
@@ -467,6 +486,7 @@ final class HomeViewModel: ObservableObject {
                     if settings.hideUnreleasedContent {
                         staleItems = staleItems.filter { !$0.isUnreleased }
                     }
+                    staleItems = Array(staleItems.prefix(30))
                     guard !staleItems.isEmpty else { continue }
                     let staleRow = HomeEntry.catalog(HomeRow(
                         id: Self.rowID(request),
@@ -540,7 +560,7 @@ final class HomeViewModel: ObservableObject {
             // Read once here, not inside the task: `settings` is main-actor state.
             let hideUnreleased = settings.hideUnreleasedContent
             func startNext() {
-                guard next < pending.count else { return }
+                guard next < pending.count, isCurrent() else { return }
                 let (index, key, title, rowID, request) = pending[next]
                 next += 1
                 group.addTask {
@@ -1198,6 +1218,12 @@ struct HomeView: View {
     var onOpenSettings: () -> Void = {}
 
     private var usesNTVLayout: Bool { theme.palette.id == NTVDesign.palette.id }
+    private var activeXperienceIsMissing: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ntvXperienceHomeFixture") { return false }
+        #endif
+        return NTVHomeSources.recommendations(from: addonManager.catalogAddons).isEmpty
+    }
 
     private var layout: HomeLayout { homeCatalogSettings.homeLayout }
 
@@ -1460,6 +1486,7 @@ struct HomeView: View {
         // decoding, then profile scoping republishes four settings at once — so
         // a cold start ran the whole catalog sweep two to four times over.
         .onChange(of: addonManager.addons) { _, _ in scheduleReload() }
+        .onChange(of: usesNTVLayout) { _, _ in scheduleReload() }
         .onChange(of: collections.collections) { _, _ in scheduleReload() }
         // Collection rows render regardless, but a provider change still
         // reloads Home so anything downstream of the connections is fresh.
@@ -1486,7 +1513,14 @@ struct HomeView: View {
             }
         }
         // Paint the hero from the cached rows without waiting for the network.
-        .onChange(of: viewModel.initialHero) { _, item in seedHero(item) }
+        .onChange(of: viewModel.initialHero) { _, item in
+            if item == nil, usesNTVLayout {
+                hero.item = nil
+                didSeedHeroFocus = false
+            } else {
+                seedHero(item)
+            }
+        }
         // Hero source changed: arm one forced reseed for the recomputed hero.
         .onChange(of: viewModel.heroSourceRevision) { _, _ in forceHeroReseed = true }
     }
@@ -1622,10 +1656,12 @@ struct HomeView: View {
                         let continued = mergedContinueItems()
                         if !continued.isEmpty { continueRow(continued) }
                         NTVEmptyCatalog(
-                            message: viewModel.loadError ?? "Vos catalogues apparaîtront ici dès qu’un addon sera disponible.",
+                            message: activeXperienceIsMissing ? "Ajoutez XPERIENCE pour afficher vos recommandations."
+                                : viewModel.loadError ?? "Vos recommandations apparaîtront ici dès qu’elles seront disponibles.",
                             onOpenSettings: onOpenSettings,
                             onRetry: { Task { await reload() } }
                         )
+                        .accessibilityIdentifier("ntv.home.empty")
                         .padding(.horizontal, NTVViewport.horizontalInset)
                     } else {
                         rowsContent

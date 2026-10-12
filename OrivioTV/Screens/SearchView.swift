@@ -11,6 +11,33 @@ final class SearchViewModel: ObservableObject {
 
     private var searchTask: Task<Void, Never>?
     private var loadedTrending = false
+    private var completedQuery: String?
+    private let requestLimit: Int
+    private let debounce: Duration
+    private let catalogLoader: @Sendable (InstalledAddon, ManifestCatalog, String) async throws -> [MetaItem]
+
+    init(requestLimit: Int = AddonSweepLimits.catalogs,
+         debounce: Duration = .milliseconds(350),
+         catalogLoader: @escaping @Sendable (InstalledAddon, ManifestCatalog, String) async throws -> [MetaItem] = {
+             try await StremioAPI.catalog(addon: $0, catalog: $1, search: $2)
+         }) {
+        self.requestLimit = max(1, requestLimit)
+        self.debounce = debounce
+        self.catalogLoader = catalogLoader
+    }
+
+    func suspendSearch() {
+        searchTask?.cancel()
+        searchTask = nil
+        isSearching = false
+    }
+
+    func resumeSearchIfNeeded(addonManager: AddonManager) {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        if trimmed.count >= 2, completedQuery != trimmed {
+            search(addonManager: addonManager)
+        }
+    }
 
     func search(addonManager: AddonManager) {
         searchTask?.cancel()
@@ -18,12 +45,15 @@ final class SearchViewModel: ObservableObject {
         guard trimmed.count >= 2 else {
             results = []
             isSearching = false
+            completedQuery = nil
             return
         }
         isSearching = true
         let targets: [(InstalledAddon, ManifestCatalog)] = Self.searchTargets(addonManager)
+        let work = targets.map { ($0.0, $0.1, Self.limit(for: $0.0)) }
+        let loader = catalogLoader, limit = requestLimit, delay = debounce
         searchTask = Task {
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            do { try await Task.sleep(for: delay) } catch { return }
             guard !Task.isCancelled else { return }
 
             // Collect by target INDEX, not by completion. `for await` on a task
@@ -32,38 +62,26 @@ final class SearchViewModel: ObservableObject {
             // Cinemeta behind a fast torrent aggregator put junk on top, and
             // the same search could come back in a different order twice in a
             // row. Now the order is the one `searchTargets` decided.
-            var byTarget = [Int: [MetaItem]](minimumCapacity: targets.count)
-            await withTaskGroup(of: (Int, [MetaItem]).self) { group in
-                for (index, target) in targets.enumerated() {
-                    // Resolved out here: the class is @MainActor, so the
-                    // task's body can't reach its static members.
-                    let cap = Self.limit(for: target.0)
-                    group.addTask {
-                        let items = (try? await StremioAPI.catalog(
-                            addon: target.0, catalog: target.1, search: trimmed)) ?? []
-                        // Cap each catalog's contribution. One add-on
-                        // returning hundreds of per-release rows buried every
-                        // other add-on's real titles.
-                        return (index, Array(items.prefix(cap)))
-                    }
-                }
-                for await (index, items) in group { byTarget[index] = items }
+            let batches = await boundedConcurrentMap(work, limit: limit) { target in
+                let items = (try? await loader(target.0, target.1, trimmed)) ?? []
+                return Array(items.prefix(target.2))
             }
             guard !Task.isCancelled else { return }
 
             var merged: [MetaItem] = []
             var seen = Set<String>()
-            for index in targets.indices {
+            for items in batches {
                 // Keyed on `id` alone: the grids' `ForEach` identify rows by
                 // `MetaItem.id`, so "tt123" as `series` from one addon and
                 // as `tv` from another must not both survive.
-                for item in byTarget[index] ?? [] where !seen.contains(item.id) {
+                for item in items where !seen.contains(item.id) {
                     seen.insert(item.id)
                     merged.append(item)
                 }
             }
             results = merged
             isSearching = false
+            completedQuery = trimmed
         }
     }
 
@@ -131,10 +149,12 @@ final class SearchViewModel: ObservableObject {
             }
             .map(\.element)
         for addon in ranked {
+            guard !Task.isCancelled else { loadedTrending = false; return }
             guard let catalog = (addon.manifest.catalogs ?? []).first(where: { !$0.requiresExtra })
             else { continue }
             if let items = try? await StremioAPI.catalog(addon: addon, catalog: catalog),
                !items.isEmpty {
+                guard !Task.isCancelled else { loadedTrending = false; return }
                 trending = Array(items.deduplicatedByID().prefix(18))
                 return
             }
@@ -226,7 +246,14 @@ struct SearchView: View {
             }
             .padding(.top, OrivioSpacing.xl)
         }
-        .task { await viewModel.loadTrendingIfNeeded(addonManager: addonManager) }
+        .task {
+            if viewModel.query.trimmingCharacters(in: .whitespaces).count >= 2 {
+                viewModel.resumeSearchIfNeeded(addonManager: addonManager)
+            } else {
+                await viewModel.loadTrendingIfNeeded(addonManager: addonManager)
+            }
+        }
+        .onDisappear { viewModel.suspendSearch() }
         .onChange(of: viewModel.query) { _, _ in
             viewModel.search(addonManager: addonManager)
         }

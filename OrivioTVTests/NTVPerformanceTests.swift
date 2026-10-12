@@ -6,6 +6,90 @@ import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    func testSharedAddonCancellationKeepsAnotherWaiterThenStopsActualHTTP() async throws {
+        let probe = NTVBoundedHTTPProbe(stall: true)
+        let (session, request) = NTVBoundedHTTPFixture.register(probe)
+        defer { session.invalidateAndCancel(); NTVBoundedHTTPFixture.remove(probe.id) }
+        let requests = RequestCoalescer(limit: 2)
+        let first = Task {
+            try await requests.data(for: "shared-addon") {
+                try await NTVBoundedResponse.data(for: request, session: session, maximumBytes: 512).0
+            }
+        }
+        try await until { probe.requestsReceived == 1 }
+        let second = Task {
+            try await requests.data(for: "shared-addon") {
+                XCTFail("An identical addon request must share its HTTP transfer")
+                return Data()
+            }
+        }
+        try await until { await requests.activity.waiters == 2 }
+        first.cancel()
+        await expectCancellation(first)
+        let remaining = await requests.activity
+        XCTAssertEqual(remaining.waiters, 1)
+        XCTAssertFalse(probe.isStopped, "Cancelling one screen must not stop another screen's transfer")
+        XCTAssertEqual(probe.requestsReceived, 1)
+        second.cancel()
+        await expectCancellation(second)
+        try await until { probe.isStopped }
+        let ended = await requests.activity
+        XCTAssertEqual(ended.waiters, 0)
+    }
+
+    @MainActor
+    func testActualSearchModelBoundsCallsAndPreservesProviderOrder() async throws {
+        let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"ntv-search-fixture","name":"Fixture","version":"1","resources":["meta","catalog"],"types":["movie"],"catalogs":[{"id":"search","type":"movie","extraSupported":["search"],"extraRequired":["search"]}]}"#.utf8))
+        let manager = AddonManager(startRefresh: false, manifestLoader: { _ in manifest })
+        let prefix = "https://example.invalid/search-\(UUID())/"
+        for index in 0..<6 { try await manager.install(manifestURL: prefix + "\(index)/manifest.json") }
+        defer { for addon in manager.addons where addon.manifestURL.hasPrefix(prefix) { manager.remove(addon) } }
+        let targets = SearchViewModel.searchTargets(manager)
+        let gate = Gate()
+        let model = SearchViewModel(requestLimit: 2, debounce: .zero) { addon, catalog, _ in
+            let key = ImageCache.artworkKey("\(addon.id)#\(catalog.type)#\(catalog.id)", budget: nil)
+            _ = try await gate.run(key)
+            return [MetaItem(id: "shared", type: "movie", name: "Shared"),
+                    MetaItem(id: key, type: "movie", name: "Provider"),
+                    MetaItem(id: key, type: "movie", name: "Duplicate")]
+        }
+        model.query = "film"
+        model.search(addonManager: manager)
+        try await until { await gate.started.count >= 2 }
+        let initial = await gate.started
+        XCTAssertEqual(initial.count, 2, "The real search model must not launch all addon catalogs at once")
+        var released = Set<String>()
+        for count in stride(from: 2, through: targets.count + 1, by: 2) {
+            try await until { await gate.started.count >= min(count, targets.count) }
+            let started = await gate.started
+            for key in started.reversed() where released.insert(key).inserted { await gate.release(key) }
+        }
+        try await until { await MainActor.run { !model.isSearching } }
+        XCTAssertEqual(model.results.map(\.id), ["shared"] + targets.map { ImageCache.artworkKey("\($0.0.id)#\($0.1.type)#\($0.1.id)", budget: nil) },
+                       "Out-of-order responses must preserve provider ranking and deduplication")
+        let starts = await gate.started
+        model.suspendSearch()
+        model.resumeSearchIfNeeded(addonManager: manager)
+        try await Task.sleep(for: .milliseconds(50))
+        let afterReturn = await gate.started
+        XCTAssertEqual(afterReturn, starts, "A completed search remains reusable when returning to its tab")
+    }
+
+    func testHomeCacheKeepsTheLatestSubmittedSnapshot() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ntv-home-cache-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("catalogs.json")
+        let older = (0..<30_000).map { MetaItem(id: String($0), type: "movie", name: "Older") }
+        let latest = [MetaItem(id: "latest", type: "movie", name: "Latest")]
+        HomeCatalogCache.save(["older": older], to: file)
+        HomeCatalogCache.save(["latest": latest], to: file)
+        await HomeCatalogCache.waitForPendingWrites()
+        let restored = HomeCatalogCache.load(from: file)
+        XCTAssertEqual(Set(restored.keys), ["latest"])
+        XCTAssertEqual(restored["latest"], latest, "An older expensive encode cannot overwrite a newer snapshot")
+    }
+
     @MainActor
     func testRapidBackdropUpdatesCommitOnlyTheFinalSelection() async throws {
         let canvas = NTVBackdropCanvas(settleDelay: .milliseconds(40))

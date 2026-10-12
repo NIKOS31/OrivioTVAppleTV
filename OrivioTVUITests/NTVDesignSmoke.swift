@@ -12,7 +12,7 @@ final class NTVDesignSmoke: XCTestCase {
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
         XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.staticTexts["Votre accueil se remplira dès qu’un catalogue de recommandations sera disponible."].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.descendants(matching: .any)["ntv.home.empty"].firstMatch.waitForExistence(timeout: 20))
         XCTAssertFalse(app.buttons["ntv.home.spotlight"].exists)
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.home.poster.")).count, 0)
         capture("ntv-home-without-xperience")

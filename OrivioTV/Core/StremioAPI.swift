@@ -185,6 +185,7 @@ enum StremioAPI {
         _ urlString: String, ttl: TimeInterval = 0, timeout: TimeInterval = 0,
         bypassCache: Bool = false, resource: NTVAddonPayloadPolicy.Resource
     ) async throws -> T {
+        try Task.checkCancellation()
         let target = try NTVAddonTransportPolicy.target(urlString)
         let limit = resource.maximumBytes
         if !bypassCache, ttl > 0, let cached = cache.data(for: urlString, ttl: ttl) {
@@ -217,6 +218,7 @@ enum StremioAPI {
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             return try await boundedData(request, limit: limit)
         }
+        try Task.checkCancellation()
         let data = try NTVAddonPayloadPolicy.checkedData(received, resource: resource, source: target)
         let value = try JSONDecoder().decode(T.self, from: data)
         if ttl > 0 { cache.store(data, for: urlString) }

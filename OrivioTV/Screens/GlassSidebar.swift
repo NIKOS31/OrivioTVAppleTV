@@ -153,7 +153,6 @@ struct GlassSidebar: View {
             .padding(8)
             .background { ntvTopGlass }
         }
-        .modifier(NTVGlassGrouping())
         .padding(.horizontal, NTVViewport.horizontalInset)
         .defaultFocus(focusBinding, selected)
         .padding(.top, 28)

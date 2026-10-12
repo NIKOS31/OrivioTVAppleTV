@@ -25,16 +25,6 @@ struct NTVGlassSurface<S: Shape>: View {
     }
 }
 
-/// Coordinate the existing glass backgrounds without applying glass to the
-/// focusable content itself or adding an effect to every poster.
-struct NTVGlassGrouping: ViewModifier {
-    @ViewBuilder func body(content: Content) -> some View {
-        if #available(tvOS 26.0, *) {
-            GlassEffectContainer(spacing: 12) { content }
-        } else { content }
-    }
-}
-
 /// The supplied nTV logo, preserving its original artwork and transparency.
 struct NTVWordmark: View {
     var size: CGFloat = 36

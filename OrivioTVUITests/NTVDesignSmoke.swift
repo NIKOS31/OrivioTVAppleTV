@@ -4,6 +4,21 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testHomeDoesNotUseOtherAddonsWithoutXperience() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["Votre accueil se remplira dès qu’un catalogue de recommandations sera disponible."].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.buttons["ntv.home.spotlight"].exists)
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.home.poster.")).count, 0)
+        capture("ntv-home-without-xperience")
+        app.terminate()
+    }
+
     func testCatalogCategoryPanelReturnsToItsPosterRow() {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -12,12 +27,11 @@ final class NTVDesignSmoke: XCTestCase {
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
         let panel = app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch
-        XCTAssertTrue(panel.waitForExistence(timeout: 30))
-        let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.movie.")).firstMatch
-        XCTAssertTrue(first.waitForExistence(timeout: 30))
+        let firstMovie = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(firstMovie.waitForExistence(timeout: 60))
+        XCTAssertFalse(panel.exists, "The side menu must stay hidden while browsing.")
         let remote = XCUIRemote.shared
-        // Reach the categories from the real top bar, rather than relying
-        // on the demo's initial focus already being inside the side menu.
+        // Enter the gallery, then open the drawer only at its left edge.
         let topMovies = app.buttons["ntv.navigation.5"]
         for _ in 0..<3 {
             if topMovies.hasFocus { break }
@@ -26,32 +40,41 @@ final class NTVDesignSmoke: XCTestCase {
         }
         XCTAssertTrue(focused(topMovies, timeout: 8))
         remote.press(.down)
-        let categoryHeader = app.buttons["ntv.catalog.movie.categories"]
-        XCTAssertTrue(focused(categoryHeader, timeout: 8), "Down from the top menu must reach the Categories button.")
-        remote.press(.select)
-        for _ in 0..<4 {
-            if first.hasFocus { break }
-            remote.press(.down)
-            if focused(first, timeout: 2) { break }
-        }
+        XCTAssertTrue(focused(firstMovie, timeout: 8), "Down from the top menu must reach the first poster.")
+        XCTAssertFalse(panel.exists, "Down must not open the category drawer.")
+        let openingPosterFrame = firstMovie.frame
+        let canvas = app.descendants(matching: .any)["ntv.canvas"].firstMatch
+        let openingCanvasFrame = canvas.frame
+        remote.press(.right)
+        remote.press(.left)
+        XCTAssertTrue(focused(firstMovie, timeout: 8))
+        XCTAssertFalse(panel.exists, "Returning to the first poster does not open the menu until another Left.")
+        remote.press(.left)
+        XCTAssertTrue(panel.waitForExistence(timeout: 8))
+        let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.movie.")).firstMatch
         XCTAssertTrue(focused(first, timeout: 8))
+        let categoryIDs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.movie.")).allElementsBoundByIndex.map(\.identifier)
+        XCTAssertGreaterThanOrEqual(categoryIDs.count, 2, "The row-change regression needs two distinct catalogs.")
+        let firstCategoryID = first.identifier
         capture("ntv-catalog-categories")
+        XCTAssertEqual(canvas.frame, openingCanvasFrame, "Opening the drawer must not resize the artwork.")
         remote.press(.select)
         let poster = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.poster.movie.")).firstMatch
         XCTAssertTrue(poster.waitForExistence(timeout: 60), "Selecting a category must land on a loaded poster row.")
-        XCTAssertTrue(panel.exists, "Categories must remain visible at the left of the catalog.")
+        XCTAssertFalse(panel.exists, "Selecting a category must close its drawer.")
+        XCTAssertEqual(canvas.frame, openingCanvasFrame)
+        XCTAssertEqual(firstMovie.frame.minX, openingPosterFrame.minX, accuracy: 2, "Closing the drawer must restore the same poster position.")
         capture("ntv-catalog-category-selected")
-        let categories = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.movie.")).allElementsBoundByIndex
-        XCTAssertGreaterThanOrEqual(categories.count, 2, "The row-change regression needs two distinct catalogs.")
         let prefix = "ntv.category.movie."
-        let firstRow = app.descendants(matching: .any)["ntv.catalog.shelf." + String(first.identifier.dropFirst(prefix.count))].firstMatch
+        let firstRow = app.descendants(matching: .any)["ntv.catalog.shelf." + String(firstCategoryID.dropFirst(prefix.count))].firstMatch
         let firstPoster = firstRow.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
         XCTAssertTrue(focused(firstPoster, timeout: 8))
         // Start away from the first column, exactly as the physical report.
-        for _ in 0..<3 { remote.press(.right) }
-        XCTAssertFalse(firstPoster.hasFocus)
+        for _ in 0..<10 { remote.press(.right) }
+        XCTAssertFalse(firstPoster.exists && firstPoster.hasFocus)
+        XCTAssertFalse(panel.exists, "A long horizontal browse must not open the side menu.")
         remote.press(.down)
-        let nextRow = app.descendants(matching: .any)["ntv.catalog.shelf." + String(categories[1].identifier.dropFirst(prefix.count))].firstMatch
+        let nextRow = app.descendants(matching: .any)["ntv.catalog.shelf." + String(categoryIDs[1].dropFirst(prefix.count))].firstMatch
         let nextFirst = nextRow.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
         XCTAssertTrue(focused(nextFirst, timeout: 15), "Down from a later column must select the FIRST poster of the next row.")
         capture("ntv-catalog-down-first-poster")
@@ -66,6 +89,7 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.up)
         XCTAssertTrue(focused(firstPoster, timeout: 8), "Up must return to the first poster, without a far-end landing.")
         remote.press(.left)
+        XCTAssertTrue(panel.waitForExistence(timeout: 8))
         XCTAssertTrue(focused(first, timeout: 8), "Left from the first poster must reach its visible category.")
         remote.press(.up)
         let header = app.buttons["ntv.catalog.movie.categories"]
@@ -75,7 +99,13 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(first, timeout: 8))
         remote.press(.right)
         XCTAssertTrue(focused(firstPoster, timeout: 8), "Right from categories must land on a poster, without bouncing back to the top bar.")
+        XCTAssertFalse(panel.exists)
         remote.press(.left)
+        XCTAssertTrue(panel.waitForExistence(timeout: 8))
+        XCTAssertTrue(focused(first, timeout: 8))
+        remote.press(.menu)
+        XCTAssertTrue(focused(firstPoster, timeout: 8), "Back must close the drawer and return to its row.")
+        XCTAssertFalse(panel.exists)
         remote.press(.menu)
         let movies = app.buttons["ntv.navigation.5"]
         XCTAssertTrue(focused(movies, timeout: 8), "Back from categories must still reach the top menu.")
@@ -92,17 +122,25 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertEqual(series.frame.height, moviesFrame.height, accuracy: 2)
         remote.press(.select)
         XCTAssertTrue(app.staticTexts["ntv.catalog.series.heading"].waitForExistence(timeout: 20))
-        let seriesCategory = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.series.")).firstMatch
-        for _ in 0..<5 {
-            if seriesCategory.hasFocus { break }
-            remote.press(.down)
-            if focused(seriesCategory, timeout: 2) { break }
-        }
-        XCTAssertTrue(focused(seriesCategory, timeout: 8))
-        remote.press(.right)
         let seriesPoster = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.poster.series.")).firstMatch
-        XCTAssertTrue(seriesPoster.waitForExistence(timeout: 60), "The same side menu hand-off must work on Séries.")
+        for _ in 0..<4 {
+            if seriesPoster.exists { break }
+            remote.press(.down)
+            if seriesPoster.waitForExistence(timeout: 2) { break }
+        }
+        XCTAssertTrue(seriesPoster.exists)
+        let selectedSeriesID = seriesPoster.identifier
+        let seriesPanel = app.descendants(matching: .any)["ntv.catalog.series.categoryPanel"].firstMatch
+        XCTAssertFalse(seriesPanel.exists)
+        remote.press(.left)
+        XCTAssertTrue(seriesPanel.waitForExistence(timeout: 8))
+        let seriesCategory = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.series.")).firstMatch
+        XCTAssertTrue(focused(seriesCategory, timeout: 8))
         capture("ntv-series-categories-reachable")
+        remote.press(.right)
+        XCTAssertTrue(seriesPoster.waitForExistence(timeout: 60), "The same side menu hand-off must work on Séries.")
+        XCTAssertEqual(seriesPoster.identifier, selectedSeriesID)
+        XCTAssertFalse(seriesPanel.exists)
         app.terminate()
     }
     func testLiveTabSeparatesTelevisionAndTwitchWithoutATVAddon() {
@@ -412,7 +450,7 @@ final class NTVDesignSmoke: XCTestCase {
     func testTopMenuRemoteRoundTrip() {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-ntvTopMenuDemo", "-ntvHalloweenDemo"]
+        app.launchArguments = ["-ntvTopMenuDemo", "-ntvHalloweenDemo", "-ntvXperienceHomeFixture"]
         app.launch()
         let settings = app.buttons["ntv.navigation.3"]
         XCTAssertTrue(settings.waitForExistence(timeout: 20))
@@ -467,11 +505,8 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(firstMovie.waitForExistence(timeout: 80))
         let posters = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).allElementsBoundByIndex
         let row = posters.filter { abs($0.frame.minY - firstMovie.frame.minY) < 30 }
-        let categoryPanel = app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch
-        XCTAssertTrue(categoryPanel.waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(categoryPanel.frame.minX, screen.minX + 70, "The side menu must use the left screen margin.")
-        XCTAssertGreaterThan(firstMovie.frame.minX, categoryPanel.frame.maxX, "Posters must leave room for the persistent side menu.")
-        XCTAssertLessThanOrEqual(firstMovie.frame.minX - categoryPanel.frame.maxX, 70, "No unused wall may separate the side menu and posters.")
+        XCTAssertFalse(app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch.exists)
+        XCTAssertLessThanOrEqual(firstMovie.frame.minX, screen.minX + 70, "The closed drawer must leave the full gallery width available.")
         XCTAssertGreaterThanOrEqual(row.map { $0.frame.maxX }.max() ?? 0, screen.maxX - 80,
                                     "The last column must reach the right content margin.")
         capture("ntv-films-full-width")
@@ -615,13 +650,13 @@ final class NTVDesignSmoke: XCTestCase {
     func testHomeMoviesAndSeriesJourney() {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-homeDemo"]
+        app.launchArguments = ["-homeDemo", "-ntvXperienceHomeFixture"]
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
         XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["ntv.home.spotlight"].waitForExistence(timeout: 80),
-                      "Home should display a title supplied by the default addon.")
+                      "Home should display the explicit XPERIENCE native-UI fixture.")
         XCTAssertGreaterThan(app.staticTexts["ntv.home.heading"].frame.minX,
                              app.buttons["ntv.navigation.0"].frame.maxX + 8,
                              "Home must leave horizontal space beside the collapsed left menu.")
@@ -656,16 +691,12 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(firstMovie.waitForExistence(timeout: 80), "Films should load real movie metadata.")
         let focusedMovie = app.buttons.matching(NSPredicate(
             format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.poster.movie.")).firstMatch
-        let movieCategory = app.buttons.matching(NSPredicate(
-            format: "identifier BEGINSWITH %@", "ntv.category.movie.")).firstMatch
         for _ in 0..<4 {
-            if movieCategory.hasFocus { break }
+            if focusedMovie.exists { break }
             remote.press(.down)
-            if focused(movieCategory, timeout: 2) { break }
+            if focusedMovie.waitForExistence(timeout: 2) { break }
         }
-        XCTAssertTrue(focused(movieCategory, timeout: 8), "Down from the global menu must reach the movie categories.")
-        remote.press(.right)
-        XCTAssertTrue(focusedMovie.waitForExistence(timeout: 8), "Right from a category must reach the movie posters.")
+        XCTAssertTrue(focusedMovie.exists, "The movie posters must remain reachable while the drawer is closed.")
         let initialMovieID = focusedMovie.identifier
         XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.movie.backdrop",
                                       contentID: String(initialMovieID.dropFirst("ntv.poster.movie.".count))))
@@ -759,16 +790,12 @@ final class NTVDesignSmoke: XCTestCase {
         capture("ntv-series-real-catalog")
         let focusedSeries = app.buttons.matching(NSPredicate(
             format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.poster.series.")).firstMatch
-        let seriesCategory = app.buttons.matching(NSPredicate(
-            format: "identifier BEGINSWITH %@", "ntv.category.series.")).firstMatch
         for _ in 0..<4 {
-            if seriesCategory.hasFocus { break }
+            if focusedSeries.exists { break }
             remote.press(.down)
-            if focused(seriesCategory, timeout: 2) { break }
+            if focusedSeries.waitForExistence(timeout: 2) { break }
         }
-        XCTAssertTrue(focused(seriesCategory, timeout: 8))
-        remote.press(.right)
-        XCTAssertTrue(focusedSeries.waitForExistence(timeout: 8), "Right from a series category must reach a series poster.")
+        XCTAssertTrue(focusedSeries.exists)
         XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.series.backdrop",
                                       contentID: String(focusedSeries.identifier.dropFirst("ntv.poster.series.".count))))
         capture("ntv-series-focus-backdrop")

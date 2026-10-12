@@ -2,6 +2,27 @@ import XCTest
 @testable import OrivioTV
 
 final class NTVCoreTests: XCTestCase {
+    func testHomeRecommendationsUseXperienceIdentityAndEnabledCatalogs() throws {
+        func addon(_ id: String, name: String = "Fixture", enabled: Bool = true) throws -> InstalledAddon {
+            let manifest = try JSONDecoder().decode(AddonManifest.self, from: JSONSerialization.data(withJSONObject: [
+                "id": id, "name": name, "version": "1", "types": ["movie"],
+                "resources": ["catalog"], "catalogs": [["type": "movie", "id": "latest"]]
+            ]))
+            return InstalledAddon(manifestURL: "https://example.invalid/\(id)/manifest.json", manifest: manifest, enabled: enabled)
+        }
+        let configured = try addon("app.xperience.configured-fixture")
+        let another = try addon("APP.XPERIENCE.second-fixture")
+        let cinemeta = try addon("com.linvo.cinemeta")
+        let sameName = try addon("unrelated.provider", name: "XPERIENCE")
+        let similarPrefix = try addon("app.xperience-other")
+        let disabled = try addon("app.xperience.disabled", enabled: false)
+        let available = [cinemeta, configured, sameName, another, disabled, similarPrefix]
+        XCTAssertEqual(NTVHomeSources.recommendations(from: available), [configured, another])
+        XCTAssertEqual(available.count, 6, "Home selection must not remove providers used by other sections.")
+        XCTAssertTrue(NTVHomeSources.recommendations(from: [cinemeta, sameName]).isEmpty,
+                      "A missing XPERIENCE must not silently fall back to another provider.")
+    }
+
     @MainActor
     func testCatalogShelvesReuseTheirStateAcrossVisitsAndSeparateProfiles() throws {
         let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"fixture","name":"Fixture","version":"1","types":["movie","series"],"resources":["catalog"],"catalogs":[{"type":"movie","id":"new","name":"Latest"},{"type":"series","id":"new"},{"type":"movie","id":"search","extraRequired":["search"]}]}"#.utf8))

@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
 
 struct HomeRow: Identifiable {
@@ -46,6 +47,18 @@ enum HomeEntry: Identifiable {
 /// Persists the last-rendered Home catalog rows (their items) to disk, keyed by
 /// catalog key, so the screen paints instantly on a cold start and then
 /// refreshes in the background (stale-while-revalidate).
+enum NTVHomeSources {
+    /// Provider selection only, not a security/trust decision. XPERIENCE's
+    /// configured manifests use a different suffix for each configuration.
+    static func recommendations(from addons: [InstalledAddon]) -> [InstalledAddon] {
+        addons.filter {
+            let id = $0.manifest.id.lowercased()
+            return $0.enabled && $0.manifest.providesCatalogs
+                && (id == "app.xperience" || id.hasPrefix("app.xperience."))
+        }
+    }
+}
+
 enum HomeCatalogCache {
     private static let fileURL: URL = {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -230,16 +243,18 @@ final class HomeViewModel: ObservableObject {
         addonManager: AddonManager,
         collections: CollectionsStore,
         settings: HomeCatalogSettingsStore,
-        providers: CollectionProviders
+        providers: CollectionProviders,
+        xperienceOnly: Bool = false
     ) async {
         // Fingerprint includes catalog counts (so rows refresh when the live
         // manifests replace the bundled seed) plus the layout customization
         // state and collection list, so edits re-render immediately. viewMode +
         // pinToTop are included so changing a collection's Home layout or its
         // pin re-renders without a relaunch.
-        var fingerprint = addonManager.catalogAddons.map {
+        var fingerprint = recommendationAddons(addonManager, xperienceOnly: xperienceOnly).map {
             "\($0.id)#\(($0.manifest.catalogs ?? []).count)"
         }
+        fingerprint.append("xperienceOnly=\(xperienceOnly)/profile=\(addonManager.profileID)")
         fingerprint.append(settings.orderKeys.joined(separator: ","))
         fingerprint.append(settings.disabledKeys.sorted().joined(separator: ","))
         fingerprint.append(settings.customTitles.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ","))
@@ -267,7 +282,24 @@ final class HomeViewModel: ObservableObject {
         guard entries.isEmpty || fingerprint != loadedFingerprint else { return }
         loadedFingerprint = fingerprint
         await load(addonManager: addonManager, collections: collections,
-                   settings: settings, providers: providers)
+                   settings: settings, providers: providers, xperienceOnly: xperienceOnly)
+    }
+
+    private func recommendationAddons(_ manager: AddonManager, xperienceOnly: Bool) -> [InstalledAddon] {
+        var addons = manager.catalogAddons
+        #if DEBUG
+        // Explicit native-UI fixture: public metadata, no private addon URL,
+        // no installation or persistence, and never enabled in Release.
+        if xperienceOnly, ProcessInfo.processInfo.arguments.contains("-ntvXperienceHomeFixture"),
+           let source = addons.first(where: { $0.manifestURL == AddonManager.cinemetaURL }) {
+            let m = source.manifest
+            let manifest = AddonManifest(id: "app.xperience.ui-fixture", name: "XPERIENCE · fixture",
+                version: m.version, description: m.description, logo: m.logo, types: m.types,
+                idPrefixes: m.idPrefixes, catalogs: m.catalogs, resources: m.resources)
+            addons.append(InstalledAddon(manifestURL: source.manifestURL, manifest: manifest))
+        }
+        #endif
+        return xperienceOnly ? NTVHomeSources.recommendations(from: addons) : addons
     }
 
     func load(
@@ -278,7 +310,8 @@ final class HomeViewModel: ObservableObject {
         /// connected — a collection opened with nothing connected explains
         /// inside (per folder) that TMDB or Trakt needs setting up. Hiding
         /// them here just made the feature look broken with no pointer to why.
-        providers: CollectionProviders
+        providers: CollectionProviders,
+        xperienceOnly: Bool = false
     ) async {
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -313,7 +346,7 @@ final class HomeViewModel: ObservableObject {
         // rescue them because the cut was taken in MANIFEST order, before the
         // user's order was merged in. `maxHomeRows` below is the real ceiling,
         // and it cuts in the user's own order.
-        for addon in addonManager.catalogAddons {
+        for addon in recommendationAddons(addonManager, xperienceOnly: xperienceOnly) {
             for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
                 let key = HomeCatalogSettingsStore.catalogKey(
                     addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id
@@ -1416,7 +1449,8 @@ struct HomeView: View {
                     addonManager: addonManager,
                     collections: collections,
                     settings: homeCatalogSettings,
-                    providers: collectionProviders
+                    providers: collectionProviders,
+                    xperienceOnly: usesNTVLayout
                 )
             }
         }
@@ -1741,7 +1775,8 @@ struct HomeView: View {
             addonManager: addonManager,
             collections: collections,
             settings: homeCatalogSettings,
-            providers: collectionProviders
+            providers: collectionProviders,
+            xperienceOnly: usesNTVLayout
         )
         done("\(viewModel.entries.count) rows")
         // Usually already done from the cache above; this covers a cold launch
@@ -2510,6 +2545,7 @@ struct HomePosterRow: View {
     var restoreItemID: String? = nil
     var onVerticalMove: ((MoveCommandDirection) -> Void)? = nil
     var focusFirstRequestID: UUID? = nil
+    var onLeftAtStart: (() -> Void)? = nil
 
     @FocusState private var focusedID: String?
 
@@ -2559,12 +2595,21 @@ struct HomePosterRow: View {
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
                 .onMoveCommand { direction in
-                    guard let focusedID, let onVerticalMove else { return }
+                    guard focusedID != nil, let onVerticalMove else { return }
                     if direction == .up || direction == .down {
                         onVerticalMove(direction)
-                    } else if direction == .left, focusedID == row.items.first?.id {
-                        onBackAtStart()
                     }
+                }
+                .onReceive(NotificationCenter.default.publisher(
+                    for: UIFocusSystem.movementDidFailNotification)) { note in
+                    // A move command also fires when UIKit successfully moves
+                    // second -> first. Only a failed LEFT is the extra press
+                    // at the boundary, after the first poster already has focus.
+                    guard let onLeftAtStart, focusedID == row.items.first?.id,
+                          let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                            as? UIFocusUpdateContext,
+                          context.focusHeading == .left else { return }
+                    onLeftAtStart()
                 }
                 // Coming back out of the rail lands on THIS row's first card
                 // when this was the row the viewer left (ContentFocusRouter).
@@ -2586,13 +2631,10 @@ struct HomePosterRow: View {
                     // router retry may drag focus back to an obsolete row.
                     proxy.scrollTo(first, anchor: .leading)
                     focusedID = first
-                    var previous: String?
                     for _ in 0..<12 {
                         do { try await Task.sleep(for: .milliseconds(40)) } catch { return }
                         guard !Task.isCancelled else { return }
                         if focusedID == first { return }
-                        if let current = focusedID, current == previous { return }
-                        previous = focusedID
                         focusedID = first
                     }
                 }

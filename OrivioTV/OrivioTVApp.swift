@@ -1390,7 +1390,7 @@ struct RootView: View {
                         guard direction == (navIsTop ? .down : .right) else { return }
                         if navIsTop, ntvCatalogMenuRouterID != nil {
                             // The nTV bar never expands. A deliberate Down
-                            // enters its own category menu immediately; the
+                            // enters its own first poster immediately; the
                             // old side-panel echo guard need not swallow it.
                             collapseSidebarFromExit()
                             return
@@ -1677,12 +1677,12 @@ struct RootView: View {
         setSidebarEnabled(false, reenableAfter: 0.4)
     }
 
-    /// The top menu enters the current catalog's own menu, never a row saved
+    /// The top menu enters the current catalog's first row, never a row saved
     /// by Home or the other tab. A pushed detail keeps its existing routing.
     private var ntvCatalogMenuRouterID: String? {
         guard theme.palette.id == NTVDesign.palette.id else { return nil }
-        if selectedTab == 5, moviesPath.isEmpty { return "ntv.catalog.movie.categories" }
-        if selectedTab == 6, seriesPath.isEmpty { return "ntv.catalog.series.categories" }
+        if selectedTab == 5, moviesPath.isEmpty { return "ntv.catalog.movie.entry" }
+        if selectedTab == 6, seriesPath.isEmpty { return "ntv.catalog.series.entry" }
         return nil
     }
 

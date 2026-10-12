@@ -122,7 +122,7 @@ struct NTVCatalogView: View {
                                 .padding(.horizontal, NTVViewport.horizontalInset)
                                 .id("catalogTop")
                             NTVCatalogSpotlight(hero: hero)
-                                .frame(height: 230, alignment: .topLeading)
+                                .frame(minHeight: 230, alignment: .topLeading)
                                 .transaction { $0.animation = nil }
                                 .padding(.horizontal, NTVViewport.horizontalInset)
                             if viewModel.sources.isEmpty {
@@ -216,8 +216,10 @@ struct NTVCatalogView: View {
                     ForEach(viewModel.sources) { source in
                         Button { requestRow(source.id, proxy: proxy) } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(source.title).font(.system(size: 21, weight: .medium)).lineLimit(2)
-                                Text(source.addon.manifest.name).font(.system(size: 15)).foregroundStyle(NTVDesign.textSecondary)
+                                Text(source.title).font(.system(size: 25, weight: .medium)).lineLimit(2)
+                                Text(source.addon.manifest.name).font(.system(size: 25))
+                                    .foregroundStyle(categoryFocus == source.id ? NTVDesign.background.opacity(0.7) : NTVDesign.textSecondary)
+                                    .lineLimit(1)
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(NTVActionButtonStyle())

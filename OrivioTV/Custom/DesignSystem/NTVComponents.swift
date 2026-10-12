@@ -4,12 +4,13 @@ import SwiftUI
 /// Older hardware and Reduce Transparency use an opaque surface instead.
 struct NTVGlassSurface<S: Shape>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
     let shape: S
     var emphasized = false
     var clear = false
 
     var body: some View {
-        if reduceTransparency || PerformanceProfile.isLowPower || PerformanceProfile.isMidPower {
+        if reduceTransparency || contrast == .increased || PerformanceProfile.isLowPower || PerformanceProfile.isMidPower {
             shape.fill(emphasized ? NTVDesign.raised : NTVDesign.surface)
         } else if #available(tvOS 26.0, *) {
             if clear {
@@ -21,6 +22,16 @@ struct NTVGlassSurface<S: Shape>: View {
         } else {
             shape.fill(.regularMaterial)
         }
+    }
+}
+
+/// Coordinate the existing glass backgrounds without applying glass to the
+/// focusable content itself or adding an effect to every poster.
+struct NTVGlassGrouping: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(tvOS 26.0, *) {
+            GlassEffectContainer(spacing: 12) { content }
+        } else { content }
     }
 }
 
@@ -159,24 +170,30 @@ struct NTVSidebarLabel: View {
 
 struct NTVActionButtonStyle: ButtonStyle {
     var prominent = false
+    var glass = false
     func makeBody(configuration: Configuration) -> some View {
-        Chrome(configuration: configuration, prominent: prominent)
+        Chrome(configuration: configuration, prominent: prominent, glass: glass)
     }
 
     private struct Chrome: View {
         @Environment(\.isFocused) private var focused
+        @Environment(\.legibilityWeight) private var legibility
+        @ScaledMetric(relativeTo: .body) private var labelSize: CGFloat = 29
         let configuration: ButtonStyle.Configuration
         let prominent: Bool
+        let glass: Bool
 
         var body: some View {
             configuration.label
-                .font(.system(size: 23, weight: .medium))
+                .font(.system(size: labelSize, weight: legibility == .bold ? .bold : .medium))
                 .foregroundStyle(focused || prominent ? NTVDesign.background : NTVDesign.textPrimary)
                 .padding(.horizontal, 28)
-                .frame(minHeight: 62)
+                .frame(minHeight: 70)
                 .background {
                     if focused || prominent {
                         Capsule().fill(NTVDesign.textPrimary.opacity(focused ? 1 : 0.92))
+                    } else if glass {
+                        NTVGlassSurface(shape: Capsule(), clear: true)
                     } else {
                         Capsule().fill(.black.opacity(0.28))
                     }
@@ -184,8 +201,12 @@ struct NTVActionButtonStyle: ButtonStyle {
                 .overlay {
                     Capsule().strokeBorder(.white.opacity(focused ? 0 : 0.16), lineWidth: 1)
                 }
-                // A single alpha fill is sufficient here. Glass refraction belongs
-                // to navigation, rather than every action in a scrolling page.
+                .overlay {
+                    Capsule().inset(by: -5).stroke(.white, lineWidth: 2)
+                        .opacity(focused ? 1 : 0)
+                }
+                // Glass is opt-in for the few principal actions. Scrolling
+                // rows keep the lighter alpha fill and the same focus cue.
                 .focusLift(1.015, focused)
                 .cardPressDip(configuration.isPressed)
         }

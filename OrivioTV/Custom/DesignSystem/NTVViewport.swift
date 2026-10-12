@@ -24,11 +24,12 @@ struct NTVFullWidthViewport: ViewModifier {
 /// removing the menu must not resize its image during the push transition.
 struct NTVPageTopClearance: ViewModifier {
     var isHome = false
+    @ScaledMetric(relativeTo: .body) private var topClearance: CGFloat = NTVDesign.topChromeClearance
     @EnvironmentObject private var theme: ThemeManager
     @Environment(\.navigationIsTop) private var navigationIsTop
     func body(content: Content) -> some View {
         content.padding(.top, navigationIsTop && theme.palette.id == NTVDesign.palette.id
-                        ? NTVDesign.topChromeClearance : 0)
+                         ? topClearance : 0)
             .padding(.leading, !navigationIsTop && !isHome && theme.palette.id == NTVDesign.palette.id
                      ? GlassSidebar.collapsedWidth : 0)
     }

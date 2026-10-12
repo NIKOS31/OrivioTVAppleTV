@@ -29,21 +29,24 @@ struct NTVFocusBackdrop: View {
 
 struct NTVCatalogSpotlight: View {
     @ObservedObject var hero: HeroFocus
+    @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 48
+    @ScaledMetric(relativeTo: .callout) private var metadataSize: CGFloat = 25
+    @ScaledMetric(relativeTo: .body) private var synopsisSize: CGFloat = 29
 
     var body: some View {
         if let item = hero.item {
             VStack(alignment: .leading, spacing: 12) {
                 Text(item.name)
-                    .font(.system(size: 40, weight: .semibold))
+                    .font(.system(size: titleSize, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                 Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.system(size: 20))
+                    .font(.system(size: metadataSize, weight: .medium))
                     .foregroundStyle(NTVDesign.textSecondary)
                 if let description = item.description, !description.isEmpty {
                     Text(description)
-                        .font(.system(size: 20))
+                        .font(.system(size: synopsisSize))
                         .foregroundStyle(NTVDesign.textSecondary)
                         .lineLimit(2)
                 }
@@ -58,6 +61,9 @@ struct NTVCatalogSpotlight: View {
 /// the catalog rows whenever the viewer moves between posters.
 struct NTVHomeSpotlight: View {
     @ObservedObject var hero: HeroFocus
+    @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 48
+    @ScaledMetric(relativeTo: .callout) private var metadataSize: CGFloat = 25
+    @ScaledMetric(relativeTo: .body) private var synopsisSize: CGFloat = 29
     var playFocus: FocusState<Bool>.Binding
     let onSelect: (MetaItem) -> Void
     let onBack: () -> Void
@@ -67,27 +73,27 @@ struct NTVHomeSpotlight: View {
             ZStack(alignment: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("À découvrir")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 25, weight: .medium))
                         .tracking(1.5)
                         .foregroundStyle(NTVDesign.textSecondary)
                     Text(item.name)
-                        .font(.system(size: 44, weight: .semibold))
+                        .font(.system(size: titleSize, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                     Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
                         .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.system(size: 20))
+                        .font(.system(size: metadataSize, weight: .medium))
                         .foregroundStyle(NTVDesign.textSecondary)
                     if let description = item.description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 20))
+                            .font(.system(size: synopsisSize))
                             .foregroundStyle(NTVDesign.textSecondary)
                             .lineLimit(2)
                     }
                     Button { onSelect(item) } label: {
                         Label("Voir la fiche", systemImage: "info.circle")
                     }
-                    .buttonStyle(NTVActionButtonStyle())
+                    .buttonStyle(NTVActionButtonStyle(glass: true))
                     .focused(playFocus)
                     .accessibilityIdentifier("ntv.home.spotlight")
                     .onExitCommand(perform: onBack)
@@ -98,7 +104,7 @@ struct NTVHomeSpotlight: View {
                 .foregroundStyle(NTVDesign.textPrimary)
                 .frame(maxWidth: 760, alignment: .leading)
             }
-            .frame(height: 310)
+            .frame(minHeight: 310)
         }
     }
 }

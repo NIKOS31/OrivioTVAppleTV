@@ -1044,7 +1044,7 @@ struct DetailView: View {
                     } label: {
                         Label("Sources", systemImage: "list.bullet")
                     }
-                    .buttonStyle(NTVActionButtonStyle())
+                    .buttonStyle(NTVActionButtonStyle(glass: true))
                     .focused($actionFocus, equals: .sources)
                     .accessibilityIdentifier("ntv.detail.sources")
                 }

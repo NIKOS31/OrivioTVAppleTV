@@ -153,6 +153,7 @@ struct GlassSidebar: View {
             .padding(8)
             .background { ntvTopGlass }
         }
+        .modifier(NTVGlassGrouping())
         .padding(.horizontal, NTVViewport.horizontalInset)
         .defaultFocus(focusBinding, selected)
         .padding(.top, 28)
@@ -431,6 +432,8 @@ private struct GlassProfileHeader: View {
 /// Neither changes the tab's dimensions or moves neighbouring labels.
 private struct NTVTopNavigationLabel: View {
     @Environment(\.isFocused) private var focused
+    @Environment(\.legibilityWeight) private var legibility
+    @ScaledMetric(relativeTo: .body) private var labelSize: CGFloat = 29
     let tab: AppTab
     let selected: Bool
     let iconOnly: Bool
@@ -443,12 +446,13 @@ private struct NTVTopNavigationLabel: View {
                     .frame(width: 56)
             } else {
                 Text(NTVBrand.navigationTitle(for: tab))
-                    .font(.system(size: 24, weight: .medium))
+                    .font(.system(size: labelSize, weight: legibility == .bold ? .bold : .medium))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                     .padding(.horizontal, 24)
             }
         }
-        .frame(height: 56)
+        .frame(minHeight: 56)
         .frame(maxWidth: iconOnly ? nil : .infinity)
         .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .background {

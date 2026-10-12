@@ -560,7 +560,9 @@ final class HomeViewModel: ObservableObject {
             // Read once here, not inside the task: `settings` is main-actor state.
             let hideUnreleased = settings.hideUnreleasedContent
             func startNext() {
-                guard next < pending.count, isCurrent() else { return }
+                // Generation is checked on the main actor before replenishing
+                // this window. The local scheduler needs only cancellation.
+                guard next < pending.count, !Task.isCancelled else { return }
                 let (index, key, title, rowID, request) = pending[next]
                 next += 1
                 group.addTask {

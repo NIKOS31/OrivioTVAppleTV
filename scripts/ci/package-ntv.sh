@@ -13,6 +13,7 @@ if [[ $(uname -s) != Darwin || ! -d "$app" ]]; then
 fi
 
 # Never package simulator output or publish an untested checkout.
+python3 scripts/ci/verify-ntv-icon-assets.py "$app/Info.plist" "$app/Assets.car"
 python3 - "$app/Info.plist" "$output/build-info.json" <<'PY'
 import json
 import plistlib

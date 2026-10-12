@@ -60,6 +60,18 @@ print("Upstream dependency pins preserved.")
 PY
 
 # Keep KSPlayer/the wrapper ABI, replace the old core's actual target archives.
+# Validate the icon stack with the real compiler before the expensive media
+# rebuild. actool only warns about a misspelled alternate name, which otherwise
+# lets a green build silently omit the app-switcher migration resource.
+icon_probe=$(mktemp -d "$output/icon-preflight.XXXXXX")
+xcrun actool OrivioTV/Assets.xcassets --compile "$icon_probe" \
+  --output-format human-readable-text --notices --warnings \
+  --output-partial-info-plist "$icon_probe/Info.plist" \
+  --app-icon 'App Icon & Top Shelf Image' --alternate-app-icon NTVSystemIcon \
+  --compress-pngs --target-device tv --minimum-deployment-target 17.0 --platform appletvos \
+  2>&1 | tee "$output/logs/icon-preflight.log"
+python3 scripts/ci/verify-ntv-icon-assets.py "$icon_probe/Info.plist" "$icon_probe/Assets.car"
+
 bash scripts/ci/prepare-ffmpeg.sh 2>&1 | tee "$output/logs/ffmpeg-prepare.log"
 
 # Leave SourcePackages inside DerivedData: upstream's vendor sanitization
@@ -73,6 +85,10 @@ xcodebuild build \
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
   2>&1 | tee "$output/logs/device.log"
+
+python3 scripts/ci/verify-ntv-icon-assets.py \
+  "$derived_data/Build/Products/Release-appletvos/OrivioTV.app/Info.plist" \
+  "$derived_data/Build/Products/Release-appletvos/OrivioTV.app/Assets.car"
 
 xcodebuild build \
   -project OrivioTV.xcodeproj -scheme OrivioTV \

@@ -12,7 +12,8 @@ import UIKit
         #if DEBUG
         // UI fixtures must not invoke a system icon confirmation or alter
         // the simulator's Home Screen while the remote journey is running.
-        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasSuffix("Demo") }) { return }
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains(where: { $0.hasSuffix("Demo") }) || arguments.contains("-ntvLaunchTest") { return }
         #endif
         let app = UIApplication.shared
         guard !running, app.applicationState == .active, app.supportsAlternateIcons,

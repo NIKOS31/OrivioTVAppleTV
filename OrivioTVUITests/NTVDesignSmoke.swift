@@ -26,7 +26,9 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.down)
         let focusedRecovery = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.catalog.filteredEmpty.")).firstMatch
         XCTAssertTrue(focusedRecovery.waitForExistence(timeout: 8), "All-hidden filters must not leave focus trapped in the top menu.")
-        let selectedRecovery = app.buttons[focusedRecovery.identifier]
+        // A hashed catalog identity can exceed XCTest's 128-character
+        // string-subscript limit. Explicit predicates accept the full ID.
+        let selectedRecovery = app.buttons.matching(NSPredicate(format: "identifier == %@", focusedRecovery.identifier)).firstMatch
         capture("ntv-catalog-all-filtered-empty")
         remote.press(.select)
         let panel = app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch

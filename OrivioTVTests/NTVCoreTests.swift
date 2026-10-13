@@ -59,6 +59,12 @@ final class NTVCoreTests: XCTestCase {
         XCTAssertEqual(uncertain, .unknown)
         let unconfigured = try await store.check(item: item, sources: [], scope: "none") { _, _, _ in XCTFail("No unconfigured request"); return [] }
         XCTAssertEqual(unconfigured, .unknown)
+        let unresolved = try await store.check(item: MetaItem(id: "tmdb:123", type: "movie", name: "Fixture"),
+            sources: sources, scope: "unresolved") { _, _, _ in
+            XCTFail("An unresolved TMDB ID must not be queried or treated as proof of absence.")
+            return []
+        }
+        XCTAssertEqual(unresolved, .unknown)
         XCTAssertNotEqual(NTVSourceAvailabilityStore.scope(profile: 1, addons: sources),
                           NTVSourceAvailabilityStore.scope(profile: 2, addons: sources))
     }
@@ -70,6 +76,13 @@ final class NTVCoreTests: XCTestCase {
         let store = NTVSourceAvailabilityStore()
         let result = try await store.check(item: item, sources: [addon], scope: "series") { _, _, _ in [] }
         XCTAssertEqual(result, .unknown, "A later season or episode may still be playable.")
+        let resumed = try JSONDecoder().decode(MetaItem.self, from: Data(#"{"id":"tt1234567","type":"series","name":"Fixture","videos":[{"id":"tt1234567","season":1,"episode":2,"released":"2000-01-01"}]}"#.utf8))
+        let playable = try JSONDecoder().decode(Stream.self, from: Data(#"{"url":"https://example.invalid/video.mp4"}"#.utf8))
+        let canonical = try await store.check(item: resumed, sources: [addon], scope: "resumed") { _, _, id in
+            XCTAssertEqual(id, "tt1234567:1:2", "Availability must use the same episode identity as playback.")
+            return id == "tt1234567:1:2" ? [playable] : []
+        }
+        XCTAssertEqual(canonical, .available)
     }
 
     func testHomeRecommendationsUseXperienceIdentityAndEnabledCatalogs() throws {

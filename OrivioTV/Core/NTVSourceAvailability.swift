@@ -32,6 +32,10 @@ actor NTVSourceAvailabilityStore {
                    try await StremioAPI.streamsForAvailability(addon: $0, type: $1, id: $2)
                }) async throws -> NTVSourceAvailability {
         try Task.checkCancellation()
+        // Playback resolves TMDB IDs to IMDb before querying sources. A
+        // background filter must not hide a title based on its unresolved ID
+        // or add that extra metadata request to browsing.
+        guard !item.id.hasPrefix("tmdb:") else { return .unknown }
         let key = scope + "#" + item.type + "#" + item.id
         if let record = records[key], record.expires > Date() { return record.result }
         let result = try await requests.value(for: key) {
@@ -67,7 +71,14 @@ actor NTVSourceAvailabilityStore {
                 ($0.airedDate.map { $0 <= Date() } ?? true) && ($0.season ?? 0) > 0
             }
             guard !released.isEmpty else { return .unknown }
-            ids = Array(released.prefix(3)).map(\.id)
+            ids = Array(released.prefix(3)).map { video in
+                // Match StreamsView's playback identity, including resumed
+                // episodes whose stored video ID is only the bare show ID.
+                if item.id.hasPrefix("tt"), let season = video.season, let episode = video.episode {
+                    return "\(item.id):\(season):\(episode)"
+                }
+                return video.id
+            }
             canProveAbsence = released.count <= ids.count && released.count == item.videos?.count
         }
         var uncertain = !canProveAbsence

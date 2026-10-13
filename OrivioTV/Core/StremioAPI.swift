@@ -356,7 +356,7 @@ enum StremioAPI {
         let url = try addon.resourceURL("/stream/\(encodePathComponent(type))/\(encodePathComponent(id)).json")
         // Keep the ordinary Sources screen's tolerant decoder. A probe needs
         // strict evidence: discarded malformed/null entries are not an empty list.
-        let response: AvailabilityStreamsResponse = try await get(url, ttl: 0, timeout: 20, resource: .streams)
+        let response: AvailabilityStreamsResponse = try await get(url, ttl: 0, timeout: 20, resource: .availabilityStreams)
         return response.streams
     }
 

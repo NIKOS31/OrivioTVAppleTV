@@ -23,7 +23,13 @@ struct NTVCatalogSource: Identifiable {
     private let fetch: @Sendable (NTVCatalogSource) async throws -> [MetaItem]
     init(source: NTVCatalogSource, scope: String,
          fetch: @escaping @Sendable (NTVCatalogSource) async throws -> [MetaItem] = {
-             try await StremioAPI.catalog(addon: $0.addon, catalog: $0.catalog)
+             #if DEBUG
+             if ProcessInfo.processInfo.arguments.contains("-ntvUpcomingCatalogFixture") {
+                 return [MetaItem(id: "fixture.future.\($0.catalog.id)", type: $0.catalog.type,
+                                  name: "Sortie à venir", releaseInfo: "2999", released: "2999-01-01")]
+             }
+             #endif
+             return try await StremioAPI.catalog(addon: $0.addon, catalog: $0.catalog)
          }) { self.source = source; self.scope = scope; self.fetch = fetch }
     func load() async {
         guard !loading, loadedAt.map({ Date().timeIntervalSince($0) < 300 }) != true else { return }
@@ -66,7 +72,9 @@ struct NTVCatalogSource: Identifiable {
         else { emptyVisibleSources.remove(sourceID) }
     }
     var firstNavigableSourceID: String? {
-        sources.first { !emptyVisibleSources.contains($0.id) }?.id
+        // When every loaded shelf is filtered out, its empty-state Categories
+        // action still provides a reachable destination from the top menu.
+        sources.first { !emptyVisibleSources.contains($0.id) }?.id ?? sources.first?.id
     }
     func adjacentNavigableSourceID(to sourceID: String, forward: Bool) -> String? {
         guard let index = sources.firstIndex(where: { $0.id == sourceID }) else { return nil }
@@ -330,6 +338,7 @@ private struct NTVCategoryButtonStyle: ButtonStyle {
 
 private struct NTVCatalogShelf: View {
     @EnvironmentObject private var layout: HomeCatalogSettingsStore
+    @FocusState private var emptyFocus: Bool
     @ObservedObject var model: NTVCatalogShelfModel
     let hero: HeroFocus
     let onSelect: (MetaItem) -> Void
@@ -362,9 +371,29 @@ private struct NTVCatalogShelf: View {
                         Button("Réessayer ce catalogue") { Task { await model.load() } }.buttonStyle(NTVActionButtonStyle())
                     } else if model.loading { ProgressView("Chargement") }
                     else { Text("Aucun titre disponible").foregroundStyle(NTVDesign.textSecondary) }
+                    if !model.loading {
+                        Button(action: onLeftAtStart) {
+                            Label("Catégories", systemImage: "line.3.horizontal.decrease")
+                        }
+                        .buttonStyle(NTVActionButtonStyle())
+                        .focused($emptyFocus)
+                        .accessibilityIdentifier("ntv.catalog.empty.\(model.source.id)")
+                    }
                 }
                 .frame(maxWidth: .infinity, minHeight: layout.posterSize.posterWidth * 1.5 + 148, alignment: .leading)
                 .padding(.horizontal, NTVViewport.horizontalInset)
+                .onExitCommand(perform: onBackAtRoot)
+                .onMoveCommand { direction in
+                    guard emptyFocus else { return }
+                    if direction == .up || direction == .down { onVerticalMove(direction) }
+                    if direction == .left { onLeftAtStart() }
+                }
+                .onChange(of: emptyFocus) { _, focused in
+                    if focused { ContentFocusRouter.shared.noteFocused(row: "ntv.catalog.shelf.\(model.source.id)") }
+                }
+                .task(id: "\(focusRequestID?.uuidString ?? "")#\(model.loading)") {
+                    if focusRequestID != nil && !model.loading { emptyFocus = true }
+                }
             }
         }.task { await model.load() }
             .onChange(of: model.loading) { _, loading in

@@ -2588,6 +2588,7 @@ struct HomePosterRow: View {
     var onFirstVisibleChange: ((String?) -> Void)? = nil
 
     @FocusState private var focusedID: String?
+    @FocusState private var emptyRowFocused: Bool
 
     private var displayedItems: [MetaItem] {
         guard homeCatalogSettings.hideUnreleasedContent || homeCatalogSettings.hideUnavailableSources else { return row.items }
@@ -2603,6 +2604,20 @@ struct HomePosterRow: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
+                        if displayedItems.isEmpty, let onLeftAtStart {
+                            VStack(alignment: .leading, spacing: 18) {
+                                Text("Aucun titre correspondant aux filtres.")
+                                    .font(.system(size: 29))
+                                    .foregroundStyle(theme.palette.textSecondary)
+                                Button(action: onLeftAtStart) {
+                                    Label("Catégories", systemImage: "line.3.horizontal.decrease")
+                                }
+                                .buttonStyle(NTVActionButtonStyle())
+                                .focused($emptyRowFocused)
+                                .accessibilityIdentifier("ntv.catalog.filteredEmpty.\(row.id)")
+                            }
+                            .frame(minHeight: homeCatalogSettings.posterSize.posterWidth * 1.5, alignment: .topLeading)
+                        }
                         ForEach(displayedItems) { item in
                             // Equatable cell: a focus step writes the row's
                             // @FocusState, which re-runs THIS row body — with
@@ -2644,7 +2659,7 @@ struct HomePosterRow: View {
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
                 .onMoveCommand { direction in
-                    guard focusedID != nil, let onVerticalMove else { return }
+                    guard focusedID != nil || emptyRowFocused, let onVerticalMove else { return }
                     if direction == .up || direction == .down {
                         onVerticalMove(direction)
                     }
@@ -2654,7 +2669,8 @@ struct HomePosterRow: View {
                     // A move command also fires when UIKit successfully moves
                     // second -> first. Only a failed LEFT is the extra press
                     // at the boundary, after the first poster already has focus.
-                    guard let onLeftAtStart, focusedID == displayedItems.first?.id,
+                    guard let onLeftAtStart,
+                          emptyRowFocused || (focusedID != nil && focusedID == displayedItems.first?.id),
                           let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
                             as? UIFocusUpdateContext,
                           context.focusHeading == .left else { return }
@@ -2687,8 +2703,15 @@ struct HomePosterRow: View {
                         focusedID = first
                     }
                 }
+                .onChange(of: emptyRowFocused) { _, focused in
+                    if focused { ContentFocusRouter.shared.noteFocused(row: row.id) }
+                }
                 .task(id: focusFirstRequestID) {
-                    guard focusFirstRequestID != nil, let first = displayedItems.first?.id else { return }
+                    guard focusFirstRequestID != nil else { return }
+                    guard let first = displayedItems.first?.id else {
+                        if onLeftAtStart != nil { emptyRowFocused = true }
+                        return
+                    }
                     // This task belongs to ONE catalog move. A newer move, a
                     // detail push or disappearance cancels it; no detached
                     // router retry may drag focus back to an obsolete row.
@@ -2729,7 +2752,10 @@ struct HomePosterRow: View {
     private func registerRowHandler(_ proxy: ScrollViewProxy) {
         let firstID = displayedItems.first?.id
         ContentFocusRouter.shared.register(row.id) {
-            guard let first = firstID else { return false }
+            guard let first = firstID else {
+                guard onLeftAtStart != nil else { return false }
+                emptyRowFocused = true; return true
+            }
             // Retry until the card actually holds focus: deep in the row the
             // first card is unloaded, and it takes the scroll a few ticks to
             // materialize it on the slower boxes.

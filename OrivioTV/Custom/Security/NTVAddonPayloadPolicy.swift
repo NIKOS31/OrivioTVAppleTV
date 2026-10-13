@@ -4,15 +4,20 @@ import Foundation
 /// JSON, so malformed entries cannot evade a collection limit by being skipped.
 enum NTVAddonPayloadPolicy {
     enum Resource {
-        case manifest, catalog, meta, streams, subtitles
+        case manifest, catalog, meta, streams, availabilityStreams, subtitles
 
         var maximumBytes: Int {
             switch self {
             case .manifest: return 1 << 20
             case .subtitles: return 2 << 20
-            case .streams: return 4 << 20
+            case .streams, .availabilityStreams: return 4 << 20
             case .catalog, .meta: return 8 << 20
             }
+        }
+
+        var requiresCompleteStreamList: Bool {
+            if case .availabilityStreams = self { return true }
+            return false
         }
     }
 
@@ -47,7 +52,10 @@ enum NTVAddonPayloadPolicy {
                 cleanMeta(&meta, source: source, changed: &changed)
                 if changed { object["meta"] = meta }
             }
-        case .streams:
+        case .streams, .availabilityStreams:
+            if resource.requiresCompleteStreamList && !(object["streams"] is [Any]) {
+                throw StremioAPIError.invalidResponse
+            }
             let entries = try array(object, key: "streams", limit: 4_096)
             var checked: [[String: Any]] = []
             for entry in entries {
@@ -65,6 +73,11 @@ enum NTVAddonPayloadPolicy {
                     changed = true; continue
                 }
                 checked.append(stream)
+            }
+            // A security-filtered list is useful in Sources, but dropping
+            // records must never turn a malformed response into proof of absence.
+            if resource.requiresCompleteStreamList && checked.count != entries.count {
+                throw StremioAPIError.invalidResponse
             }
             if changed { object["streams"] = checked }
         case .subtitles:

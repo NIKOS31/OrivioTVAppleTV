@@ -128,6 +128,8 @@ final class NTVCoreTests: XCTestCase {
         XCTAssertEqual(model.adjacentNavigableSourceID(to: third, forward: false), first)
         XCTAssertNil(model.adjacentNavigableSourceID(to: third, forward: true))
         model.noteVisibleStart(sourceID: first, itemID: nil)
+        model.noteVisibleStart(sourceID: third, itemID: nil)
+        XCTAssertEqual(model.firstNavigableSourceID, first, "An entirely filtered gallery must keep its Categories recovery action reachable.")
         model.configure(addons: [addon], type: "movie", scope: "profile-two")
         XCTAssertEqual(model.firstNavigableSourceID, first)
     }
@@ -149,15 +151,23 @@ final class NTVCoreTests: XCTestCase {
 
     func testAvailabilityRequiresAnExplicitValidEmptyList() throws {
         let decoder = JSONDecoder()
-        let empty = try decoder.decode(StremioAPI.AvailabilityStreamsResponse.self, from: Data(#"{"streams":[]}"#.utf8))
-        XCTAssertTrue(empty.streams.isEmpty)
-        for payload in [#"{}"#, #"{"streams":null}"#, #"{"streams":[null]}"#, #"{"streams":[42]}"#] {
-            XCTAssertThrowsError(try decoder.decode(StremioAPI.AvailabilityStreamsResponse.self, from: Data(payload.utf8)))
+        let source = try XCTUnwrap(URL(string: "https://example.invalid/stream/movie/fixture.json"))
+        func probeResponse(_ payload: String) throws -> StremioAPI.AvailabilityStreamsResponse {
+            let checked = try NTVAddonPayloadPolicy.checkedData(Data(payload.utf8), resource: .availabilityStreams, source: source)
+            return try decoder.decode(StremioAPI.AvailabilityStreamsResponse.self, from: checked)
         }
-        let playable = try decoder.decode(StremioAPI.AvailabilityStreamsResponse.self,
-            from: Data(#"{"streams":[{"url":"https://example.invalid/video.mp4"}]}"#.utf8))
+        let empty = try probeResponse(#"{"streams":[]}"#)
+        XCTAssertTrue(empty.streams.isEmpty)
+        for payload in [#"{}"#, #"{"streams":null}"#, #"{"streams":[null]}"#, #"{"streams":[42]}"#,
+                        #"{"streams":[{"url":"javascript:alert(1)"}]}"#,
+                        #"{"streams":[{"title":"Provider error"}]}"#] {
+            XCTAssertThrowsError(try probeResponse(payload))
+        }
+        let playable = try probeResponse(#"{"streams":[{"url":"https://example.invalid/video.mp4"}]}"#)
         XCTAssertEqual(playable.streams.count, 1)
-        let tolerant = try decoder.decode(StreamsResponse.self, from: Data(#"{"streams":[null,{"url":"https://example.invalid/video.mp4"}]}"#.utf8))
+        let tolerantPayload = try NTVAddonPayloadPolicy.checkedData(
+            Data(#"{"streams":[null,{"url":"https://example.invalid/video.mp4"}]}"#.utf8), resource: .streams, source: source)
+        let tolerant = try decoder.decode(StreamsResponse.self, from: tolerantPayload)
         XCTAssertEqual(tolerant.streams?.count, 1, "Normal Sources keeps its existing tolerant behavior.")
     }
 

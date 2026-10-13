@@ -600,6 +600,8 @@ struct RootView: View {
                     #if DEBUG
                     if demoMode {
                         homeCatalogSettings.navigationPosition = (args.contains("-ntvTopMenuDemo") || args.contains("-ntvCatalogCategoriesDemo")) ? .top : .left
+                        homeCatalogSettings.hideUnreleasedContent = args.contains("-ntvUpcomingCatalogFixture")
+                        homeCatalogSettings.hideUnavailableSources = false
                     }
                     #endif
                     // The selected design is applied once; subsequent layout

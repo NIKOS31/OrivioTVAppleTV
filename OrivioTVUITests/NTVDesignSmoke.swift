@@ -4,6 +4,40 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testEntirelyFilteredCatalogKeepsCategoriesAndTopMenuReachable() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvCatalogCategoriesDemo", "-ntvUpcomingCatalogFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let movies = app.buttons["ntv.navigation.5"]
+        let recovery = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.catalog.filteredEmpty.")).firstMatch
+        XCTAssertTrue(recovery.waitForExistence(timeout: 60))
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).count, 0)
+        let remote = XCUIRemote.shared
+        for _ in 0..<3 {
+            if movies.hasFocus { break }
+            remote.press(.menu)
+            if focused(movies, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(movies, timeout: 8))
+        remote.press(.down)
+        let focusedRecovery = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.catalog.filteredEmpty.")).firstMatch
+        XCTAssertTrue(focusedRecovery.waitForExistence(timeout: 8), "All-hidden filters must not leave focus trapped in the top menu.")
+        let selectedRecovery = app.buttons[focusedRecovery.identifier]
+        capture("ntv-catalog-all-filtered-empty")
+        remote.press(.select)
+        let panel = app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch
+        XCTAssertTrue(panel.waitForExistence(timeout: 8))
+        remote.press(.right)
+        XCTAssertTrue(focused(selectedRecovery, timeout: 8), "A filtered category must retain its recovery control after closing the drawer.")
+        XCTAssertFalse(panel.exists)
+        remote.press(.menu)
+        XCTAssertTrue(focused(movies, timeout: 8))
+    }
+
     func testHomeDoesNotUseOtherAddonsWithoutXperience() {
         continueAfterFailure = false
         let app = XCUIApplication()

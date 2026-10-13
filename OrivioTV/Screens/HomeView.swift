@@ -2571,9 +2571,7 @@ struct HomeView: View {
 struct HomePosterRow: View {
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var homeCatalogSettings: HomeCatalogSettingsStore
-    @EnvironmentObject private var addonManager: AddonManager
-    @EnvironmentObject private var profiles: ProfileStore
-    @State private var unavailableIDs: Set<String> = []
+    @State private var unavailableUntil: [String: Date] = [:]
     let row: HomeRow
     let useLandscape: Bool
     let hero: HeroFocus
@@ -2587,22 +2585,16 @@ struct HomePosterRow: View {
     var onVerticalMove: ((MoveCommandDirection) -> Void)? = nil
     var focusFirstRequestID: UUID? = nil
     var onLeftAtStart: (() -> Void)? = nil
+    var onFirstVisibleChange: ((String?) -> Void)? = nil
 
     @FocusState private var focusedID: String?
 
     private var displayedItems: [MetaItem] {
-        row.items.filter {
+        guard homeCatalogSettings.hideUnreleasedContent || homeCatalogSettings.hideUnavailableSources else { return row.items }
+        return row.items.filter {
             (!homeCatalogSettings.hideUnreleasedContent || !$0.isUnreleased) &&
-            (!homeCatalogSettings.hideUnavailableSources || !unavailableIDs.contains($0.id) || $0.id == focusedID)
+            (!homeCatalogSettings.hideUnavailableSources || (unavailableUntil[$0.id] ?? .distantPast) <= Date() || $0.id == focusedID)
         }
-    }
-    private var availabilityScope: String {
-        guard homeCatalogSettings.hideUnavailableSources else { return "disabled" }
-        return NTVSourceAvailabilityStore.scope(profile: profiles.activeProfileID, addons: addonManager.addons.filter(\.enabled))
-    }
-    private var availabilityTaskKey: String {
-        guard homeCatalogSettings.hideUnavailableSources else { return "disabled" }
-        return availabilityScope + "#\(focusedID ?? "")#" + row.items.map(\.id).joined(separator: "#")
     }
 
     var body: some View {
@@ -2658,23 +2650,6 @@ struct HomePosterRow: View {
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(
-                    for: UIFocusSystem.didUpdateNotification)) { note in
-                    guard onVerticalMove != nil,
-                          let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
-                            as? UIFocusUpdateContext,
-                          context.focusHeading.contains(.up) || context.focusHeading.contains(.down) else { return }
-                    // Touch-driven focus can change rows without delivering
-                    // the same MoveCommand path as a directional click. Wait
-                    // one main-loop turn for the native focus binding, then
-                    // correct only the row that actually received focus.
-                    DispatchQueue.main.async {
-                        guard focusedID != nil, let first = displayedItems.first?.id,
-                              focusedID != first else { return }
-                        proxy.scrollTo(first, anchor: .leading)
-                        focusedID = first
-                    }
-                }
-                .onReceive(NotificationCenter.default.publisher(
                     for: UIFocusSystem.movementDidFailNotification)) { note in
                     // A move command also fires when UIKit successfully moves
                     // second -> first. Only a failed LEFT is the extra press
@@ -2692,11 +2667,25 @@ struct HomePosterRow: View {
                 // replaced in place by refreshes and sync pulls — a stale
                 // handler scrolled to a card that no longer exists and its
                 // focus write was silently dropped.
-                .onAppear { registerRowHandler(proxy) }
-                .onChange(of: displayedItems.first?.id) { _, _ in registerRowHandler(proxy) }
+                .onAppear { registerRowHandler(proxy); onFirstVisibleChange?(displayedItems.first?.id) }
+                .onChange(of: displayedItems.first?.id) { _, first in
+                    registerRowHandler(proxy); onFirstVisibleChange?(first)
+                }
                 .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
-                .onChange(of: focusedID) { _, new in
-                    if new != nil { ContentFocusRouter.shared.noteFocused(row: row.id) }
+                .onChange(of: focusedID) { old, new in
+                    guard let new else { return }
+                    let enteredRow = onVerticalMove != nil && ContentFocusRouter.startsCatalogRow(
+                        previousItem: old, previousRow: ContentFocusRouter.shared.lastRowID,
+                        currentRow: row.id, restorationItem: restoreItemID)
+                    ContentFocusRouter.shared.noteFocused(row: row.id)
+                    guard enteredRow, let first = displayedItems.first?.id, first != new else { return }
+                    // Only the row receiving focus does this work. A later
+                    // touch movement wins over this deferred entry correction.
+                    DispatchQueue.main.async {
+                        guard focusedID == new else { return }
+                        proxy.scrollTo(first, anchor: .leading)
+                        focusedID = first
+                    }
                 }
                 .task(id: focusFirstRequestID) {
                     guard focusFirstRequestID != nil, let first = displayedItems.first?.id else { return }
@@ -2729,29 +2718,11 @@ struct HomePosterRow: View {
                 }
             }
         }
-        .onChange(of: availabilityScope) { _, _ in unavailableIDs = [] }
-        .task(id: availabilityTaskKey) {
-            guard homeCatalogSettings.hideUnavailableSources else { unavailableIDs = []; return }
-            guard focusedID != nil else { return }
-            let scope = availabilityScope
-            let sources = addonManager.streamAddons
-            let items = row.items
-            let start = max(0, (items.firstIndex { $0.id == focusedID } ?? 0) - 1)
-            // Do not query during touch navigation, and never sweep a catalog.
-            do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
-            var absent = unavailableIDs
-            for item in items.dropFirst(start).prefix(6) {
-                guard !Task.isCancelled else { return }
-                if homeCatalogSettings.hideUnreleasedContent && item.isUnreleased { continue }
-                do {
-                    let metadata = addonManager.metaAddons(for: item.type, id: item.id)
-                    let result = try await NTVSourceAvailabilityStore.shared.check(item: item, sources: sources, metadata: metadata, scope: scope)
-                    guard !Task.isCancelled, scope == availabilityScope else { return }
-                    if result == .absent { absent.insert(item.id) } else { absent.remove(item.id) }
-                } catch { return }
+        .background {
+            if homeCatalogSettings.hideUnavailableSources {
+                NTVAvailabilityObserver(items: row.items, focusedID: focusedID,
+                    hideUpcoming: homeCatalogSettings.hideUnreleasedContent, unavailableUntil: $unavailableUntil)
             }
-            // One update after the small window, with the focused card preserved.
-            if unavailableIDs != absent { unavailableIDs = absent }
         }
     }
 
@@ -2802,6 +2773,51 @@ struct HomePosterRow: View {
                          ? NTVViewport.horizontalInset : OrivioSpacing.huge)
             }
         }
+    }
+}
+
+/// Mounted only when the source filter is enabled. Ordinary poster rows do
+/// not subscribe to profile/addon updates or launch a task on every focus step.
+struct NTVAvailabilityObserver: View {
+    @EnvironmentObject private var addons: AddonManager
+    @EnvironmentObject private var profiles: ProfileStore
+    let items: [MetaItem]
+    let focusedID: String?
+    let hideUpcoming: Bool
+    @Binding var unavailableUntil: [String: Date]
+    private var scope: String {
+        NTVSourceAvailabilityStore.scope(profile: profiles.activeProfileID, addons: addons.addons.filter(\.enabled))
+    }
+    private var taskKey: String {
+        scope + "#\(focusedID ?? "")#\(hideUpcoming)#" + items.map(\.id).joined(separator: "#")
+    }
+    var body: some View {
+        Color.clear.frame(width: 0, height: 0).allowsHitTesting(false).accessibilityHidden(true)
+            .onAppear { unavailableUntil = [:] }
+            .onChange(of: scope) { _, _ in unavailableUntil = [:] }
+            .task(id: taskKey) {
+                guard focusedID != nil else { return }
+                let selectedScope = scope
+                let sources = addons.streamAddons
+                let start = max(0, (items.firstIndex { $0.id == focusedID } ?? 0) - 1)
+                do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
+                while !Task.isCancelled {
+                    for item in items.dropFirst(start).prefix(6) {
+                        if hideUpcoming && item.isUnreleased { continue }
+                        do {
+                            _ = try await NTVSourceAvailabilityStore.shared.check(item: item, sources: sources,
+                                metadata: addons.metaAddons(for: item.type, id: item.id), scope: selectedScope)
+                        } catch { return }
+                        guard !Task.isCancelled, selectedScope == scope else { return }
+                    }
+                    let absent = await NTVSourceAvailabilityStore.shared.absentUntil(for: items, scope: selectedScope)
+                    guard !Task.isCancelled, selectedScope == scope else { return }
+                    if unavailableUntil != absent { unavailableUntil = absent }
+                    // Expired absence must not hide a newly available release.
+                    // This loop stops immediately when focus leaves the row.
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                }
+            }
     }
 }
 

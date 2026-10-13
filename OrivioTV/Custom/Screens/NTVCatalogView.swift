@@ -17,6 +17,7 @@ struct NTVCatalogSource: Identifiable {
     @Published private(set) var loading = false
     @Published private(set) var failed = false
     private var loadedAt: Date?
+    var hasLoaded: Bool { loadedAt != nil }
     let source: NTVCatalogSource
     let scope: String
     private let fetch: @Sendable (NTVCatalogSource) async throws -> [MetaItem]
@@ -59,6 +60,19 @@ struct NTVCatalogSource: Identifiable {
     private var fingerprint = ""
     private var shelves: [String: NTVCatalogShelfModel] = [:]
     private var order: [String] = []
+    private var emptyVisibleSources: Set<String> = []
+    func noteVisibleStart(sourceID: String, itemID: String?) {
+        if itemID == nil { emptyVisibleSources.insert(sourceID) }
+        else { emptyVisibleSources.remove(sourceID) }
+    }
+    var firstNavigableSourceID: String? {
+        sources.first { !emptyVisibleSources.contains($0.id) }?.id
+    }
+    func adjacentNavigableSourceID(to sourceID: String, forward: Bool) -> String? {
+        guard let index = sources.firstIndex(where: { $0.id == sourceID }) else { return nil }
+        let candidates = forward ? Array(sources.dropFirst(index + 1)) : Array(sources.prefix(index).reversed())
+        return candidates.first { !emptyVisibleSources.contains($0.id) }?.id
+    }
     func configure(addons: [InstalledAddon], type: String, scope: String) {
         let available = addons.flatMap { addon in
             (addon.manifest.catalogs ?? []).filter { $0.type == type && !$0.requiresExtra }
@@ -66,7 +80,7 @@ struct NTVCatalogSource: Identifiable {
         }
         let next = scope + "#" + available.map { "\($0.id)#\($0.catalog.hashValue)" }.joined(separator: "#")
         guard next != fingerprint else { return }
-        fingerprint = next; shelves = [:]; order = []; lastSelection = nil
+        fingerprint = next; shelves = [:]; order = []; lastSelection = nil; emptyVisibleSources = []
         var seen = Set<String>()
         sources = available.filter { seen.insert($0.id).inserted }
     }
@@ -142,6 +156,7 @@ struct NTVCatalogView: View {
                                     onVerticalMove: { move in moveFromRow(source.id, direction: move, proxy: proxy) },
                                     focusRequestID: requestedCategory?.sourceID == source.id ? requestedCategory?.token : nil,
                                     restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil)
+                                    .onFirstVisibleItem { viewModel.noteVisibleStart(sourceID: source.id, itemID: $0) }
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("ntv.catalog.shelf.\(source.id)")
                                     .id(source.id)
@@ -176,7 +191,7 @@ struct NTVCatalogView: View {
                 }
                 .onAppear {
                     ContentFocusRouter.shared.register(routerID) {
-                        guard let first = viewModel.sources.first?.id else { return false }
+                        guard let first = viewModel.firstNavigableSourceID else { return false }
                         requestRow(first, proxy: proxy); return true
                     }
                 }
@@ -286,10 +301,9 @@ struct NTVCatalogView: View {
         if !keepViewport { proxy.scrollTo(sourceID, anchor: .top) }
     }
     private func moveFromRow(_ sourceID: String, direction: MoveCommandDirection, proxy: ScrollViewProxy) {
-        guard let index = viewModel.sources.firstIndex(where: { $0.id == sourceID }) else { return }
-        let target = direction == .down ? index + 1 : index - 1
-        if viewModel.sources.indices.contains(target) {
-            requestRow(viewModel.sources[target].id, proxy: proxy)
+        guard direction == .up || direction == .down else { return }
+        if let target = viewModel.adjacentNavigableSourceID(to: sourceID, forward: direction == .down) {
+            requestRow(target, proxy: proxy)
         } else if direction == .up {
             onBackAtRoot()
         }
@@ -326,6 +340,10 @@ private struct NTVCatalogShelf: View {
     let onVerticalMove: (MoveCommandDirection) -> Void
     let focusRequestID: UUID?
     let restoreItemID: String?
+    var firstVisibleChanged: ((String?) -> Void)?
+    func onFirstVisibleItem(_ action: @escaping (String?) -> Void) -> Self {
+        var copy = self; copy.firstVisibleChanged = action; return copy
+    }
     var body: some View {
         Group {
             if !model.items.isEmpty {
@@ -335,7 +353,8 @@ private struct NTVCatalogShelf: View {
                     onPlayManually: onPlayManually, onSeeAll: onSeeAll,
                     onBackAtStart: onBackAtRoot, accessibilityPrefix: "ntv.poster",
                     restoreItemID: restoreItemID, onVerticalMove: onVerticalMove,
-                    focusFirstRequestID: focusRequestID, onLeftAtStart: onLeftAtStart)
+                    focusFirstRequestID: focusRequestID, onLeftAtStart: onLeftAtStart,
+                    onFirstVisibleChange: firstVisibleChanged)
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(model.source.title).font(.system(size: 28, weight: .semibold))
@@ -348,5 +367,8 @@ private struct NTVCatalogShelf: View {
                 .padding(.horizontal, NTVViewport.horizontalInset)
             }
         }.task { await model.load() }
+            .onChange(of: model.loading) { _, loading in
+                if !loading && !model.failed && model.hasLoaded && model.items.isEmpty { firstVisibleChanged?(nil) }
+            }
     }
 }

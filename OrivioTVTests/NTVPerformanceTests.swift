@@ -10,7 +10,7 @@ final class NTVPerformanceTests: XCTestCase {
         var active = 0
         var maximum = 0
         var calls = 0
-        func load() async throws -> [Stream] {
+        func load() async throws -> [OrivioTV.Stream] {
             active += 1; maximum = max(maximum, active); calls += 1
             defer { active -= 1 }
             try await Task.sleep(for: .milliseconds(30))

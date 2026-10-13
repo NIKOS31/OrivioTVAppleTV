@@ -111,6 +111,57 @@ final class NTVCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testCatalogEntrySkipsAFilteredEmptyRowAndForgetsItForAnotherProfile() throws {
+        let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"fixture","name":"Fixture","version":"1","types":["movie"],"resources":["catalog"],"catalogs":[{"type":"movie","id":"first"},{"type":"movie","id":"second"},{"type":"movie","id":"third"}]}"#.utf8))
+        let addon = InstalledAddon(manifestURL: "https://example.invalid/manifest.json", manifest: manifest)
+        let model = NTVCatalogBrowserModel()
+        model.configure(addons: [addon], type: "movie", scope: "profile-one")
+        let first = try XCTUnwrap(model.sources.first?.id)
+        let second = model.sources[1].id
+        let third = model.sources[2].id
+        model.noteVisibleStart(sourceID: first, itemID: nil)
+        XCTAssertEqual(model.firstNavigableSourceID, second)
+        model.noteVisibleStart(sourceID: first, itemID: "visible")
+        XCTAssertEqual(model.firstNavigableSourceID, first)
+        model.noteVisibleStart(sourceID: second, itemID: nil)
+        XCTAssertEqual(model.adjacentNavigableSourceID(to: first, forward: true), third)
+        XCTAssertEqual(model.adjacentNavigableSourceID(to: third, forward: false), first)
+        XCTAssertNil(model.adjacentNavigableSourceID(to: third, forward: true))
+        model.noteVisibleStart(sourceID: first, itemID: nil)
+        model.configure(addons: [addon], type: "movie", scope: "profile-two")
+        XCTAssertEqual(model.firstNavigableSourceID, first)
+    }
+
+    @MainActor
+    func testCatalogTouchEntryDoesNotResetHorizontalFocusOrDetailRestoration() {
+        let first = "ntv.catalog.shelf.first", second = "ntv.catalog.shelf.second"
+        XCTAssertTrue(ContentFocusRouter.startsCatalogRow(previousItem: nil, previousRow: first,
+            currentRow: second, restorationItem: nil))
+        XCTAssertFalse(ContentFocusRouter.startsCatalogRow(previousItem: "second-poster", previousRow: second,
+            currentRow: second, restorationItem: nil), "A horizontal or diagonal move inside a row stays where the viewer chose.")
+        XCTAssertFalse(ContentFocusRouter.startsCatalogRow(previousItem: nil, previousRow: first,
+            currentRow: second, restorationItem: "remembered"), "Returning from a detail preserves its poster.")
+        XCTAssertFalse(ContentFocusRouter.startsCatalogRow(previousItem: nil, previousRow: second,
+            currentRow: second, restorationItem: nil))
+        XCTAssertFalse(ContentFocusRouter.startsCatalogRow(previousItem: nil, previousRow: "home",
+            currentRow: second, restorationItem: nil), "The root router owns entry from other pages.")
+    }
+
+    func testAvailabilityRequiresAnExplicitValidEmptyList() throws {
+        let decoder = JSONDecoder()
+        let empty = try decoder.decode(StremioAPI.AvailabilityStreamsResponse.self, from: Data(#"{"streams":[]}"#.utf8))
+        XCTAssertTrue(empty.streams.isEmpty)
+        for payload in [#"{}"#, #"{"streams":null}"#, #"{"streams":[null]}"#, #"{"streams":[42]}"#] {
+            XCTAssertThrowsError(try decoder.decode(StremioAPI.AvailabilityStreamsResponse.self, from: Data(payload.utf8)))
+        }
+        let playable = try decoder.decode(StremioAPI.AvailabilityStreamsResponse.self,
+            from: Data(#"{"streams":[{"url":"https://example.invalid/video.mp4"}]}"#.utf8))
+        XCTAssertEqual(playable.streams.count, 1)
+        let tolerant = try decoder.decode(StreamsResponse.self, from: Data(#"{"streams":[null,{"url":"https://example.invalid/video.mp4"}]}"#.utf8))
+        XCTAssertEqual(tolerant.streams?.count, 1, "Normal Sources keeps its existing tolerant behavior.")
+    }
+
+    @MainActor
     func testCatalogPreviewIsBoundedDeduplicatedAndDoesNotReloadOnReturn() async throws {
         let addon = try fixtureAddon(), source = NTVCatalogSource(addon: addon, catalog: try catalog(type: "movie"))
         let fixture = CatalogPreviewFixture()

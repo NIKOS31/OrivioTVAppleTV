@@ -102,11 +102,19 @@ struct DiscoverView: View {
     @State private var catalogIndex = 0
     @State private var genre = ""              // "" = Default (no filter)
     @FocusState private var focusedID: String?
+    @State private var unavailableUntil: [String: Date] = [:]
     @Environment(\.dismiss) private var dismiss
 
     private var columns: [GridItem] { [GridItem(.adaptive(minimum: posterLayout.posterSize.posterWidth, maximum: posterLayout.posterSize.posterWidth), spacing: OrivioSpacing.lg, alignment: .top)] }
 
-    private var stremioType: String { type == "Series" ? "series" : "movie" }
+    private var stremioType: String { type == "Séries" || type == "Series" ? "series" : "movie" }
+    private var displayedItems: [MetaItem] {
+        guard posterLayout.hideUnreleasedContent || posterLayout.hideUnavailableSources else { return viewModel.items }
+        return viewModel.items.filter {
+            (!posterLayout.hideUnreleasedContent || !$0.isUnreleased) &&
+            (!posterLayout.hideUnavailableSources || (unavailableUntil[$0.id] ?? .distantPast) <= Date() || $0.id == focusedID)
+        }
+    }
 
     /// Catalogs of the selected type, across installed add-ons (no search-only).
     private var catalogs: [(addon: InstalledAddon, catalog: ManifestCatalog)] {
@@ -171,8 +179,15 @@ struct DiscoverView: View {
                                         message: "Ce catalogue est vide. Ajoutez d’autres addons dans les réglages.")
                             .frame(height: 420)
                     } else {
+                        if displayedItems.isEmpty {
+                            Text("Aucun titre correspondant aux filtres.").foregroundStyle(theme.palette.textSecondary)
+                                .padding(.horizontal, OrivioSpacing.huge)
+                            Button("Vérifier la suite du catalogue") { Task { await viewModel.loadMore() } }
+                                .buttonStyle(NTVActionButtonStyle())
+                                .padding(.horizontal, OrivioSpacing.huge)
+                        }
                         LazyVGrid(columns: columns, alignment: .leading, spacing: OrivioSpacing.xl) {
-                            ForEach(viewModel.items) { item in
+                            ForEach(displayedItems) { item in
                                 GridPosterCell(
                                     item: item,
                                     captionWidth: posterLayout.posterSize.posterWidth,
@@ -181,7 +196,7 @@ struct DiscoverView: View {
                                 )
                                 .id(item.id)
                                 .onAppear {
-                                    if item.id == viewModel.items.last?.id {
+                                    if item.id == displayedItems.last?.id {
                                         Task { await viewModel.loadMore() }
                                     }
                                 }
@@ -197,6 +212,12 @@ struct DiscoverView: View {
             .onExitCommand { backToTop(proxy) }
             }
         }
+        .background {
+            if posterLayout.hideUnavailableSources {
+                NTVAvailabilityObserver(items: viewModel.items, focusedID: focusedID,
+                    hideUpcoming: posterLayout.hideUnreleasedContent, unavailableUntil: $unavailableUntil)
+            }
+        }
         .task(id: "\(type)#\(catalogIndex)#\(selected?.catalog.id ?? "")#\(genre)") {
             if let sel = selected {
                 await viewModel.reset(addon: sel.addon, catalog: sel.catalog,
@@ -210,7 +231,7 @@ struct DiscoverView: View {
     private func backToTop(_ proxy: ScrollViewProxy) {
         // `focusedID` is nil while the selector pills hold focus — Back from
         // there pops the screen; it used to yank focus down into the grid.
-        guard let first = viewModel.items.first?.id, let focused = focusedID, focused != first else {
+        guard let first = displayedItems.first?.id, let focused = focusedID, focused != first else {
             dismiss(); return
         }
         withAnimation(FusionMotion.focusMove) { proxy.scrollTo(first, anchor: .top) }

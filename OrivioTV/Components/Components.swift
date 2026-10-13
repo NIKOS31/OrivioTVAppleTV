@@ -1395,6 +1395,7 @@ struct GridPosterCell: View {
                 }
         }
         .mediaCardButtonStyle()
+        .buttonBorderShape(.roundedRectangle(radius: CGFloat(layout.posterCornerRadius)))
         .posterHoldMenu(item) { onSelect(item) }
         .onPlayPauseCommand { onPlayManually(item, nil) }
         .accessibilityLabel(item.name)

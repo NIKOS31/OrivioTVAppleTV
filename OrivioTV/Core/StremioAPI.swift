@@ -348,11 +348,16 @@ enum StremioAPI {
 
     /// A missing/invalid list is not evidence that a title has no sources.
     /// Availability probes neither read nor retain a stream-body cache.
+    struct AvailabilityStreamsResponse: Decodable {
+        let streams: [Stream]
+    }
+
     static func streamsForAvailability(addon: InstalledAddon, type: String, id: String) async throws -> [Stream] {
         let url = try addon.resourceURL("/stream/\(encodePathComponent(type))/\(encodePathComponent(id)).json")
-        let response: StreamsResponse = try await get(url, ttl: 0, timeout: 20, resource: .streams)
-        guard let streams = response.streams else { throw StremioAPIError.emptyBody }
-        return streams
+        // Keep the ordinary Sources screen's tolerant decoder. A probe needs
+        // strict evidence: discarded malformed/null entries are not an empty list.
+        let response: AvailabilityStreamsResponse = try await get(url, ttl: 0, timeout: 20, resource: .streams)
+        return response.streams
     }
 
     private struct SubtitlesResponse: Codable {

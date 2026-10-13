@@ -19,6 +19,15 @@ final class ContentFocusRouter {
     /// The row that last held focus in the content.
     private(set) var lastRowID: String?
 
+    /// Normalize an actual entry from another catalog row, never an ordinary
+    /// horizontal/diagonal step or a return to a remembered detail selection.
+    static func startsCatalogRow(previousItem: String?, previousRow: String?,
+                                 currentRow: String, restorationItem: String?) -> Bool {
+        previousItem == nil && restorationItem == nil && previousRow != currentRow &&
+            previousRow?.hasPrefix("ntv.catalog.shelf.") == true &&
+            currentRow.hasPrefix("ntv.catalog.shelf.")
+    }
+
     func register(_ rowID: String, handler: @escaping () -> Bool) {
         handlers[rowID] = handler
         AppProbe.focus("row registered: \(rowID)  (\(handlers.count) mounted)")

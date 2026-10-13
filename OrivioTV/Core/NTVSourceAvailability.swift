@@ -13,6 +13,16 @@ actor NTVSourceAvailabilityStore {
     private var records: [String: Record] = [:]
     private var order: [String] = []
 
+    func absentUntil(for items: [MetaItem], scope: String) -> [String: Date] {
+        let now = Date()
+        var result: [String: Date] = [:]
+        for item in items {
+            if let record = records[scope + "#" + item.type + "#" + item.id],
+               record.result == .absent, record.expires > now { result[item.id] = record.expires }
+        }
+        return result
+    }
+
     static func scope(profile: Int, addons: [InstalledAddon]) -> String {
         ImageCache.artworkKey(String(profile) + "#" + addons.map { $0.manifestURL }.sorted().joined(separator: "#"), budget: nil)
     }

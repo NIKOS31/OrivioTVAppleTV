@@ -6,15 +6,23 @@ import XCTest
 final class NTVDesignSmoke: XCTestCase {
     func testSystemIconRegistrationAndActualSwitcherCapture() {
         continueAfterFailure = false
+        executionTimeAllowance = 180
         let app = XCUIApplication()
         app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe"]
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
         defer { app.terminate() }
+        // The genuine icon confirmation prevents snapshots of app elements.
+        // Capture the system before acknowledging it, without querying the app.
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "ntv-system-icon-registration"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        let remote = XCUIRemote.shared
+        remote.press(.select)
         let probe = app.descendants(matching: .any)["ntv.systemIcon.registration"].firstMatch
         XCTAssertTrue(probe.waitForExistence(timeout: 15))
-        let remote = XCUIRemote.shared
         let deadline = Date().addingTimeInterval(25)
         var confirmations = 0
         while Date() < deadline {
@@ -30,10 +38,6 @@ final class NTVDesignSmoke: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        screenshot.name = "ntv-system-icon-registration"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
         XCTAssertEqual(probe.value as? String, "applied#NTVSystemIcon#1",
                        "The actual app must attempt UIKit registration and observe its successful selected icon; a capability flag alone is insufficient.")
         remote.press(.home)

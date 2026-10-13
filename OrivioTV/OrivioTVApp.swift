@@ -365,6 +365,7 @@ struct RootView: View {
             // access token is short-lived).
             .task { await debrid.refreshRealDebridIfNeeded() }
             .task { await NTVSystemIconUpdater.shared.applyIfNeeded() }
+            .ntvSystemIconRegistrationProbe()
             .onAppear {
                 NSLog("[OrivioPlayer] RootView content onAppear")
                 FocusTrace.installIfRequested()

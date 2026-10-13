@@ -4,6 +4,48 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testSystemIconRegistrationAndActualSwitcherCapture() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let probe = app.descendants(matching: .any)["ntv.systemIcon.registration"].firstMatch
+        XCTAssertTrue(probe.waitForExistence(timeout: 15))
+        let remote = XCUIRemote.shared
+        let deadline = Date().addingTimeInterval(25)
+        var confirmations = 0
+        while Date() < deadline {
+            let value = probe.value as? String ?? ""
+            if value == "applied#NTVSystemIcon#1" { break }
+            if value.hasPrefix("failed#") || value.hasPrefix("unavailable#") || value.hasPrefix("mismatch#") { break }
+            if value.hasPrefix("applying#"), confirmations < 3 {
+                // The genuine Apple icon request can present a system dialog.
+                // This remote journey can acknowledge it; a unit test cannot.
+                Thread.sleep(forTimeInterval: 1)
+                remote.press(.select)
+                confirmations += 1
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "ntv-system-icon-registration"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertEqual(probe.value as? String, "applied#NTVSystemIcon#1",
+                       "The actual app must attempt UIKit registration and observe its successful selected icon; a capability flag alone is insufficient.")
+        remote.press(.home)
+        remote.press(.home)
+        Thread.sleep(forTimeInterval: 1)
+        let switcher = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        switcher.name = "ntv-system-app-switcher"
+        switcher.lifetime = .keepAlways
+        add(switcher)
+        remote.press(.menu)
+    }
+
     func testEntirelyFilteredCatalogKeepsCategoriesAndTopMenuReachable() {
         continueAfterFailure = false
         let app = XCUIApplication()

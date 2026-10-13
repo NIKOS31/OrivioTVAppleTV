@@ -211,7 +211,7 @@ enum StremioAPI {
         // Coalesce concurrent identical fetches into ONE network round-trip —
         // overlapping requests for the same URL (Home rows, prefetch, back-nav)
         // share a single call instead of each hitting the network.
-        let received = try await coalescer.data(for: urlString) {
+        let received = try await coalescer.data(for: coalescingKey(for: urlString, resource: resource)) {
             var request = URLRequest(url: target)
             if timeout > 0 { request.timeoutInterval = timeout }
             if ttl == 0 { request.cachePolicy = .reloadIgnoringLocalCacheData }
@@ -223,6 +223,13 @@ enum StremioAPI {
         let value = try JSONDecoder().decode(T.self, from: data)
         if ttl > 0 { cache.store(data, for: urlString) }
         return value
+    }
+
+    /// A short background probe must not lend its timeout to a Sources request
+    /// for the same title. Probes share with other probes; playback keeps its
+    /// existing coalescing, patience and cancellation policy.
+    static func coalescingKey(for url: String, resource: NTVAddonPayloadPolicy.Resource) -> String {
+        resource.requiresCompleteStreamList ? "ntv.availability#" + url : url
     }
 
     static func responseByteLimit(for raw: String) -> Int {

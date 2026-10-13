@@ -70,6 +70,36 @@ final class NTVPerformanceTests: XCTestCase {
         XCTAssertEqual(ended.waiters, 0)
     }
 
+    func testAvailabilityTransferCannotImposeItsDeadlineOnManualSources() async throws {
+        let probe = NTVBoundedHTTPProbe(stall: true)
+        let (session, request) = NTVBoundedHTTPFixture.register(probe)
+        defer { session.invalidateAndCancel(); NTVBoundedHTTPFixture.remove(probe.id) }
+        let requests = RequestCoalescer(limit: 2)
+        let url = try XCTUnwrap(request.url?.absoluteString)
+        let probeRequest: URLRequest = { var value = request; value.timeoutInterval = 20; return value }()
+        let sourcesRequest: URLRequest = { var value = request; value.timeoutInterval = 45; return value }()
+        let availability = Task {
+            try await requests.data(for: StremioAPI.coalescingKey(for: url, resource: .availabilityStreams)) {
+                try await NTVBoundedResponse.data(for: probeRequest, session: session, maximumBytes: 512).0
+            }
+        }
+        try await until { probe.requestsReceived == 1 }
+        let sources = Task {
+            try await requests.data(for: StremioAPI.coalescingKey(for: url, resource: .streams)) {
+                try await NTVBoundedResponse.data(for: sourcesRequest, session: session, maximumBytes: 512).0
+            }
+        }
+        try await until { probe.requestsReceived == 2 }
+        availability.cancel(); await expectCancellation(availability)
+        try await until { await requests.activity.running == 1 }
+        let remaining = await requests.activity
+        XCTAssertEqual(remaining.waiters, 1, "Leaving a poster must not cancel the manual Sources request.")
+        XCTAssertEqual(remaining.running, 1, "Sources retains its independent transfer and deadline.")
+        XCTAssertEqual(probe.requestsReceived, 2, "The shorter background deadline must not be inherited through shared HTTP.")
+        sources.cancel(); await expectCancellation(sources)
+        try await until { await requests.activity.running == 0 }
+    }
+
     @MainActor
     func testActualSearchModelBoundsCallsAndPreservesProviderOrder() async throws {
         let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"ntv-search-fixture","name":"Fixture","version":"1","resources":["meta","catalog"],"types":["movie"],"catalogs":[{"id":"search","type":"movie","extraSupported":["search"],"extraRequired":["search"]}]}"#.utf8))

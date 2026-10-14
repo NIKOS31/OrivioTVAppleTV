@@ -41,6 +41,40 @@ mkdir -p "$package_dir"
 stage=$(mktemp -d "$output/ipa-stage.XXXXXX")
 mkdir -p "$stage/Payload"
 ditto "$app" "$stage/Payload/OrivioTV.app"
+# Preserve a device package without shared-container requests for recovery if
+# the viewer's local signing service cannot provision the requested group.
+ditto -c -k --keepParent "$stage/Payload" "$package_dir/nTV-standalone.ipa"
+
+# CODE_SIGNING_ALLOWED=NO leaves no Mach-O entitlement carrier. The local
+# signer's capability request is based on those embedded entitlements, not on
+# source .entitlements files or Info.plist. An ad-hoc signature conveys only
+# the existing common group request; an Apple account/device signature remains
+# required. Never insert an Apple identity, profile, token or certificate in CI.
+carrier="$stage/Payload/OrivioTV.app"
+for framework in "$carrier"/Frameworks/*.framework "$carrier"/Frameworks/*.dylib; do
+  [[ -e "$framework" ]] || continue
+  codesign --force --sign - "$framework"
+done
+for extension in "$carrier"/PlugIns/*.appex; do
+  [[ -d "$extension" ]] || continue
+  codesign --force --sign - --entitlements OrivioTopShelf/OrivioTopShelf.entitlements "$extension"
+done
+codesign --force --sign - --entitlements Config/OrivioTV.entitlements "$carrier"
+codesign --verify --deep --strict "$carrier"
+codesign -d --entitlements :- "$carrier" > "$output/app-carrier-entitlements.plist" 2>/dev/null
+extension=$(find "$carrier/PlugIns" -maxdepth 1 -type d -name '*.appex')
+[[ -n "$extension" && "$extension" != *$'\n'* ]]
+codesign -d --entitlements :- "$extension" > "$output/shelf-carrier-entitlements.plist" 2>/dev/null
+python3 - "$output/app-carrier-entitlements.plist" "$output/shelf-carrier-entitlements.plist" <<'PY'
+import plistlib, sys
+groups=[]
+for path in sys.argv[1:]:
+    with open(path, 'rb') as f:
+        groups.append(plistlib.load(f).get('com.apple.security.application-groups', []))
+if not groups[0] or groups[0] != groups[1]:
+    raise SystemExit('The app and extension must carry the identical local-sharing request.')
+print('Ad-hoc capability carrier verified; personal Apple signature still required.')
+PY
 # ditto preserves the framework permissions and symbolic links in the bundle.
 ditto -c -k --keepParent "$stage/Payload" "$package_dir/nTV-unsigned.ipa"
 
@@ -78,12 +112,19 @@ record = {
     "minimum_tvos": info.get("MinimumOSVersion"),
     "supported_platforms": info["CFBundleSupportedPlatforms"],
     "signature_required": True,
+    "capability_carrier": "ad-hoc",
+    "local_sharing_entitlement_requested": True,
     "personal_addons_configured": False,
     "ui_tests_executed": build["ui_tests_executed"],
     "ffmpeg": build["ffmpeg"],
 }
 (directory / "nTV-unsigned.ipa.sha256").write_text(checksum + "  " + ipa.name + "\n", encoding="utf-8")
 (directory / "package-info.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+standalone = directory / "nTV-standalone.ipa"
+fallback = dict(record, file=standalone.name, bytes=standalone.stat().st_size,
+    sha256=hashlib.sha256(standalone.read_bytes()).hexdigest(), capability_carrier="none",
+    local_sharing_entitlement_requested=False)
+(directory / "package-info-standalone.json").write_text(json.dumps(fallback, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(record, indent=2))
 PY
 

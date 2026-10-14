@@ -3,6 +3,14 @@ import TVServices
 @testable import OrivioTV
 
 final class NTVTopShelfTests: XCTestCase {
+    func testResignedGroupSelectionDoesNotChooseDifferentTargetDefaults() {
+        let common = AppGroupResolver.fallback + ".TESTTEAM"
+        XCTAssertEqual(AppGroupResolver.preferredGroup(in: ["group.app.TESTTEAM", common]), common)
+        XCTAssertEqual(AppGroupResolver.preferredGroup(in: ["group.appex.TESTTEAM", common]), common)
+        XCTAssertEqual(AppGroupResolver.preferredGroup(in: [AppGroupResolver.fallback]), AppGroupResolver.fallback)
+        XCTAssertNil(AppGroupResolver.preferredGroup(in: ["", "invalid"]))
+    }
+
     private let callback: [String: Any] = ["CFBundleURLTypes": [["CFBundleURLName": "tv.orivio.callback", "CFBundleURLSchemes": ["orivio"]]]]
 
     func testContinuationHasPostersProgressAndLocalResumeActions() throws {

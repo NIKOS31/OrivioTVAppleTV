@@ -223,16 +223,16 @@ struct PlayerScreen: View {
                 // sheet straight out of the hierarchy let the focus system
                 // commit the change before the removal transition ran, so
                 // the close never animated.
-                Color.black.opacity(viewModel.sheetClosing ? 0 : 0.55)
+                Color.black.opacity(viewModel.sheetClosing ? 0 : (usesNTVControls ? 0.25 : 0.55))
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .transition(.opacity)
-                InfuseInfoPanel(viewModel: viewModel)
-                    .offset(y: viewModel.sheetClosing ? -1000 : 0)
+                InfuseInfoPanel(viewModel: viewModel, anchoredToTransport: usesNTVControls)
+                    .offset(y: viewModel.sheetClosing ? (usesNTVControls ? 1000 : -1000) : 0)
                     .opacity(viewModel.sheetClosing ? 0 : 1)
                     .disabled(viewModel.sheetClosing)
                     .animation(PlayerViewModel.sheetMotion, value: viewModel.sheetClosing)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.move(edge: usesNTVControls ? .bottom : .top).combined(with: .opacity))
             }
 
             // ABOVE the transport, BELOW every modal. It is a near-opaque
@@ -278,12 +278,11 @@ struct PlayerScreen: View {
             // `!controlsVisible`, not `!= .controls`: pauseInfo (and the track
             // popovers) already draw the full transport, and a nudge there
             // stacked a second bottom block on top of it.
-            if viewModel.pendingSeekDelta != 0, !controlsVisible, !viewModel.isScrubbing {
-                if usesNTVControls {
-                    NTVPlayerSeekOverlay(viewModel: viewModel).transition(.opacity)
-                } else {
-                    FusionInertOverlay(viewModel: viewModel).transition(.opacity)
-                }
+            // A quick skip over bare video stays discreet in nTV. The full
+            // timeline belongs to an explicit transport/scrub interaction;
+            // mounting it for the short seek debounce caused the visible flash.
+            if !usesNTVControls, viewModel.pendingSeekDelta != 0, !controlsVisible, !viewModel.isScrubbing {
+                FusionInertOverlay(viewModel: viewModel).transition(.opacity)
             }
 
             // "Skip Intro" pill while inside an intro-like chapter.
@@ -680,7 +679,7 @@ struct PlayerScreen: View {
     private var bottomBlockVisible: Bool {
         if controlsVisible { return true }
         if viewModel.isScrubbing { return true }
-        if viewModel.pendingSeekDelta != 0, viewModel.overlay != .controls { return true }
+        if !usesNTVControls, viewModel.pendingSeekDelta != 0, viewModel.overlay != .controls { return true }
         return false
     }
 

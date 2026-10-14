@@ -255,6 +255,25 @@ final class HomeViewModel: ObservableObject {
         providers: CollectionProviders,
         xperienceOnly: Bool = false
     ) async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ntvRowLayoutFixture") {
+            if entries.isEmpty {
+                let rows = (0..<6).map { row in
+                    HomeRow(id: "fixture.row.\(row)", title: "Rangée \(row + 1)",
+                        items: (0..<24).map { column in
+                            MetaItem(id: "fixture.row.\(row).item.\(column)", type: "movie",
+                                name: column.isMultiple(of: 2) ? "Titre court" : "Un titre volontairement plus long",
+                                description: column.isMultiple(of: 2) ? nil : "Une description sur plusieurs lignes pour contrôler la stabilité du bandeau pendant la navigation entre les rangées.",
+                                releaseInfo: column.isMultiple(of: 3) ? nil : "2026",
+                                genres: column.isMultiple(of: 3) ? nil : ["Adventure", "Science Fiction"])
+                        })
+                }
+                entries = rows.map(HomeEntry.catalog)
+                initialHero = rows.first?.items.first
+            }
+            isLoading = false; return
+        }
+        #endif
         // Fingerprint includes catalog counts (so rows refresh when the live
         // manifests replace the bundled seed) plus the layout customization
         // state and collection list, so edits re-render immediately. viewMode +
@@ -2658,23 +2677,25 @@ struct HomePosterRow: View {
                 // Back: jump to the first card if scrolled in; on the first
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
-                .onMoveCommand { direction in
-                    guard focusedID != nil || emptyRowFocused, let onVerticalMove else { return }
-                    if direction == .up || direction == .down {
-                        onVerticalMove(direction)
-                    }
-                }
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIFocusSystem.movementDidFailNotification)) { note in
                     // A move command also fires when UIKit successfully moves
                     // second -> first. Only a failed LEFT is the extra press
                     // at the boundary, after the first poster already has focus.
-                    guard let onLeftAtStart,
-                          emptyRowFocused || (focusedID != nil && focusedID == displayedItems.first?.id),
+                    guard focusedID != nil || emptyRowFocused,
                           let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
-                            as? UIFocusUpdateContext,
-                          context.focusHeading == .left else { return }
-                    onLeftAtStart()
+                            as? UIFocusUpdateContext else { return }
+                    if context.focusHeading == .left,
+                       emptyRowFocused || focusedID == displayedItems.first?.id {
+                        onLeftAtStart?()
+                    } else if context.focusHeading == .up {
+                        onVerticalMove?(.up)
+                    } else if context.focusHeading == .down {
+                        onVerticalMove?(.down)
+                    }
+                    // A successful native vertical move has already scrolled
+                    // and chosen its destination. Never run a second scrollTo
+                    // for that same press; only bridge an actual failed move.
                 }
                 // Coming back out of the rail lands on THIS row's first card
                 // when this was the row the viewer left (ContentFocusRouter).

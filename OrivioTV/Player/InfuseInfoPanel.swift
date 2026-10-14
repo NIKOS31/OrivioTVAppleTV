@@ -17,6 +17,7 @@ import SwiftUI
 
 struct InfuseInfoPanel: View {
     @ObservedObject var viewModel: PlayerViewModel
+    var anchoredToTransport = false
     @EnvironmentObject private var store: PlayerSettingsStore
     @FocusState private var focus: Focus?
     @State private var picker: InfusePickerSpec?
@@ -56,11 +57,18 @@ struct InfuseInfoPanel: View {
             // (The dim behind the sheet is PlayerScreen's, so it fades in
             // place instead of sliding down with the sheet as a grey slab.)
             VStack(spacing: 22) {
+                if anchoredToTransport { Spacer(minLength: 0) }
                 tabBar
-                card
-                Spacer(minLength: 0)
+                if anchoredToTransport {
+                    ScrollView(.vertical) { card.padding(6) }
+                        .frame(height: 480)
+                } else {
+                    card
+                    Spacer(minLength: 0)
+                }
             }
-            .padding(.top, 42)
+            .padding(.top, anchoredToTransport ? 0 : 42)
+            .padding(.bottom, anchoredToTransport ? 64 : 0)
             .padding(.horizontal, FusionMetrics.sideInset)
             .ignoresSafeArea()
             // The sheet stays put under a picker — dimmed, and out of the
@@ -79,7 +87,7 @@ struct InfuseInfoPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .defaultFocus($focus, .tab(0))
+        .defaultFocus($focus, .tab(viewModel.infoTab))
         .onAppear {
             // Open on the Info pill: it is the only focusable thing until
             // focus has landed once (the other pills and every row are
@@ -92,7 +100,7 @@ struct InfuseInfoPanel: View {
             viewModel.infoFocusOnTabs = true
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 600_000_000)
-                if focus == nil { focus = .tab(0) }
+                if focus == nil { focus = .tab(viewModel.infoTab) }
             }
         }
         .onChange(of: focus) { _, new in
@@ -133,11 +141,12 @@ struct InfuseInfoPanel: View {
                 }
                 .buttonStyle(PlainCardButtonStyle())
                 .focused($focus, equals: .tab(index))
+                .accessibilityIdentifier("ntv.player.settings.tab.\(index)")
                 // While focus is down in the rows only the OPEN tab is
                 // reachable, so Up comes straight back to it instead of
                 // visiting whichever pill the engine finds nearest first.
                 .disabled((rowsHaveFocus && index != viewModel.infoTab)
-                          || (!firstFocusLanded && index != 0))
+                          || (!firstFocusLanded && index != viewModel.infoTab))
             }
         }
         .frame(maxWidth: .infinity)

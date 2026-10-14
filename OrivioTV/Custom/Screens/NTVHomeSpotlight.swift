@@ -44,12 +44,11 @@ struct NTVCatalogSpotlight: View {
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.system(size: metadataSize, weight: .medium))
                     .foregroundStyle(NTVDesign.textSecondary)
-                if let description = item.description, !description.isEmpty {
-                    Text(description)
-                        .font(.system(size: synopsisSize))
-                        .foregroundStyle(NTVDesign.textSecondary)
-                        .lineLimit(2)
-                }
+                    .lineLimit(1, reservesSpace: true)
+                Text(item.description ?? "")
+                    .font(.system(size: synopsisSize))
+                    .foregroundStyle(NTVDesign.textSecondary)
+                    .lineLimit(2, reservesSpace: true)
             }
             .foregroundStyle(NTVDesign.textPrimary)
             .frame(maxWidth: 820, minHeight: 160, alignment: .leading)
@@ -84,12 +83,13 @@ struct NTVHomeSpotlight: View {
                         .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.system(size: metadataSize, weight: .medium))
                         .foregroundStyle(NTVDesign.textSecondary)
-                    if let description = item.description, !description.isEmpty {
-                        Text(description)
-                            .font(.system(size: synopsisSize))
-                            .foregroundStyle(NTVDesign.textSecondary)
-                            .lineLimit(2)
-                    }
+                        .lineLimit(1, reservesSpace: true)
+                    // Metadata enrichment and a new focused title must not
+                    // change the height of the scrolling hero above the rows.
+                    Text(item.description ?? "")
+                        .font(.system(size: synopsisSize))
+                        .foregroundStyle(NTVDesign.textSecondary)
+                        .lineLimit(2, reservesSpace: true)
                     Button { onSelect(item) } label: {
                         Label("Voir la fiche", systemImage: "info.circle")
                     }

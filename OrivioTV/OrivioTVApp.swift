@@ -304,6 +304,8 @@ struct RootView: View {
     /// First launch, nobody signed in — the welcome screen sits in front of
     /// everything, including the profile gate.
     @State private var showWelcome = false
+    @State private var launchSetupComplete = false
+    @State private var pendingShelfResume: URL?
     /// True when the gate was opened from the rail / Settings (Back closes
     /// it); false for the cold-launch gate, where Back stays a no-op.
     @State private var profileGateCancellable = false
@@ -835,18 +837,20 @@ struct RootView: View {
                         }
                     }
                 }
+                launchSetupComplete = true
+                consumePendingShelfResume()
             }
             // Presented AFTER the profile gate's modifier so it layers on
             // top: on a fresh install both would otherwise want the screen,
             // and "who's watching" makes no sense before "who are you".
-            .fullScreenCover(isPresented: $showWelcome) {
+            .fullScreenCover(isPresented: $showWelcome, onDismiss: consumePendingShelfResume) {
                 WelcomeView(account: account, addonManager: addonManager) {
                     OnboardingState.completed = true
                     showWelcome = false
                 }
                 .environmentObject(theme)
             }
-            .fullScreenCover(isPresented: $showProfileGate) {
+            .fullScreenCover(isPresented: $showProfileGate, onDismiss: consumePendingShelfResume) {
                 if ProcessInfo.processInfo.arguments.contains("-ntvProfileDemo") {
                     ProfileEditView(profile: profiles.active) { showProfileGate = false }
                         .environmentObject(theme)
@@ -874,6 +878,7 @@ struct RootView: View {
             .onChange(of: scenePhase) { _, phase in
                 AppProbe.scene = "\(phase)"
                 AppProbe.life("scene → \(phase)")
+                if phase == .background { progressStore.refreshTopShelf(force: true) }
                 if phase == .active {
                     Task { await NTVSystemIconUpdater.shared.applyIfNeeded() }
                     // First foreground after an external handoff is the return
@@ -2542,6 +2547,20 @@ struct RootView: View {
     private func handleDeepLink(_ url: URL) {
         guard let link = DeepLinkService.parse(url) else { return }
         switch link {
+        case .resume(let type, let id):
+            // Only the current profile's authoritative progress can supply a
+            // playable source or position. A stale shelf never supplies either.
+            guard launchSetupComplete, !showWelcome, !showProfileGate else {
+                pendingShelfResume = url
+                return
+            }
+            selectedTab = 0
+            if let progress = progressStore.continueWatching.first(where: { $0.metaID == id && $0.type == type }) {
+                DispatchQueue.main.async { resume(progress) }
+            } else {
+                let meta = MetaItem(id: id, type: type, name: "")
+                DispatchQueue.main.async { homePath.append(Route.detail(meta)) }
+            }
         case .meta(let type, let id):
             // Open the title on the Home tab. DetailView fetches full meta +
             // canonicalizes tmdb→tt from this id.
@@ -2573,6 +2592,13 @@ struct RootView: View {
             returnToHomeFromExternalPlayback()
             NSLog("[OrivioPlayer] external player error: %@", message ?? "(none)")
         }
+    }
+
+    private func consumePendingShelfResume() {
+        guard launchSetupComplete, !showWelcome, !showProfileGate,
+              let url = pendingShelfResume else { return }
+        pendingShelfResume = nil
+        handleDeepLink(url)
     }
 
     /// Step 1 of a deep-link add-on install: read the manifest so the prompt

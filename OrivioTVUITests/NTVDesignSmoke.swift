@@ -4,11 +4,169 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testSearchFocusKeepsGlassAndOpensNativeInputOnSelection() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-searchDemo", "-ntvSearchLayoutFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let field = app.buttons["ntv.search.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 20))
+        let posters = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.search.poster.")).allElementsBoundByIndex
+        XCTAssertFalse(posters.isEmpty)
+        let screen = app.windows.firstMatch.frame
+        let top = posters.map(\.frame.minY).min() ?? 0
+        let firstRow = posters.filter { abs($0.frame.minY - top) < 30 }
+        XCTAssertLessThanOrEqual(firstRow.map(\.frame.minX).min() ?? screen.maxX, screen.minX + 60)
+        XCTAssertGreaterThanOrEqual(firstRow.map(\.frame.maxX).max() ?? 0, screen.maxX - 60,
+                                    "Search must use both sides of the available viewport.")
+        let remote = XCUIRemote.shared
+        for _ in 0..<4 {
+            if field.hasFocus { break }
+            remote.press(.down)
+            if focused(field, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(field, timeout: 8))
+        XCTAssertFalse(app.textFields["ntv.search.editor"].exists, "Focusing Search alone must not mount the native editing surface.")
+        capture("ntv-search-glass-focused")
+        remote.press(.select)
+        let editor = app.textFields["ntv.search.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10), "Selection must retain the native keyboard and dictation entry.")
+        capture("ntv-search-native-input")
+        for _ in 0..<3 {
+            if !editor.exists { break }
+            remote.press(.menu)
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        XCTAssertTrue(focused(field, timeout: 8), "Dismissal must restore the glass field, not strand focus in the keyboard.")
+    }
+
+    func testPlayerQuickSkipStaysDiscreetAndVisibleControlsDwell() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvPlayerDemo"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        let play = app.buttons["ntv.player.play"]
+        for _ in 0..<10 {
+            remote.press(.up)
+            if play.waitForExistence(timeout: 2) { break }
+        }
+        XCTAssertTrue(play.exists)
+        XCTAssertTrue(focused(play, timeout: 8))
+        remote.press(.right)
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertTrue(play.exists, "Already-open controls must survive the seek commit and remain visible for their dwell.")
+        capture("ntv-player-quick-skip-visible-controls")
+        remote.press(.menu)
+        Thread.sleep(forTimeInterval: 0.4)
+        XCTAssertFalse(play.exists)
+        remote.press(.right)
+        Thread.sleep(forTimeInterval: 0.15)
+        XCTAssertFalse(app.staticTexts["ntv.player.position"].firstMatch.exists,
+                       "A skip over bare video must not flash a timeline that disappears at commit.")
+        Thread.sleep(forTimeInterval: 0.7)
+        XCTAssertFalse(play.exists)
+        capture("ntv-player-discreet-quick-skip")
+        remote.press(.up)
+        XCTAssertTrue(play.waitForExistence(timeout: 8), "Explicit Up must still open all transport controls after the skip.")
+    }
+
+    func testPlaybackOptionsOpenNearTransportAndKeepSubtitleTabReachable() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvPlayerDemo"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        let play = app.buttons["ntv.player.play"]
+        for _ in 0..<10 {
+            remote.press(.up)
+            if play.waitForExistence(timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(play, timeout: 8))
+        remote.press(.down)
+        let info = app.buttons["ntv.player.info"]
+        XCTAssertTrue(focused(info, timeout: 8))
+        remote.press(.select)
+        let first = app.buttons["ntv.player.settings.tab.0"]
+        XCTAssertTrue(focused(first, timeout: 8))
+        let screen = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(first.frame.minY, screen.minY + screen.height * 0.35,
+                             "The options must open in the transport area, not at the upper edge of the film.")
+        capture("ntv-player-bottom-options")
+        for _ in 0..<3 { remote.press(.right) }
+        let subtitles = app.buttons["ntv.player.settings.tab.3"]
+        XCTAssertTrue(focused(subtitles, timeout: 8))
+        XCTAssertGreaterThan(subtitles.frame.minY, screen.minY + screen.height * 0.35)
+        capture("ntv-player-bottom-subtitle-settings")
+        remote.press(.menu)
+        XCTAssertTrue(play.waitForExistence(timeout: 8) || !first.exists,
+                      "Back must close the settings and hand focus back to the normal player.")
+    }
+
+    func testRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvRowLayoutFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        let settings = app.buttons["ntv.navigation.3"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 15))
+        remote.press(.menu)
+        XCTAssertTrue(focused(settings, timeout: 8))
+        for _ in 0..<7 {
+            if app.buttons["ntv.navigation.0"].hasFocus { break }
+            remote.press(.left)
+        }
+        remote.press(.select)
+        let spotlight = app.buttons["ntv.home.spotlight"]
+        XCTAssertTrue(spotlight.waitForExistence(timeout: 15))
+        // Home may keep top-bar focus after a tab change. Enter through its
+        // normal Down path; no fixture writes focus or scroll offsets.
+        for _ in 0..<3 {
+            let first = app.buttons["ntv.home.poster.movie.fixture.row.0.item.0"]
+            if first.exists && first.hasFocus { break }
+            remote.press(.down)
+        }
+        let first = app.buttons["ntv.home.poster.movie.fixture.row.0.item.0"]
+        XCTAssertTrue(focused(first, timeout: 8))
+        let navigation = app.buttons["ntv.navigation.0"]
+        for row in 1...4 {
+            remote.press(.down)
+            let destination = app.buttons["ntv.home.poster.movie.fixture.row.\(row).item.0"]
+            XCTAssertTrue(focused(destination, timeout: 8))
+            Thread.sleep(forTimeInterval: 0.35)
+            let settled = destination.frame
+            XCTAssertGreaterThan(settled.minY, navigation.frame.maxY + 8)
+            XCTAssertLessThan(settled.maxY, app.windows.firstMatch.frame.maxY - 8)
+            Thread.sleep(forTimeInterval: 0.8)
+            XCTAssertTrue(destination.hasFocus, "No delayed retry may pull focus to a different row.")
+            XCTAssertEqual(destination.frame.minY, settled.minY, accuracy: 2,
+                           "Settled focus must not cause a second vertical adjustment.")
+            remote.press(.up)
+            XCTAssertTrue(focused(app.buttons["ntv.home.poster.movie.fixture.row.\(row - 1).item.0"], timeout: 8))
+            remote.press(.down)
+            XCTAssertTrue(focused(destination, timeout: 8))
+        }
+        capture("ntv-home-repeated-row-navigation")
+    }
+
     func testSystemIconRegistrationAndActualSwitcherCapture() {
         continueAfterFailure = false
         executionTimeAllowance = 180
         let app = XCUIApplication()
-        app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe"]
+        app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe", "-ntvLegacyIconFixture"]
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
@@ -27,7 +185,7 @@ final class NTVDesignSmoke: XCTestCase {
         var confirmations = 0
         while Date() < deadline {
             let value = probe.value as? String ?? ""
-            if value == "applied#NTVSystemIcon#1" { break }
+            if value.hasPrefix("applied#NTVSystemIcon#") { break }
             if value.hasPrefix("failed#") || value.hasPrefix("unavailable#") || value.hasPrefix("mismatch#") { break }
             if value.hasPrefix("applying#"), confirmations < 3 {
                 // The genuine Apple icon request can present a system dialog.
@@ -38,8 +196,34 @@ final class NTVDesignSmoke: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        XCTAssertEqual(probe.value as? String, "applied#NTVSystemIcon#1",
-                       "The actual app must attempt UIKit registration and observe its successful selected icon; a capability flag alone is insufficient.")
+        XCTAssertTrue((probe.value as? String ?? "").hasPrefix("applied#NTVSystemIcon#"),
+                      "The seed must observe the actual selected alternate, whether previously present or set by UIKit now.")
+        // A fresh install alone hid the physical switcher regression. Start
+        // with the previous selected alternate, then relaunch with migration.
+        app.terminate()
+        app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe"]
+        app.launch()
+        let primary = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        primary.name = "ntv-system-primary-icon-migration"
+        primary.lifetime = .keepAlways
+        add(primary)
+        remote.press(.select)
+        XCTAssertTrue(probe.waitForExistence(timeout: 15))
+        let primaryDeadline = Date().addingTimeInterval(25)
+        var primaryConfirmations = 0
+        while Date() < primaryDeadline {
+            let value = probe.value as? String ?? ""
+            if value == "applied#primary#1" { break }
+            if value.hasPrefix("failed#") || value.hasPrefix("unavailable#") || value.hasPrefix("mismatch#") { break }
+            if value.hasPrefix("applying#"), primaryConfirmations < 3 {
+                Thread.sleep(forTimeInterval: 1)
+                remote.press(.select)
+                primaryConfirmations += 1
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        XCTAssertEqual(probe.value as? String, "applied#primary#1",
+                       "Restoring the verified primary n must perform one real public UIKit request after the previous alternate state.")
         remote.press(.home)
         remote.press(.home)
         Thread.sleep(forTimeInterval: 1)

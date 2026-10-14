@@ -6,6 +6,11 @@ import SwiftUI
 /// Info.plist can use keyed entries. Inspect the compiled declaration rather
 /// than assuming the shape of the intermediate compiler output.
 enum NTVSystemIconManifest {
+    static func primaryName(in info: [String: Any]) -> String? {
+        guard let icons = info["CFBundleIcons"] as? [String: Any] else { return nil }
+        if let name = icons["CFBundlePrimaryIcon"] as? String { return name }
+        return (icons["CFBundlePrimaryIcon"] as? [String: Any])?["CFBundleIconName"] as? String
+    }
     static func declares(_ name: String, in info: [String: Any]) -> Bool {
         guard let icons = info["CFBundleIcons"] as? [String: Any] else { return false }
         if let names = icons["CFBundleAlternateIcons"] as? [String] {
@@ -17,12 +22,13 @@ enum NTVSystemIconManifest {
     }
 }
 
-/// Re-register the supplied n through Apple's supported icon-change API.
+/// Restore the supplied n as the primary system icon, including its large
+/// rendition. Build38's alternate small stack did not refresh the switcher
+/// rendition on the user's physical Apple TV.
 /// This leaves the app's bundle ID, signing account and local data untouched.
 @MainActor final class NTVSystemIconUpdater: ObservableObject {
     static let shared = NTVSystemIconUpdater()
-    private static let iconName = "NTVSystemIcon"
-    private static let migrationKey = "ntv.systemIconMigration.v1"
+    private static let migrationKey = "ntv.systemIconMigration.v2"
     private var running = false
     #if DEBUG
     @Published private(set) var registrationState = "idle"
@@ -43,8 +49,15 @@ enum NTVSystemIconManifest {
         #endif
         let app = UIApplication.shared
         guard !running, app.applicationState == .active else { return }
+        var targetIcon: String? = nil
+        #if DEBUG
+        // Seed the real build38 alternate state before the primary migration
+        // in the system UI test. This path is absent from production.
+        if arguments.contains("-ntvLegacyIconFixture") { targetIcon = "NTVSystemIcon" }
+        #endif
         guard app.supportsAlternateIcons,
-              NTVSystemIconManifest.declares(Self.iconName, in: Bundle.main.infoDictionary ?? [:]) else {
+              NTVSystemIconManifest.primaryName(in: Bundle.main.infoDictionary ?? [:]) == "NTVPrimaryIconV2",
+              targetIcon.map({ NTVSystemIconManifest.declares($0, in: Bundle.main.infoDictionary ?? [:]) }) ?? true else {
             #if DEBUG
             registrationState = "unavailable"
             #endif
@@ -52,7 +65,7 @@ enum NTVSystemIconManifest {
         }
         // The current system state is authoritative. A historical success flag
         // must not prevent re-registration after an update or icon reset.
-        if app.alternateIconName == Self.iconName {
+        if app.alternateIconName == targetIcon {
             #if DEBUG
             registrationState = "applied"
             #endif
@@ -65,9 +78,9 @@ enum NTVSystemIconManifest {
         #endif
         defer { running = false }
         do {
-            try await app.setAlternateIconName(Self.iconName)
+            try await app.setAlternateIconName(targetIcon)
             #if DEBUG
-            registrationState = app.alternateIconName == Self.iconName ? "applied" : "mismatch"
+            registrationState = app.alternateIconName == targetIcon ? "applied" : "mismatch"
             #endif
             UserDefaults.standard.set(true, forKey: Self.migrationKey)
             TVTopShelfContentProvider.topShelfContentDidChange()

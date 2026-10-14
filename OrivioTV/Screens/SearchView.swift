@@ -174,9 +174,40 @@ struct SearchView: View {
     let onSelect: (MetaItem) -> Void
     var onOpenDiscover: () -> Void = {}
 
-    private var columns: [GridItem] { [GridItem(.adaptive(minimum: posterLayout.posterSize.posterWidth, maximum: posterLayout.posterSize.posterWidth), spacing: OrivioSpacing.lg, alignment: .top)] }
+    private var usesNTVLayout: Bool { theme.palette.id == NTVDesign.palette.id }
+    private var contentInset: CGFloat { usesNTVLayout ? NTVViewport.horizontalInset : OrivioSpacing.huge }
+
+    private func posterWidth(in availableWidth: CGFloat?) -> CGFloat {
+        guard let availableWidth, usesNTVLayout else { return posterLayout.posterSize.posterWidth }
+        return NTVViewport.posterWidth(available: max(1, availableWidth - 2 * contentInset),
+                                       preferred: posterLayout.posterSize.posterWidth)
+    }
 
     var body: some View {
+        Group {
+            if usesNTVLayout {
+                GeometryReader { geometry in searchContent(availableWidth: geometry.size.width) }
+                    .ignoresSafeArea(edges: .horizontal)
+            } else { searchContent(availableWidth: nil) }
+        }
+        .task {
+            if viewModel.query.trimmingCharacters(in: .whitespaces).count >= 2 {
+                viewModel.resumeSearchIfNeeded(addonManager: addonManager)
+            } else {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-ntvSearchLayoutFixture") {
+                    viewModel.trending = (0..<18).map { MetaItem(id: "fixture.search.\($0)", type: "movie", name: "Film \($0 + 1)", releaseInfo: "2026") }
+                    return
+                }
+                #endif
+                await viewModel.loadTrendingIfNeeded(addonManager: addonManager)
+            }
+        }
+        .onDisappear { viewModel.suspendSearch() }
+        .onChange(of: viewModel.query) { _, _ in viewModel.search(addonManager: addonManager) }
+    }
+
+    private func searchContent(availableWidth: CGFloat?) -> some View {
         ZStack {
             ATVBackground()
             VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
@@ -192,10 +223,10 @@ struct SearchView: View {
                         // Results split by type: Movies on top, Shows below.
                         VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
                             if !movieResults.isEmpty {
-                                resultSection(title: "Films", items: movieResults)
+                                resultSection(title: "Films", items: movieResults, availableWidth: availableWidth)
                             }
                             if !showResults.isEmpty {
-                                resultSection(title: "Séries", items: showResults)
+                                resultSection(title: "Séries", items: showResults, availableWidth: availableWidth)
                             }
                         }
                         .padding(.top, OrivioSpacing.sm)
@@ -209,7 +240,7 @@ struct SearchView: View {
                         .frame(height: 480)
                     } else if !viewModel.trending.isEmpty {
                         // Idle: something to browse instead of an empty void.
-                        resultSection(title: "Tendances", items: viewModel.trending)
+                        resultSection(title: "Tendances", items: viewModel.trending, availableWidth: availableWidth)
                             .padding(.top, OrivioSpacing.sm)
                             .padding(.bottom, OrivioSpacing.huge)
                     } else {
@@ -246,17 +277,6 @@ struct SearchView: View {
             }
             .padding(.top, OrivioSpacing.xl)
         }
-        .task {
-            if viewModel.query.trimmingCharacters(in: .whitespaces).count >= 2 {
-                viewModel.resumeSearchIfNeeded(addonManager: addonManager)
-            } else {
-                await viewModel.loadTrendingIfNeeded(addonManager: addonManager)
-            }
-        }
-        .onDisappear { viewModel.suspendSearch() }
-        .onChange(of: viewModel.query) { _, _ in
-            viewModel.search(addonManager: addonManager)
-        }
     }
 
     private var searchBar: some View {
@@ -265,7 +285,7 @@ struct SearchView: View {
             Button(action: onOpenDiscover) { SearchBarIcon(systemName: "square.grid.2x2") }
                 .buttonStyle(PlainCardButtonStyle())
         }
-        .padding(.horizontal, OrivioSpacing.huge)
+        .padding(.horizontal, contentInset)
         .focusSection()
     }
 
@@ -279,21 +299,25 @@ struct SearchView: View {
 
     /// One titled grid section ("Movies" / "Shows" / "Trending"), its own focus
     /// section so up/down moves cleanly between the groups.
-    private func resultSection(title: String, items: [MetaItem]) -> some View {
-        VStack(alignment: .leading, spacing: OrivioSpacing.md) {
+    private func resultSection(title: String, items: [MetaItem], availableWidth: CGFloat?) -> some View {
+        let width = posterWidth(in: availableWidth)
+        let columns = [GridItem(.adaptive(minimum: width, maximum: width),
+                                spacing: usesNTVLayout ? NTVViewport.posterGap : OrivioSpacing.lg, alignment: .top)]
+        return VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             RowHeader(title: title)
                 .padding(.leading, -OrivioSpacing.huge)   // RowHeader pads itself
             LazyVGrid(columns: columns, alignment: .leading, spacing: OrivioSpacing.xl) {
                 ForEach(items) { item in
                     GridPosterCell(
                         item: item,
-                        captionWidth: posterLayout.posterSize.posterWidth,
+                        captionWidth: width,
                         onSelect: onSelect
                     )
+                    .accessibilityIdentifier("ntv.search.poster.\(item.contentID)")
                 }
             }
         }
-        .padding(.horizontal, OrivioSpacing.huge)
+        .padding(.horizontal, contentInset)
         .focusSection()
     }
 }
@@ -330,8 +354,40 @@ private struct SearchField: View {
     @EnvironmentObject private var theme: ThemeManager
     @FocusState private var focused: Bool
     @Binding var text: String
+    @State private var editing = false
 
+    @ViewBuilder
     var body: some View {
+        if theme.palette.id == NTVDesign.palette.id {
+            Button { editing = true } label: {
+                HStack(spacing: 16) {
+                    Image(systemName: "magnifyingglass")
+                    Text(text.isEmpty ? "Rechercher un film ou une série" : text)
+                        .foregroundStyle(text.isEmpty ? NTVDesign.textSecondary : NTVDesign.textPrimary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .font(.system(size: 29, weight: .medium))
+                .padding(.horizontal, 24)
+                .frame(height: 74)
+                .background { NTVGlassSurface(shape: Capsule(), clear: true) }
+                .overlay { Capsule().strokeBorder(.white.opacity(focused ? 0.8 : 0.18), lineWidth: focused ? 2 : 1) }
+            }
+            .buttonStyle(PlainCardButtonStyle())
+            .focused($focused)
+            .accessibilityLabel("Rechercher un film ou une série")
+            .accessibilityValue(text)
+            .accessibilityHint("Ouvrir la saisie et la dictée.")
+            .accessibilityIdentifier("ntv.search.field")
+            .fullScreenCover(isPresented: $editing, onDismiss: { focused = true }) {
+                NTVSearchEntry(text: $text) { editing = false }
+            }
+        } else {
+            legacyField
+        }
+    }
+
+    private var legacyField: some View {
         HStack(spacing: OrivioSpacing.sm) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 24, weight: .semibold))
@@ -349,5 +405,34 @@ private struct SearchField: View {
         .background(Color.clear.liquidGlass(in: Capsule()))
         // No auto-focus: merely moving focus over the Search tab must not pop
         // the keyboard. Focus the field only when the user actually selects it.
+    }
+}
+
+/// Keep the system keyboard, dictation and phone text entry. The browsing
+/// surface remains glass; the native editor appears only after selection.
+private struct NTVSearchEntry: View {
+    @Binding var text: String
+    let done: () -> Void
+    @FocusState private var editing: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 32) {
+            Text("Rechercher").font(.system(size: 38, weight: .semibold))
+            TextField("Film ou série", text: $text)
+                .font(.system(size: 29))
+                .foregroundStyle(editing ? .black : .white)
+                .focused($editing)
+                .submitLabel(.search)
+                .onSubmit(done)
+                .accessibilityIdentifier("ntv.search.editor")
+            Button("Terminé", action: done)
+                .buttonStyle(NTVActionButtonStyle())
+                .accessibilityIdentifier("ntv.search.done")
+        }
+        .padding(60)
+        .frame(maxWidth: 1120, maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(NTVDesign.background.ignoresSafeArea())
+        .onAppear { editing = true }
+        .onExitCommand(perform: done)
     }
 }

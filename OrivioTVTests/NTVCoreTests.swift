@@ -3,6 +3,40 @@ import UIKit
 @testable import OrivioTV
 
 final class NTVCoreTests: XCTestCase {
+    func testPrimaryIconNameUsesTheCompiledReference() {
+        XCTAssertEqual(NTVSystemIconManifest.primaryName(in: ["CFBundleIcons": ["CFBundlePrimaryIcon": "NTVPrimaryIconV2"]]), "NTVPrimaryIconV2")
+        XCTAssertEqual(NTVSystemIconManifest.primaryName(in: ["CFBundleIcons": ["CFBundlePrimaryIcon": ["CFBundleIconName": "NTVPrimaryIconV2"]]]), "NTVPrimaryIconV2")
+        XCTAssertNil(NTVSystemIconManifest.primaryName(in: ["CFBundleIcons": ["CFBundlePrimaryIcon": 39]]))
+        XCTAssertNil(NTVSystemIconManifest.primaryName(in: [:]))
+    }
+
+    func testFrameCadenceSeparatesARegularRateFromLongMainLoopGaps() {
+        var regular = FrameCadenceWindow()
+        XCTAssertNil(regular.record(timestamp: 0, expectedInterval: 1.0 / 60))
+        var result: FrameCadenceSnapshot?
+        for tick in 1...60 { result = regular.record(timestamp: Double(tick) / 60, expectedInterval: 1.0 / 60) ?? result }
+        XCTAssertEqual(result?.callbacksPerSecond, 60)
+        XCTAssertEqual(result?.lateCallbacks, 0)
+        XCTAssertEqual(result?.worstGapMilliseconds ?? 0, 1000.0 / 60, accuracy: 0.001)
+        var delayed = FrameCadenceWindow()
+        _ = delayed.record(timestamp: 0, expectedInterval: 1.0 / 60)
+        _ = delayed.record(timestamp: 0.2, expectedInterval: 1.0 / 60)
+        let late = delayed.record(timestamp: 1, expectedInterval: 1.0 / 60)
+        XCTAssertEqual(late?.lateCallbacks, 2)
+        XCTAssertEqual(late?.worstGapMilliseconds ?? 0, 800, accuracy: 0.001)
+        XCTAssertEqual(late?.callbacksPerSecond, 2)
+    }
+
+    func testFrameCadenceRejectsInvalidInputsAndResetsABackwardsClock() {
+        var window = FrameCadenceWindow()
+        XCTAssertNil(window.record(timestamp: .nan, expectedInterval: 1.0 / 60))
+        XCTAssertNil(window.record(timestamp: 1, expectedInterval: 0))
+        XCTAssertNil(window.record(timestamp: 1, expectedInterval: 1.0 / 60))
+        XCTAssertNil(window.record(timestamp: 0, expectedInterval: 1.0 / 60))
+        XCTAssertNil(window.record(timestamp: 0, expectedInterval: 1.0 / 60))
+        XCTAssertEqual(window.record(timestamp: 1, expectedInterval: 1.0 / 60)?.callbacksPerSecond, 1)
+    }
+
     func testSystemIconAcceptsTheActualMergedDictionaryAndTVArray() {
         let name = "NTVSystemIcon"
         XCTAssertTrue(NTVSystemIconManifest.declares(name, in: ["CFBundleIcons": [

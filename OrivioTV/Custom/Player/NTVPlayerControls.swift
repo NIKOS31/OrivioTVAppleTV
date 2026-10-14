@@ -392,10 +392,18 @@ private struct NTVPlayerTrackPicker: View {
                 .padding(6)
             }
             .frame(height: min(CGFloat(options.count) * 72, 360))
+            Button {
+                viewModel.showInfoPanel(initialTab: subtitles ? 3 : 2)
+            } label: {
+                NTVTransportLabel(symbol: "slider.horizontal.3", title: subtitles ? "Réglages des sous-titres" : "Réglages audio")
+            }
+            .buttonStyle(PlainCardButtonStyle())
+            .accessibilityIdentifier("ntv.player.tracks.settings")
         }
         .foregroundStyle(.white)
         .padding(28)
         .frame(width: 600)
+        .accessibilityIdentifier("ntv.player.trackPicker")
         .background { NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24), emphasized: true) }
         .focusSection()
         .defaultFocus($selected, current ?? options.first?.id ?? "")

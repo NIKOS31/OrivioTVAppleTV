@@ -7097,7 +7097,10 @@ final class PlayerViewModel: ObservableObject {
         // six, and the bar shows `pendingSeekDelta` throughout, so the target is
         // moving on screen the whole time it is being gathered.
         // Coalesce bursts so a held direction does not restart the decoder on every repeat.
-        let window: UInt64 = usesNTVControls ? 280_000_000 : (gesture ? 450_000_000 : 650_000_000)
+        // The nTV pad emits successive swipes near 280 ms apart. A 280 ms
+        // window flushed between them, defeating coalescing and repeatedly
+        // restarting the decoder. Keep discrete clicks responsive separately.
+        let window: UInt64 = usesNTVControls && !gesture ? 280_000_000 : (gesture ? 450_000_000 : 650_000_000)
         seekDebounceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: window)
             guard !Task.isCancelled, let self else { return }
@@ -7119,6 +7122,9 @@ final class PlayerViewModel: ObservableObject {
         lastNudgeCommitAt = Date()
         PlayerProbe.event("nudge", String(format: "COMMIT %+.1f", delta))
         seek(to: position + delta)
+        // If the viewer opened the transport, its dwell starts at the last
+        // committed skip, not at the first press in an accumulated burst.
+        if overlay == .controls { restartHideTimer() }
     }
 
     // MARK: - Controls visibility
@@ -11233,7 +11239,7 @@ final class PlayerViewModel: ObservableObject {
     /// Inert until playback is running — a stray downward touch during the
     /// loading/caching hold must never queue the panel up behind the loading
     /// screen (it would greet the viewer the moment the movie appeared).
-    func showInfoPanel() {
+    func showInfoPanel(initialTab: Int = 0) {
         guard acceptsTransportInput else { return }
         switch overlay {
         case .none, .pauseInfo, .controls, .audio, .subtitles: break
@@ -11241,7 +11247,7 @@ final class PlayerViewModel: ObservableObject {
         }
         if isScrubbing { cancelScrub() }
         hideControlsTask?.cancel()
-        infoTab = 0
+        infoTab = min(max(initialTab, 0), 3)
         sheetMoving = true
         withAnimation(Self.sheetMotion) { overlay = .info }
         settleSheetMotion()

@@ -6,7 +6,7 @@ import sys
 with Path(sys.argv[1]).open('rb') as file:
     info = plistlib.load(file)
 icons = info.get('CFBundleIcons', {})
-if icons.get('CFBundlePrimaryIcon') != 'NTVPrimaryIcon':
+if icons.get('CFBundlePrimaryIcon') != 'NTVPrimaryIconV2':
     raise SystemExit('The compiled primary nTV icon is missing.')
 alternatives = icons.get('CFBundleAlternateIcons', [])
 if not isinstance(alternatives, (list, dict)) or 'NTVSystemIcon' not in alternatives:

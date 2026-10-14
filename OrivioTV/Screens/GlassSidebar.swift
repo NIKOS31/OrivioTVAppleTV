@@ -451,7 +451,7 @@ private struct NTVTopNavigationLabel: View {
                     .padding(.horizontal, 16)
             }
         }
-        .frame(minHeight: 48)
+        .frame(minHeight: 56)
         .frame(maxWidth: iconOnly ? nil : .infinity)
         .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .background {

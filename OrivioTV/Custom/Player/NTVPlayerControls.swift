@@ -15,6 +15,7 @@ struct NTVPlayerControls: View {
         return order
     }
     private var detailOrder: [Control] { viewModel.nextEpisodeAvailable ? [.info, .next] : [.info] }
+    private var footerOrder: [Control] { detailOrder + toolOrder }
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -22,21 +23,6 @@ struct NTVPlayerControls: View {
                 HStack(alignment: .bottom, spacing: 28) {
                     NTVPlayerHeading(viewModel: viewModel)
                     Spacer(minLength: 28)
-                    HStack(spacing: 12) {
-                        circleControl(.video, symbol: "arrow.up.left.and.arrow.down.right",
-                                      label: viewModel.aspectMode == .fit ? "Remplir l’écran" : "Ajuster à l’écran") {
-                            viewModel.setAspect(viewModel.aspectMode == .fit ? .zoom : .fit)
-                        }
-                        if !viewModel.audioOptions.isEmpty {
-                            circleControl(.audio, symbol: "waveform", label: "Audio") { viewModel.overlay = .audio }
-                        }
-                        if !viewModel.subtitleOptions.isEmpty {
-                            circleControl(.subtitles, symbol: "captions.bubble", label: "Sous-titres") { viewModel.overlay = .subtitles }
-                        }
-                        circleControl(.more, symbol: "ellipsis", label: "Options de lecture") { viewModel.showInfoPanel() }
-                    }
-                    .focusSection()
-                    .padding(.bottom, 4)
                 }
                 .frame(height: 64)
 
@@ -59,7 +45,6 @@ struct NTVPlayerControls: View {
                         viewModel.beginScrub(pausing: true)
                         viewModel.stepNTVScrub(forward: direction == .right)
                     case .down: focus = .play
-                    case .up: focus = toolOrder.first
                     default: break
                     }
                 }
@@ -78,6 +63,21 @@ struct NTVPlayerControls: View {
                         pillControl(.next, title: "Suivant", label: "Épisode suivant") { viewModel.playNextEpisodeFromControls() }
                     }
                     Spacer()
+                    // Nuvio's lower action rail: keep tools next to the
+                    // timeline instead of a second floating cluster by the title.
+                    HStack(spacing: 14) {
+                        circleControl(.video, symbol: "arrow.up.left.and.arrow.down.right",
+                                      label: viewModel.aspectMode == .fit ? "Remplir l’écran" : "Ajuster à l’écran") {
+                            viewModel.setAspect(viewModel.aspectMode == .fit ? .zoom : .fit)
+                        }
+                        if !viewModel.audioOptions.isEmpty {
+                            circleControl(.audio, symbol: "waveform", label: "Audio") { viewModel.overlay = .audio }
+                        }
+                        if !viewModel.subtitleOptions.isEmpty {
+                            circleControl(.subtitles, symbol: "captions.bubble", label: "Sous-titres") { viewModel.overlay = .subtitles }
+                        }
+                        circleControl(.more, symbol: "ellipsis", label: "Options de lecture") { viewModel.showInfoPanel() }
+                    }
                 }
                 .frame(height: 52)
                 .focusSection()
@@ -152,11 +152,11 @@ struct NTVPlayerControls: View {
             viewModel.noteSelectPressed()
             viewModel.restartHideTimer()
             switch direction {
-            case .down: focus = .timeline
+            case .up: focus = .timeline
             case .left, .right:
-                if let index = toolOrder.firstIndex(of: control) {
+                if let index = footerOrder.firstIndex(of: control) {
                     let next = index + (direction == .right ? 1 : -1)
-                    if toolOrder.indices.contains(next) { focus = toolOrder[next] }
+                    if footerOrder.indices.contains(next) { focus = footerOrder[next] }
                 }
             default: break
             }
@@ -181,9 +181,9 @@ struct NTVPlayerControls: View {
             switch direction {
             case .up: focus = .play
             case .left, .right:
-                if let index = detailOrder.firstIndex(of: control) {
+                if let index = footerOrder.firstIndex(of: control) {
                     let next = index + (direction == .right ? 1 : -1)
-                    if detailOrder.indices.contains(next) { focus = detailOrder[next] }
+                    if footerOrder.indices.contains(next) { focus = footerOrder[next] }
                 }
             default: break
             }
@@ -204,9 +204,7 @@ private struct NTVPlayerCircleLabel: View {
             .frame(width: size, height: size)
             .background {
                 if focused { Circle().fill(.white) }
-                else if !bare { NTVGlassSurface(shape: Circle(), clear: true) }
             }
-            .overlay(Circle().strokeBorder(!bare && !focused ? .white.opacity(0.18) : .clear, lineWidth: 1))
             .contentShape(Circle())
     }
 }
@@ -234,7 +232,7 @@ private struct NTVPlayerHeading: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(viewModel.displayTitle).font(.system(size: 30, weight: .semibold)).lineLimit(1)
+            Text(viewModel.displayTitle).font(.system(size: 32, weight: .semibold)).lineLimit(1)
                 .accessibilityIdentifier("ntv.player.heading")
             if let episode = viewModel.episodeLine {
                 Text(episode).font(.system(size: 20)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
@@ -313,18 +311,20 @@ private struct NTVPlayerTimeline: View {
         GeometryReader { geometry in
             let width = geometry.size.width
             let x = width * CGFloat(target / duration)
-            let knob: CGFloat = highlighted ? 20 : 10
+            let thickness: CGFloat = highlighted ? 10 : 6
             ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.22)).frame(height: 5)
+                Capsule().fill(.white.opacity(0.3)).frame(height: thickness)
                 ForEach(clock.cachedSpans, id: \.lowerBound) { span in
                     let start = width * CGFloat(span.lowerBound)
                     Capsule().fill(.white.opacity(0.32))
-                        .frame(width: max(width * CGFloat(span.upperBound) - start, 0), height: 5)
+                        .frame(width: max(width * CGFloat(span.upperBound) - start, 0), height: thickness)
                         .offset(x: start)
                 }
-                Capsule().fill(.white).frame(width: max(x, 5), height: 5)
-                Circle().fill(.white).frame(width: knob, height: knob)
-                    .offset(x: min(max(x - knob / 2, 0), max(width - knob, 0)))
+                Capsule().fill(.white).frame(width: max(x, thickness), height: thickness)
+                if scrubbing {
+                    Circle().fill(.white).frame(width: 14, height: 14)
+                        .offset(x: min(max(x - 7, 0), max(width - 14, 0)))
+                }
             }
             .frame(height: 28)
             .overlay(alignment: .topLeading) {

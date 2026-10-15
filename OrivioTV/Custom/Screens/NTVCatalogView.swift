@@ -120,7 +120,11 @@ struct NTVCatalogView: View {
     let onBackAtRoot: () -> Void
     let onOpenSettings: () -> Void
     @State private var hero = HeroFocus()
-    private struct FocusRequest { let sourceID: String; let token = UUID() }
+    private struct FocusRequest {
+        let sourceID: String
+        let token = UUID()
+        var scrollToStart = true
+    }
     @State private var requestedCategory: FocusRequest?
     @State private var restoreSelection: NTVCatalogBrowserModel.Selection?
     @State private var menuVisible = false
@@ -163,6 +167,7 @@ struct NTVCatalogView: View {
                                     onLeftAtStart: { openCategory(source.id) },
                                     onVerticalMove: { move in moveFromRow(source.id, direction: move, proxy: proxy) },
                                     focusRequestID: requestedCategory?.sourceID == source.id ? requestedCategory?.token : nil,
+                                    focusScrollToStart: requestedCategory?.scrollToStart ?? true,
                                     restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil)
                                     .onFirstVisibleItem { viewModel.noteVisibleStart(sourceID: source.id, itemID: $0) }
                                     .accessibilityElement(children: .contain)
@@ -305,7 +310,10 @@ struct NTVCatalogView: View {
         let keepViewport = menuVisible && menuSourceID == sourceID
         categoryFocus = nil; menuVisible = false
         viewModel.forgetSelection(); restoreSelection = nil
-        requestedCategory = FocusRequest(sourceID: sourceID)
+        // The drawer is entered from the first poster. Returning to that same
+        // row needs focus only: scrollTo(.leading) would rewrite its native
+        // horizontal offset and make the posters slide after the drawer closes.
+        requestedCategory = FocusRequest(sourceID: sourceID, scrollToStart: !keepViewport)
         if !keepViewport { proxy.scrollTo(sourceID, anchor: .top) }
     }
     private func moveFromRow(_ sourceID: String, direction: MoveCommandDirection, proxy: ScrollViewProxy) {
@@ -348,6 +356,7 @@ private struct NTVCatalogShelf: View {
     let onLeftAtStart: () -> Void
     let onVerticalMove: (MoveCommandDirection) -> Void
     let focusRequestID: UUID?
+    var focusScrollToStart = true
     let restoreItemID: String?
     var firstVisibleChanged: ((String?) -> Void)?
     func onFirstVisibleItem(_ action: @escaping (String?) -> Void) -> Self {
@@ -363,7 +372,8 @@ private struct NTVCatalogShelf: View {
                     onBackAtStart: onBackAtRoot, accessibilityPrefix: "ntv.poster",
                     restoreItemID: restoreItemID, onVerticalMove: onVerticalMove,
                     focusFirstRequestID: focusRequestID, onLeftAtStart: onLeftAtStart,
-                    onFirstVisibleChange: firstVisibleChanged)
+                    onFirstVisibleChange: firstVisibleChanged,
+                    focusFirstScroll: focusScrollToStart)
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(model.source.title).font(.system(size: 28, weight: .semibold))

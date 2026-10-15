@@ -308,7 +308,7 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.down)
         XCTAssertTrue(focused(firstMovie, timeout: 8), "Down from the top menu must reach the first poster.")
         XCTAssertFalse(panel.exists, "Down must not open the category drawer.")
-        let openingPosterFrame = firstMovie.frame
+        let openingPosterFrame = settledFrame(firstMovie)
         let canvas = app.descendants(matching: .any)["ntv.canvas"].firstMatch
         let openingCanvasFrame = canvas.frame
         remote.press(.right)
@@ -329,7 +329,7 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(poster.waitForExistence(timeout: 60), "Selecting a category must land on a loaded poster row.")
         XCTAssertFalse(panel.exists, "Selecting a category must close its drawer.")
         XCTAssertEqual(canvas.frame, openingCanvasFrame)
-        XCTAssertEqual(firstMovie.frame.minX, openingPosterFrame.minX, accuracy: 2, "Closing the drawer must restore the same poster position.")
+        XCTAssertEqual(settledFrame(firstMovie).minX, openingPosterFrame.minX, accuracy: 2, "Closing the drawer must restore the same poster position.")
         capture("ntv-catalog-category-selected")
         let prefix = "ntv.category.movie."
         let firstRow = app.descendants(matching: .any)["ntv.catalog.shelf." + String(firstCategoryID.dropFirst(prefix.count))].firstMatch
@@ -823,13 +823,12 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(play, timeout: 5))
         remote.press(.down)
         XCTAssertTrue(focused(app.buttons["ntv.player.info"], timeout: 5), "The information pill must remain reachable below the bar.")
+        remote.press(.right)
+        let videoTool = app.buttons["ntv.player.video"]
+        XCTAssertTrue(focused(videoTool, timeout: 5), "The lower action rail must connect Infos to the video, audio and subtitle tools.")
+        XCTAssertGreaterThan(videoTool.frame.minY, timeline.frame.maxY,
+                             "Tools belong below the timeline, next to the other lower actions.")
         remote.press(.up)
-        XCTAssertTrue(focused(play, timeout: 5))
-        remote.press(.up)
-        XCTAssertTrue(focused(timeline, timeout: 5))
-        remote.press(.up)
-        XCTAssertTrue(focused(app.buttons["ntv.player.video"], timeout: 5), "The floating tools must remain reachable above the bar.")
-        remote.press(.down)
         XCTAssertTrue(focused(timeline, timeout: 5))
         remote.press(.select)
         XCTAssertTrue(position.waitForExistence(timeout: 8))
@@ -1159,6 +1158,27 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(app.buttons["ntv.navigation.7"], timeout: 5))
         remote.press(.select)
         XCTAssertTrue(app.staticTexts["ntv.addons.heading"].waitForExistence(timeout: 10))
+    }
+
+    /// Compare settled native focus geometry, never one intermediate platter
+    /// animation frame against a fully raised poster. Keep the 2pt assertion.
+    private func settledFrame(_ element: XCUIElement, timeout: TimeInterval = 5) -> CGRect {
+        let deadline = Date().addingTimeInterval(timeout)
+        var previous = element.frame
+        var stableSamples = 0
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+            let current = element.frame
+            let unchanged = abs(current.minX - previous.minX) < 0.5 &&
+                abs(current.minY - previous.minY) < 0.5 &&
+                abs(current.width - previous.width) < 0.5 &&
+                abs(current.height - previous.height) < 0.5
+            stableSamples = unchanged ? stableSamples + 1 : 0
+            previous = current
+            if stableSamples >= 3 { return current }
+        }
+        XCTFail("Native focus geometry did not settle within the deadline.")
+        return previous
     }
 
     private func focused(_ element: XCUIElement, timeout: TimeInterval) -> Bool {

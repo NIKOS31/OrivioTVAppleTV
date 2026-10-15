@@ -2605,6 +2605,7 @@ struct HomePosterRow: View {
     var focusFirstRequestID: UUID? = nil
     var onLeftAtStart: (() -> Void)? = nil
     var onFirstVisibleChange: ((String?) -> Void)? = nil
+    var focusFirstScroll = true
 
     @FocusState private var focusedID: String?
     @FocusState private var emptyRowFocused: Bool
@@ -2736,7 +2737,7 @@ struct HomePosterRow: View {
                     // This task belongs to ONE catalog move. A newer move, a
                     // detail push or disappearance cancels it; no detached
                     // router retry may drag focus back to an obsolete row.
-                    proxy.scrollTo(first, anchor: .leading)
+                    if focusFirstScroll { proxy.scrollTo(first, anchor: .leading) }
                     focusedID = first
                     for _ in 0..<12 {
                         do { try await Task.sleep(for: .milliseconds(40)) } catch { return }

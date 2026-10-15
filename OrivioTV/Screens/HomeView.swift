@@ -2102,6 +2102,15 @@ struct HomeView: View {
     }
 
     private func mergedContinueItems() -> [WatchProgress] {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ntvNewEpisodeFixture") {
+            return [WatchProgress(id: "fixture.new:1:2", metaID: "fixture.new", type: "series",
+                name: "Série de validation", poster: nil, background: nil, logo: nil,
+                season: 1, episode: 2, episodeTitle: "Le prochain épisode",
+                positionSeconds: 0, durationSeconds: 1, streamURL: nil,
+                updatedAt: Date(timeIntervalSince1970: 1_700_000_000), newEpisodeCount: 1)]
+        }
+        #endif
         let sortMode = homeCatalogSettings.continueWatchingSortMode
         // By stamp, not by show: a row saved AFTER the judgement (the viewer
         // went back to that episode) is shown at once, without waiting for the

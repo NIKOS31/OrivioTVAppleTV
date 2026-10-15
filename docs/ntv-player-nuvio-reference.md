@@ -28,3 +28,13 @@ Validation must include a native screenshot of the lower toolbar and a remote
 round trip from play to timeline, Infos, the video/audio/subtitle tools, and back.
 Windows playback or a passing screenshot check does not establish Apple TV
 frame pacing.
+
+The supplied desktop screenshot also shows direct aspect, speed, subtitle, audio
+and source controls. nTV exposes those tools in its lower rail, plus episodes
+for a series with a known season. The native Siri Remote keeps volume control;
+advanced playback settings remain available. nTV speed/source/episode pickers
+use a bounded panel near the lower actions and return focus to their origin.
+The separate legacy player presentation retains its existing full-screen picker.
+
+The explicit French new-episode badge uses nTV existing release/history
+calculation; changing the label does not assert that a source has been checked.

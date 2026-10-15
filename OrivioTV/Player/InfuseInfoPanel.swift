@@ -1077,6 +1077,7 @@ struct InfusePickerScreen: View {
     /// pre-play list. Injected app-wide, so the player's cover inherits it.
     @EnvironmentObject private var debrid: DebridStore
     let spec: InfusePickerSpec
+    var anchoredToTransport = false
     let onClose: () -> Void
     @FocusState private var focus: String?
 
@@ -1145,9 +1146,11 @@ struct InfusePickerScreen: View {
         // remote goes dead.
         let rows = items
         let rowWidth: CGFloat = rows.contains { $0.subtitle != nil } ? 1100 : 600
-        ZStack {
+        ZStack(alignment: anchoredToTransport ? .bottomTrailing : .center) {
             Group {
-                if PerformanceProfile.isLowPower || PerformanceProfile.isMidPower {
+                if anchoredToTransport {
+                    Color.black.opacity(0.25)
+                } else if PerformanceProfile.isLowPower || PerformanceProfile.isMidPower {
                     Color(hex: 0x141416).opacity(0.9)
                 } else {
                     Rectangle().fill(.ultraThinMaterial)
@@ -1159,10 +1162,10 @@ struct InfusePickerScreen: View {
 
             VStack(spacing: 0) {
                 Text(spec.title)
-                    .font(.system(size: 53, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .padding(.top, 100)
-                    .padding(.bottom, 64)
+                    .font(.system(size: anchoredToTransport ? 32 : 53, weight: .medium))
+                    .foregroundStyle(.white.opacity(anchoredToTransport ? 0.9 : 0.45))
+                    .padding(.top, anchoredToTransport ? 24 : 100)
+                    .padding(.bottom, anchoredToTransport ? 12 : 64)
 
                 ScrollView(.vertical) {
                     LazyVStack(spacing: 12) {
@@ -1187,6 +1190,7 @@ struct InfusePickerScreen: View {
                             }
                             .buttonStyle(PlainCardButtonStyle())
                             .focused($focus, equals: item.id)
+                            .accessibilityIdentifier("ntv.player.picker.item.\(item.id)")
                             .id(item.id)
                         }
                     }
@@ -1194,6 +1198,17 @@ struct InfusePickerScreen: View {
                 }
                 .scrollClipDisabled()
             }
+            .frame(width: anchoredToTransport ? rowWidth + 48 : nil,
+                   height: anchoredToTransport ? min(620, CGFloat(max(rows.count, 1)) * 100 + 104) : nil)
+            .background {
+                if anchoredToTransport {
+                    NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24), emphasized: true)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("ntv.player.picker")
+            .padding(.trailing, anchoredToTransport ? 72 : 0)
+            .padding(.bottom, anchoredToTransport ? 132 : 0)
         }
         .defaultFocus($focus, rows.first { $0.selected }?.id ?? rows.first?.id ?? "empty")
         .onAppear {

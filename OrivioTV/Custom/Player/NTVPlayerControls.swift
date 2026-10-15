@@ -3,14 +3,16 @@ import SwiftUI
 /// Clock updates stay in the bar and time labels, away from focus targets.
 struct NTVPlayerControls: View {
     @ObservedObject var viewModel: PlayerViewModel
+    var initialControlID: String? = nil
+    var onOpenPicker: (String) -> Void = { _ in }
+    var onRestoreFocus: () -> Void = {}
     @FocusState private var focus: Control?
 
-    private enum Control: Hashable { case timeline, play, video, audio, subtitles, more, info, next }
+    private enum Control: String, Hashable { case timeline, play, video, speed, audio, subtitles, sources, episodes, more, info, next }
     private var pickingTracks: Bool { viewModel.overlay == .audio || viewModel.overlay == .subtitles }
     private var toolOrder: [Control] {
-        var order: [Control] = [.video]
-        if !viewModel.audioOptions.isEmpty { order.append(.audio) }
-        if !viewModel.subtitleOptions.isEmpty { order.append(.subtitles) }
+        var order: [Control] = [.video, .speed, .subtitles, .audio, .sources]
+        if viewModel.currentVideo?.season != nil { order.append(.episodes) }
         order.append(.more)
         return order
     }
@@ -70,11 +72,20 @@ struct NTVPlayerControls: View {
                                       label: viewModel.aspectMode == .fit ? "Remplir l’écran" : "Ajuster à l’écran") {
                             viewModel.setAspect(viewModel.aspectMode == .fit ? .zoom : .fit)
                         }
-                        if !viewModel.audioOptions.isEmpty {
-                            circleControl(.audio, symbol: "waveform", label: "Audio") { viewModel.overlay = .audio }
+                        circleControl(.speed, symbol: "speedometer", label: "Vitesse de lecture") {
+                            openPicker(.speed, overlay: .speed)
                         }
-                        if !viewModel.subtitleOptions.isEmpty {
-                            circleControl(.subtitles, symbol: "captions.bubble", label: "Sous-titres") { viewModel.overlay = .subtitles }
+                        .accessibilityValue(String(format: "%gx", viewModel.playbackSpeed))
+                        circleControl(.subtitles, symbol: "captions.bubble", label: "Sous-titres") { viewModel.overlay = .subtitles }
+                        circleControl(.audio, symbol: "speaker.wave.2", label: "Audio") { viewModel.overlay = .audio }
+                        circleControl(.sources, symbol: "cloud", label: "Sources") {
+                            viewModel.loadSourcesIfNeeded()
+                            openPicker(.sources, overlay: .sources)
+                        }
+                        if viewModel.currentVideo?.season != nil {
+                            circleControl(.episodes, symbol: "rectangle.stack", label: "Épisodes") {
+                                openPicker(.episodes, overlay: .episodes)
+                            }
                         }
                         circleControl(.more, symbol: "ellipsis", label: "Options de lecture") { viewModel.showInfoPanel() }
                     }
@@ -95,7 +106,10 @@ struct NTVPlayerControls: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .ignoresSafeArea()
         .defaultFocus($focus, .play)
-        .onAppear { focus = .play }
+        .onAppear {
+            focus = initialControlID.flatMap(Control.init(rawValue:)) ?? .play
+            onRestoreFocus()
+        }
         .onChange(of: viewModel.controlsSession) { _, _ in focus = .play }
         .onChange(of: focus) { _, selected in
             viewModel.controlsFocusOnBar = selected == .timeline
@@ -107,6 +121,11 @@ struct NTVPlayerControls: View {
                 if old == .subtitles { focus = .subtitles }
             }
         }
+    }
+
+    private func openPicker(_ control: Control, overlay: PlayerOverlay) {
+        onOpenPicker(control.rawValue)
+        viewModel.overlay = overlay
     }
 
     private var playControl: some View {
@@ -146,7 +165,7 @@ struct NTVPlayerControls: View {
         .buttonStyle(PlainCardButtonStyle())
         .focused($focus, equals: control)
         .accessibilityLabel(label)
-        .accessibilityIdentifier("ntv.player.\(control)")
+        .accessibilityIdentifier("ntv.player.\(control.rawValue)")
         .onMoveCommand { direction in
             guard !viewModel.moveSuppressed else { return }
             viewModel.noteSelectPressed()
@@ -173,7 +192,7 @@ struct NTVPlayerControls: View {
         .buttonStyle(PlainCardButtonStyle())
         .focused($focus, equals: control)
         .accessibilityLabel(label)
-        .accessibilityIdentifier("ntv.player.\(control)")
+        .accessibilityIdentifier("ntv.player.\(control.rawValue)")
         .onMoveCommand { direction in
             guard !viewModel.moveSuppressed else { return }
             viewModel.noteSelectPressed()
@@ -375,6 +394,10 @@ private struct NTVPlayerTrackPicker: View {
             Text(subtitles ? "Sous-titres" : "Audio").font(.system(size: 30, weight: .semibold))
             ScrollView {
                 VStack(spacing: 8) {
+                    if options.isEmpty {
+                        Text(subtitles ? "Aucune piste disponible" : "Aucune piste audio disponible")
+                            .font(.system(size: 25)).foregroundStyle(.white.opacity(0.7))
+                    }
                     ForEach(options) { option in
                         Button {
                             viewModel.noteSelectPressed()
@@ -391,23 +414,27 @@ private struct NTVPlayerTrackPicker: View {
                 }
                 .padding(6)
             }
-            .frame(height: min(CGFloat(options.count) * 72, 360))
+            .frame(height: min(CGFloat(max(options.count, 1)) * 72, 360))
             Button {
                 viewModel.showInfoPanel(initialTab: subtitles ? 3 : 2)
             } label: {
                 NTVTransportLabel(symbol: "slider.horizontal.3", title: subtitles ? "Réglages des sous-titres" : "Réglages audio")
             }
             .buttonStyle(PlainCardButtonStyle())
+            .focused($selected, equals: "settings")
             .accessibilityIdentifier("ntv.player.tracks.settings")
         }
         .foregroundStyle(.white)
         .padding(28)
         .frame(width: 600)
-        .accessibilityIdentifier("ntv.player.trackPicker")
         .background { NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24), emphasized: true) }
+        // Identify the whole panel, not the heading SwiftUI otherwise exports
+        // for an ungrouped stack. Children remain individually navigable.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ntv.player.trackPicker")
         .focusSection()
-        .defaultFocus($selected, current ?? options.first?.id ?? "")
-        .onAppear { selected = current ?? options.first?.id }
+        .defaultFocus($selected, current ?? options.first?.id ?? "settings")
+        .onAppear { selected = current ?? options.first?.id ?? "settings" }
         .onExitCommand { viewModel.overlay = .controls }
     }
 }

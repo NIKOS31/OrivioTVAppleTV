@@ -169,15 +169,25 @@ final class NTVDesignSmoke: XCTestCase {
         app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe", "-ntvLegacyIconFixture"]
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        let remote = XCUIRemote.shared
+        let iconNotificationMonitor = addUIInterruptionMonitor(withDescription: "Acknowledge the genuine icon-change notification") { alert in
+            let iconMessage = alert.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "icon for")).firstMatch
+            guard iconMessage.exists, alert.buttons["OK"].exists else { return false }
+            remote.press(.select)
+            return true
+        }
+        defer { removeUIInterruptionMonitor(iconNotificationMonitor) }
         app.launch()
         defer { app.terminate() }
         // The genuine icon confirmation prevents snapshots of app elements.
-        // Capture the system before acknowledging it, without querying the app.
+        // UIKit presents it after launch has already returned (observed at
+        // 3.94s after a 3.62s launch). Let its presentation settle before the
+        // remote click; querying the app while it is covered can time out.
+        Thread.sleep(forTimeInterval: 1)
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "ntv-system-icon-registration"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        let remote = XCUIRemote.shared
         remote.press(.select)
         let probe = app.descendants(matching: .any)["ntv.systemIcon.registration"].firstMatch
         XCTAssertTrue(probe.waitForExistence(timeout: 15))
@@ -203,6 +213,7 @@ final class NTVDesignSmoke: XCTestCase {
         app.terminate()
         app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe"]
         app.launch()
+        Thread.sleep(forTimeInterval: 1)
         let primary = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         primary.name = "ntv-system-primary-icon-migration"
         primary.lifetime = .keepAlways
@@ -716,7 +727,7 @@ final class NTVDesignSmoke: XCTestCase {
     func testTopMenuRemoteRoundTrip() {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-ntvTopMenuDemo", "-ntvHalloweenDemo", "-ntvXperienceHomeFixture"]
+        app.launchArguments = ["-ntvTopMenuDemo", "-ntvHalloweenDemo", "-ntvXperienceHomeFixture", "-ntvNewEpisodeFixture"]
         app.launch()
         let settings = app.buttons["ntv.navigation.3"]
         XCTAssertTrue(settings.waitForExistence(timeout: 20))
@@ -756,6 +767,9 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertGreaterThan(heading.frame.minY, home.frame.maxY + 8,
                              "Home must reserve a visible band below the floating top menu.")
         XCTAssertTrue(screen.contains(heading.frame))
+        let newEpisode = app.staticTexts["Nouvel épisode"].firstMatch
+        XCTAssertTrue(newEpisode.waitForExistence(timeout: 5))
+        XCTAssertTrue(screen.contains(newEpisode.frame), "The explicit new-episode badge must fit within Continue Watching.")
         capture("ntv-home-top-menu-clearance")
         let canvas = app.descendants(matching: .any)["ntv.canvas"].firstMatch
         XCTAssertTrue(canvas.waitForExistence(timeout: 5))
@@ -830,6 +844,29 @@ final class NTVDesignSmoke: XCTestCase {
                              "Tools belong below the timeline, next to the other lower actions.")
         let toolTop = videoTool.frame.minY
         remote.press(.right)
+        let speedTool = app.buttons["ntv.player.speed"]
+        XCTAssertTrue(focused(speedTool, timeout: 5))
+        remote.press(.select)
+        let optionPicker = app.descendants(matching: .any)["ntv.player.picker"].firstMatch
+        XCTAssertTrue(optionPicker.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Vitesse de lecture"].exists)
+        XCTAssertLessThanOrEqual(optionPicker.frame.maxY, toolTop)
+        XCTAssertLessThan(toolTop - optionPicker.frame.maxY, 96)
+        capture("ntv-player-speed-near-actions")
+        let normalSpeed = app.buttons["ntv.player.picker.item.1.0"]
+        XCTAssertTrue(focused(normalSpeed, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(focused(speedTool, timeout: 5), "Choosing a speed must restore its toolbar control.")
+        remote.press(.right)
+        let subtitlesTool = app.buttons["ntv.player.subtitles"]
+        XCTAssertTrue(focused(subtitlesTool, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.buttons["ntv.player.tracks.settings"].waitForExistence(timeout: 5),
+                      "Subtitle settings must remain reachable even when the stream has no embedded tracks.")
+        capture("ntv-player-subtitle-menu-near-actions")
+        remote.press(.menu)
+        XCTAssertTrue(focused(subtitlesTool, timeout: 5))
+        remote.press(.right)
         let audioTool = app.buttons["ntv.player.audio"]
         XCTAssertTrue(focused(audioTool, timeout: 5))
         remote.press(.select)
@@ -842,6 +879,16 @@ final class NTVDesignSmoke: XCTestCase {
         capture("ntv-player-audio-near-actions")
         remote.press(.menu)
         XCTAssertTrue(focused(audioTool, timeout: 5))
+        remote.press(.right)
+        let sourcesTool = app.buttons["ntv.player.sources"]
+        XCTAssertTrue(focused(sourcesTool, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(optionPicker.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Sources"].exists)
+        XCTAssertLessThanOrEqual(optionPicker.frame.maxY, toolTop)
+        capture("ntv-player-sources-near-actions")
+        remote.press(.menu)
+        XCTAssertTrue(focused(sourcesTool, timeout: 5), "Back from sources must return to its toolbar control.")
         remote.press(.up)
         XCTAssertTrue(focused(timeline, timeout: 5))
         remote.press(.select)

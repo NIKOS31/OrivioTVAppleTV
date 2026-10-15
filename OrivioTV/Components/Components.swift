@@ -1222,32 +1222,27 @@ private struct RemainingTimeBadge: View {
     }
 }
 
-/// "+2" — how many episodes have aired since you started the show that you
-/// haven't watched. Green so it reads as new-content-available rather than as
-/// the neutral add-to-library "+" it replaced, and small: this sits on a card
-/// that already carries a progress strip and a remaining-time pill.
+/// Explicit French release status instead of an ambiguous green "+1".
+/// The underlying count still comes from aired, unwatched episode metadata.
 private struct NewEpisodeBadge: View {
     let count: Int
 
-    /// Two digits is the widest this can get without the pill starting to
-    /// crowd the still. Anything past it reads as "lots" either way.
-    private var label: String { count > 9 ? "+9+" : "+\(count)" }
+    private var label: String { count == 1 ? "Nouvel épisode" : "\(min(count, 99)) nouveaux épisodes" }
 
     var body: some View {
         Text(label)
-            .font(.system(size: 15, weight: .heavy, design: .rounded))
+            .font(.system(size: 18, weight: .semibold))
             .monospacedDigit()
             .foregroundStyle(.white)
-            .padding(.horizontal, 9)
-            .frame(height: 26)
-            .background(Color(red: 0.18, green: 0.72, blue: 0.35),
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(Color(red: 0.11, green: 0.31, blue: 0.78),
                         in: Capsule(style: .continuous))
             .overlay(
                 Capsule(style: .continuous)
                     .strokeBorder(.white.opacity(0.22), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
-            .accessibilityLabel(count == 1 ? "1 new episode" : "\(count) new episodes")
+            .accessibilityLabel(count == 1 ? "Nouvel épisode" : "\(count) nouveaux épisodes")
     }
 }
 

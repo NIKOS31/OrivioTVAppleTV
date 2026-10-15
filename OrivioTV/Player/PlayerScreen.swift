@@ -20,6 +20,7 @@ struct PlayerScreen: View {
     /// Opaque cover held over the last frame while the display-mode handshake
     /// settles on exit. See exitPlayer().
     @State private var exitCoverVisible = false
+    @State private var ntvReturnControlID: String?
 
     let dismiss: () -> Void
     /// Kept so a Picture in Picture handoff can park this exact session and
@@ -206,7 +207,9 @@ struct PlayerScreen: View {
             // popovers are this screen with a panel over one glyph.
             if controlsVisible {
                 if usesNTVControls {
-                    NTVPlayerControls(viewModel: viewModel).transition(.opacity)
+                    NTVPlayerControls(viewModel: viewModel, initialControlID: ntvReturnControlID,
+                                      onOpenPicker: { ntvReturnControlID = $0 },
+                                      onRestoreFocus: { ntvReturnControlID = nil }).transition(.opacity)
                 } else {
                     FusionPlayerControlsOverlay(viewModel: viewModel).transition(.opacity)
                 }
@@ -727,15 +730,21 @@ struct PlayerScreen: View {
         switch viewModel.overlay {
         case .sources:
             InfusePickerScreen(viewModel: viewModel,
-                               spec: InfusePickerSpec(title: "Sources", content: .sources)) {}
+                               spec: InfusePickerSpec(title: "Sources", content: .sources),
+                               anchoredToTransport: usesNTVControls) {
+                if usesNTVControls, viewModel.overlay == .sources { viewModel.overlay = .controls }
+            }
                 .transition(.opacity)
         case .episodes:
             InfusePickerScreen(viewModel: viewModel,
-                               spec: InfusePickerSpec(title: "Episodes", content: .episodes)) {}
+                               spec: InfusePickerSpec(title: "Épisodes", content: .episodes),
+                               anchoredToTransport: usesNTVControls) {
+                if usesNTVControls, viewModel.overlay == .episodes { viewModel.overlay = .controls }
+            }
                 .transition(.opacity)
         case .speed:
             InfusePickerScreen(viewModel: viewModel, spec: InfusePickerSpec(
-                title: "Playback Speed",
+                title: "Vitesse de lecture",
                 content: .items([0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map { (speed: Float) in
                     InfusePickerItem(id: "\(speed)",
                                      title: speed == 1 ? "Normal" : String(format: "%gx", speed),
@@ -743,7 +752,7 @@ struct PlayerScreen: View {
                         viewModel.setSpeed(speed)
                     }
                 })
-            )) {
+            ), anchoredToTransport: usesNTVControls) {
                 viewModel.overlay = .controls
             }
             .transition(.opacity)

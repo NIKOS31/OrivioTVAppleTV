@@ -435,6 +435,8 @@ private struct NTVPlayerTrackPicker: View {
         .focusSection()
         .defaultFocus($selected, current ?? options.first?.id ?? "settings")
         .onAppear { selected = current ?? options.first?.id ?? "settings" }
-        .onExitCommand { viewModel.overlay = .controls }
+        // Share the window catcher's Back handling so the same physical press
+        // cannot close this picker, then immediately hide the transport too.
+        .onExitCommand { _ = viewModel.handleExit() }
     }
 }

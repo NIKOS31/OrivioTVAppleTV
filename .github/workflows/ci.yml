@@ -33,6 +33,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Check public source for new credentials
+        shell: bash
+        run: bash scripts/ci/check-secrets.sh
+
       - name: Install pinned XcodeGen
         shell: bash
         run: |

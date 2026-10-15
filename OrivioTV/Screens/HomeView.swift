@@ -2609,6 +2609,7 @@ struct HomePosterRow: View {
 
     @FocusState private var focusedID: String?
     @FocusState private var emptyRowFocused: Bool
+    @FocusState private var seeAllFocused: Bool
 
     private var displayedItems: [MetaItem] {
         guard homeCatalogSettings.hideUnreleasedContent || homeCatalogSettings.hideUnavailableSources else { return row.items }
@@ -2728,6 +2729,23 @@ struct HomePosterRow: View {
                 .onChange(of: emptyRowFocused) { _, focused in
                     if focused { ContentFocusRouter.shared.noteFocused(row: row.id) }
                 }
+                .onChange(of: seeAllFocused) { _, focused in
+                    guard focused else { return }
+                    let enteredRow = onVerticalMove != nil && ContentFocusRouter.startsCatalogRow(
+                        previousItem: nil, previousRow: ContentFocusRouter.shared.lastRowID,
+                        currentRow: row.id, restorationItem: restoreItemID)
+                    ContentFocusRouter.shared.noteFocused(row: row.id)
+                    guard enteredRow, let first = displayedItems.first?.id else { return }
+                    // At a far-right column UIKit can enter the NEXT shelf via
+                    // its See All header, before any poster receives focus.
+                    // Treat that as a row entry too; otherwise poster-only
+                    // normalization never runs and Down strands focus here.
+                    DispatchQueue.main.async {
+                        guard seeAllFocused else { return }
+                        proxy.scrollTo(first, anchor: .leading)
+                        focusedID = first
+                    }
+                }
                 .task(id: focusFirstRequestID) {
                     guard focusFirstRequestID != nil else { return }
                     guard let first = displayedItems.first?.id else {
@@ -2817,6 +2835,7 @@ struct HomePosterRow: View {
                     SeeAllLabel()
                 }
                 .buttonStyle(PlainCardButtonStyle())
+                .focused($seeAllFocused)
                 .padding(.trailing, theme.palette.id == NTVDesign.palette.id
                          ? NTVViewport.horizontalInset : OrivioSpacing.huge)
             }

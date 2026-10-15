@@ -86,7 +86,7 @@ struct NTVPlayerControls: View {
 
             if pickingTracks {
                 NTVPlayerTrackPicker(viewModel: viewModel)
-                    .padding(.bottom, 210)
+                    .padding(.bottom, 84)
             }
         }
         // PlayerScreen supplies the single bottom gradient for all overlays.

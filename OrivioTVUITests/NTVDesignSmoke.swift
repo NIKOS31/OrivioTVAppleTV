@@ -828,6 +828,20 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(videoTool, timeout: 5), "The lower action rail must connect Infos to the video, audio and subtitle tools.")
         XCTAssertGreaterThan(videoTool.frame.minY, timeline.frame.maxY,
                              "Tools belong below the timeline, next to the other lower actions.")
+        let toolTop = videoTool.frame.minY
+        remote.press(.right)
+        let audioTool = app.buttons["ntv.player.audio"]
+        XCTAssertTrue(focused(audioTool, timeout: 5))
+        remote.press(.select)
+        let trackPicker = app.descendants(matching: .any)["ntv.player.trackPicker"].firstMatch
+        XCTAssertTrue(trackPicker.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(trackPicker.frame.maxY, toolTop,
+                                 "The track menu must open above its tool, without covering the lower actions.")
+        XCTAssertLessThan(toolTop - trackPicker.frame.maxY, 96,
+                          "Moving the tools below the bar must also move their menus near them.")
+        capture("ntv-player-audio-near-actions")
+        remote.press(.menu)
+        XCTAssertTrue(focused(audioTool, timeout: 5))
         remote.press(.up)
         XCTAssertTrue(focused(timeline, timeout: 5))
         remote.press(.select)

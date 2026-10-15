@@ -313,7 +313,7 @@ struct SearchView: View {
                         captionWidth: width,
                         onSelect: onSelect
                     )
-                    .accessibilityIdentifier("ntv.search.poster.\(item.contentID)")
+                    .accessibilityIdentifier("ntv.search.poster.\(item.type).\(item.id)")
                 }
             }
         }

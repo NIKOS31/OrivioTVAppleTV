@@ -863,6 +863,21 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.select)
         XCTAssertTrue(app.buttons["ntv.player.tracks.settings"].waitForExistence(timeout: 5),
                       "Subtitle settings must remain reachable even when the stream has no embedded tracks.")
+        let trackPicker = app.descendants(matching: .any)["ntv.player.trackPicker"].firstMatch
+        let transport = app.descendants(matching: .any)["ntv.player.transport"].firstMatch
+        func assertTrackMenuClearsTransport() {
+            XCTAssertTrue(trackPicker.waitForExistence(timeout: 5))
+            XCTAssertTrue(transport.exists)
+            XCTAssertFalse(trackPicker.frame.intersects(transport.frame),
+                           "Audio and subtitle menus must leave the title, timeline, times and tools uncovered.")
+            XCTAssertGreaterThanOrEqual(transport.frame.minY - trackPicker.frame.maxY, 16,
+                                        "The menu must have a visible gap above the entire transport.")
+            XCTAssertLessThanOrEqual(transport.frame.minY - trackPicker.frame.maxY, 48,
+                                     "The menu must remain adjacent to the transport, rather than at the top of the screen.")
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(trackPicker.frame),
+                          "The menu must remain entirely on screen.")
+        }
+        assertTrackMenuClearsTransport()
         capture("ntv-player-subtitle-menu-near-actions")
         remote.press(.menu)
         XCTAssertTrue(focused(subtitlesTool, timeout: 5))
@@ -870,12 +885,7 @@ final class NTVDesignSmoke: XCTestCase {
         let audioTool = app.buttons["ntv.player.audio"]
         XCTAssertTrue(focused(audioTool, timeout: 5))
         remote.press(.select)
-        let trackPicker = app.descendants(matching: .any)["ntv.player.trackPicker"].firstMatch
-        XCTAssertTrue(trackPicker.waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(trackPicker.frame.maxY, toolTop,
-                                 "The track menu must open above its tool, without covering the lower actions.")
-        XCTAssertLessThan(toolTop - trackPicker.frame.maxY, 96,
-                          "Moving the tools below the bar must also move their menus near them.")
+        assertTrackMenuClearsTransport()
         capture("ntv-player-audio-near-actions")
         remote.press(.menu)
         XCTAssertTrue(focused(audioTool, timeout: 5))

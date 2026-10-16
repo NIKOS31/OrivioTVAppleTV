@@ -20,7 +20,13 @@ struct NTVPlayerControls: View {
     private var footerOrder: [Control] { detailOrder + toolOrder }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        VStack(alignment: .trailing, spacing: 24) {
+            // Reserve the picker's real height above the entire transport.
+            // An offset above the tool row still covers the timeline and time.
+            if pickingTracks {
+                NTVPlayerTrackPicker(viewModel: viewModel)
+            }
+
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .bottom, spacing: 28) {
                     NTVPlayerHeading(viewModel: viewModel)
@@ -94,11 +100,8 @@ struct NTVPlayerControls: View {
                 .focusSection()
             }
             .disabled(pickingTracks)
-
-            if pickingTracks {
-                NTVPlayerTrackPicker(viewModel: viewModel)
-                    .padding(.bottom, 84)
-            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("ntv.player.transport")
         }
         // PlayerScreen supplies the single bottom gradient for all overlays.
         .padding(.horizontal, 72)

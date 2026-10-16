@@ -2,7 +2,14 @@ import Foundation
 
 struct NTVAnimeMedia: Decodable, Identifiable, Sendable {
     struct Title: Decodable, Sendable { let romaji: String?; let english: String?; let native: String? }
-    struct Cover: Decodable, Sendable { let large: String? }
+    struct Cover: Decodable, Sendable {
+        let large: String?
+        let extraLarge: String?
+        init(large: String?, extraLarge: String? = nil) {
+            self.large = large
+            self.extraLarge = extraLarge
+        }
+    }
     let id: Int
     let title: Title
     let coverImage: Cover?
@@ -43,7 +50,7 @@ struct NTVAnimeMedia: Decodable, Identifiable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return raw.isEmpty ? "Aucun résumé disponible." : String(raw.prefix(2000))
     }
-    var artwork: String? { Self.imageURL(coverImage?.large) }
+    var artwork: String? { Self.imageURL(coverImage?.extraLarge) ?? Self.imageURL(coverImage?.large) }
     var backdrop: String? { Self.imageURL(bannerImage) }
     private static func imageURL(_ raw: String?) -> String? {
         guard let raw, raw.count <= 2048, let url = URL(string: raw),
@@ -159,7 +166,7 @@ actor NTVAnimeService {
     }
 
     static func payload(for selection: NTVAnimeRequest) throws -> Data {
-        let fields = "id title { romaji english native } coverImage { large } bannerImage description(asHtml: false) episodes format isAdult"
+        let fields = "id title { romaji english native } coverImage { extraLarge large } bannerImage description(asHtml: false) episodes format isAdult"
         let query: String
         let variables: [String: Any]
         switch selection {

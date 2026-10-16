@@ -146,10 +146,21 @@ final class NTVAnimeTests: XCTestCase {
             XCTAssertNil(item.artwork)
         }
         XCTAssertNotNil(try JSONDecoder().decode(NTVAnimeMedia.self, from: Data(media().utf8)).artwork)
+        let ordinary = "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/test.jpg"
+        let larger = "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/test.jpg"
+        func cover(_ extra: String?) throws -> NTVAnimeMedia {
+            let images: [String: Any] = ["large": ordinary, "extraLarge": extra.map { $0 as Any } ?? NSNull()]
+            let object: [String: Any] = ["id": 1, "title": ["romaji": "Test"], "coverImage": images]
+            return try JSONDecoder().decode(NTVAnimeMedia.self, from: JSONSerialization.data(withJSONObject: object))
+        }
+        XCTAssertEqual(try cover(larger).artwork, larger)
+        XCTAssertEqual(try cover(nil).artwork, ordinary)
+        XCTAssertEqual(try cover("https://127.0.0.1/private.jpg").artwork, ordinary)
     }
     func testCalendarQueryUsesBoundedVariablesAndDoesNotEmbedSearchText() throws {
         let data = try NTVAnimeService.payload(for: .day(start: 100_000, end: 186_400))
         let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertTrue((payload["query"] as? String)?.contains("coverImage { extraLarge large }") == true)
         let variables = try XCTUnwrap(payload["variables"] as? [String: Int])
         XCTAssertEqual(variables["from"], 99_999)
         XCTAssertEqual(variables["to"], 186_400)

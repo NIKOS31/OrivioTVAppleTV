@@ -16,7 +16,9 @@ enum NTVAnimeFixture {
         let entries = examples.enumerated().map { index, example in
             let media = NTVAnimeMedia(id: example.0,
                 title: .init(romaji: example.1, english: nil, native: nil),
-                coverImage: .init(large: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/" + example.2),
+                coverImage: .init(
+                    large: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/" + example.2,
+                    extraLarge: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/" + example.2),
                 bannerImage: index == 0 ? "https://s4.anilist.co/file/anilistcdn/media/anime/banner/195516-B5M0cPaQbQXI.jpg" : nil,
                 description: "Fiche de démonstration du parcours Animés. La disponibilité se vérifie dans les addons.",
                 episodes: nil, format: "TV", isAdult: false)

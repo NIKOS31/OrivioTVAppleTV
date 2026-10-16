@@ -68,6 +68,9 @@ requêtes et respect de Retry-After sur 429. Cache mémoire de dix minutes,
 borné à dix sélections. Aucun compte, cookie ou jeton dans ces requêtes.
 Les images sont limitées au CDN HTTPS AniList et passent par le pipeline
 partagé de redimensionnement et de décodage de nTV.
+Le service demande la variante `extraLarge` des affiches et la préfère après
+validation de son URL. La variante `large` reste un repli si la première est
+absente ou invalide ; les caches et le décodage conservent leurs limites.
 
 Les cartes sont chargées paresseusement, sans flou par carte. La bannière
 ne change pas au déplacement du focus et n'a pas de timer de carrousel.

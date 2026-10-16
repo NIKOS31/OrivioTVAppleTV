@@ -1542,6 +1542,17 @@ struct RootView: View {
                     .probeScreen("Series")
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $seriesPath) }
             }
+        case 8:
+            NavigationStack {
+                NTVAnimeView(onSearch: { title in
+                    if !searchPath.isEmpty { searchPath.removeLast(searchPath.count) }
+                    searchViewModel.query = title
+                    selectTab(1)
+                    searchViewModel.search(addonManager: addonManager)
+                }, onBackAtRoot: { focusSidebar(8) })
+                .modifier(NTVPageTopClearance())
+                .probeScreen("Anime")
+            }
         case 7:
             NavigationStack {
                 NTVAddonsView(onBackAtRoot: { focusSidebar(7) })
@@ -1584,6 +1595,7 @@ struct RootView: View {
         case 5: return "Movies"
         case 6: return "Series"
         case 7: return "Addons"
+        case 8: return "Anime"
         default: return "Home"
         }
     }
@@ -1625,6 +1637,7 @@ struct RootView: View {
     /// Handles tapping a rail tab: collapse the panel and force focus into the
     /// fresh tab's content by making the rail momentarily unfocusable.
     private func selectTab(_ newTab: Int) {
+        ContentFocusRouter.shared.cancelLanding()
         let enteringHomeFresh = selectedTab != 0 && newTab == 0
         AppProbe.nav("tab \(Self.tabName(selectedTab)) → \(Self.tabName(newTab))"
                      + (enteringHomeFresh ? "  (Home rebuilds; rail waits on content)" : ""))
@@ -1652,6 +1665,7 @@ struct RootView: View {
     /// dropped — a Menu press in one of those windows did nothing. A deliberate
     /// Back always wins: enable now, focus on the next tick.
     private func focusSidebar(_ tab: Int) {
+        ContentFocusRouter.shared.cancelLanding()
         AppProbe.focus("focusSidebar(\(Self.tabName(tab)))"
                        + "  revealed=\(sidebarRevealed.probe) enabled=\(sidebarEnabled.probe)")
         // Menu at a tab root is the other way back to a hidden rail.

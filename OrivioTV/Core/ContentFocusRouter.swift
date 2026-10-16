@@ -18,6 +18,9 @@ final class ContentFocusRouter {
     private var handlers: [String: () -> Bool] = [:]
     /// The row that last held focus in the content.
     private(set) var lastRowID: String?
+    private var landingTask: Task<Void, Never>?
+    private var landingRowID: String?
+    private var landingGeneration: UUID?
 
     /// Normalize an actual entry from another catalog row, never an ordinary
     /// horizontal/diagonal step or a return to a remembered detail selection.
@@ -34,6 +37,7 @@ final class ContentFocusRouter {
     }
 
     func unregister(_ rowID: String) {
+        if landingRowID == rowID { cancelLanding() }
         handlers.removeValue(forKey: rowID)
         AppProbe.focus("row gone: \(rowID)  (\(handlers.count) mounted)"
                        + (lastRowID == rowID ? "  — and it was the last focused one" : ""))
@@ -45,6 +49,9 @@ final class ContentFocusRouter {
     /// pick instead of teleporting to the last ROUTED row the viewer was in —
     /// possibly several rows away.
     func noteFocused(row rowID: String) {
+        // A delayed retry belongs to one row. Once focus is in another row,
+        // it must not scroll the previous row and reclaim focus behind us.
+        if let landingRowID, landingRowID != rowID { cancelLanding() }
         // Only the CHANGES: a row notes itself on every tile the viewer moves
         // to, and a tail of "still in row 3" forty times over is noise that
         // pushes the useful lines out of the ring.
@@ -65,6 +72,7 @@ final class ContentFocusRouter {
     /// `focusLastRowStart` for a row recorded earlier — the rail's Right exit
     /// reads the row before the engine's own landing can note another one.
     func focusRowStart(_ rowID: String?) -> Bool {
+        cancelLanding()
         guard let id = rowID, let handler = handlers[id] else {
             // The fallback that historically dropped focus on the wrong card:
             // worth seeing every time it happens, with the reason.
@@ -90,14 +98,27 @@ final class ContentFocusRouter {
     /// running means someone chose it, and re-assigning would yank them back
     /// to card 1 and snap the platter raise mid-move (up to six times over
     /// 360ms — one face of the "frozen poster" fight).
-    static func land(assign: @escaping () -> Void,
+    func land(in rowID: String, assign: @escaping () -> Void,
                      landed: @escaping () -> Bool,
                      focusToken: (() -> String?)? = nil) {
+        cancelLanding()
+        let generation = UUID()
+        landingGeneration = generation
+        landingRowID = rowID
         assign()
-        Task { @MainActor in
+        guard landingGeneration == generation else { return }
+        landingTask = Task { @MainActor [weak self] in
+            defer {
+                if self?.landingGeneration == generation {
+                    self?.landingTask = nil
+                    self?.landingRowID = nil
+                    self?.landingGeneration = nil
+                }
+            }
             var previous: String?
             for attempt in 1...6 {
-                try? await Task.sleep(nanoseconds: 60_000_000)
+                do { try await Task.sleep(nanoseconds: 60_000_000) } catch { return }
+                guard !Task.isCancelled, self?.landingGeneration == generation else { return }
                 if landed() {
                     if attempt > 1 { AppProbe.focus("land: took \(attempt) tries") }
                     return
@@ -115,5 +136,13 @@ final class ContentFocusRouter {
             // that scrolled but never built its first card.
             AppProbe.focus("land: NEVER LANDED after 6 tries")
         }
+    }
+
+    /// A page/menu transition also supersedes any delayed row hand-off.
+    func cancelLanding() {
+        landingTask?.cancel()
+        landingTask = nil
+        landingRowID = nil
+        landingGeneration = nil
     }
 }

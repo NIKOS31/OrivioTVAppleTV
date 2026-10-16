@@ -2,17 +2,18 @@ import SwiftUI
 
 /// Append destinations to preserve the existing tab IDs and saved focus state.
 enum AppTab: Int, CaseIterable, Identifiable {
-    case home, search, library, settings, liveTV, movies, series, addons
+    case home, search, library, settings, liveTV, movies, series, addons, anime
     var id: Int { rawValue }
 
     /// Order the rail renders in (Live TV above Settings, despite raw value).
-    static let sidebarOrder: [AppTab] = [.home, .movies, .series, .search, .library, .liveTV, .addons, .settings]
+    static let sidebarOrder: [AppTab] = [.home, .movies, .series, .anime, .search, .library, .liveTV, .addons, .settings]
 
     var label: String {
         switch self {
         case .home: return "Accueil"
         case .movies: return "Films"
         case .series: return "Séries"
+        case .anime: return "Animés"
         case .addons: return "Addons"
         case .search: return "Recherche"
         case .library: return "Bibliothèque"
@@ -26,6 +27,7 @@ enum AppTab: Int, CaseIterable, Identifiable {
         case .home: return "house.fill"
         case .movies: return "film.fill"
         case .series: return "play.rectangle.on.rectangle.fill"
+        case .anime: return "sparkles.tv"
         case .addons: return "puzzlepiece.extension.fill"
         case .search: return "magnifyingglass"
         case .library: return "bookmark.fill"
@@ -127,7 +129,7 @@ struct GlassSidebar: View {
 
             HStack(spacing: 4) {
                 ForEach(AppTab.sidebarOrder.filter {
-                    [AppTab.home, .movies, .series, .library, .liveTV].contains($0)
+                    [AppTab.home, .movies, .series, .anime, .library, .liveTV].contains($0)
                         && ($0 != .liveTV || liveTV.enabled)
                 }) { tab in
                     ntvTopButton(tab, iconOnly: false)
@@ -432,7 +434,7 @@ private struct GlassProfileHeader: View {
 private struct NTVTopNavigationLabel: View {
     @Environment(\.isFocused) private var focused
     @Environment(\.legibilityWeight) private var legibility
-    @ScaledMetric(relativeTo: .body) private var labelSize: CGFloat = 29
+    @ScaledMetric(relativeTo: .body) private var labelSize: CGFloat = 26
     let tab: AppTab
     let selected: Bool
     let iconOnly: Bool

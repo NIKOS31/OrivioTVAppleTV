@@ -2629,12 +2629,13 @@ struct HomePosterRow: View {
     }
 
     var body: some View {
+        let visible = displayedItems
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             header
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
-                        if displayedItems.isEmpty, let onLeftAtStart {
+                        if visible.isEmpty, let onLeftAtStart {
                             VStack(alignment: .leading, spacing: 18) {
                                 Text("Aucun titre correspondant aux filtres.")
                                     .font(.system(size: 29))
@@ -2648,7 +2649,7 @@ struct HomePosterRow: View {
                             }
                             .frame(minHeight: homeCatalogSettings.posterSize.posterWidth * 1.5, alignment: .topLeading)
                         }
-                        ForEach(displayedItems) { item in
+                        ForEach(visible) { item in
                             // Equatable cell: a focus step writes the row's
                             // @FocusState, which re-runs THIS row body — with
                             // plain cells every materialized card re-built its
@@ -2716,7 +2717,7 @@ struct HomePosterRow: View {
                 // handler scrolled to a card that no longer exists and its
                 // focus write was silently dropped.
                 .onAppear { registerRowHandler(proxy); onFirstVisibleChange?(displayedItems.first?.id) }
-                .onChange(of: displayedItems.first?.id) { _, first in
+                .onChange(of: visible.first?.id) { _, first in
                     registerRowHandler(proxy); onFirstVisibleChange?(first)
                 }
                 .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
@@ -2808,7 +2809,7 @@ struct HomePosterRow: View {
             // Retry until the card actually holds focus: deep in the row the
             // first card is unloaded, and it takes the scroll a few ticks to
             // materialize it on the slower boxes.
-            ContentFocusRouter.land(assign: {
+            ContentFocusRouter.shared.land(in: row.id, assign: {
                 proxy.scrollTo(first, anchor: .leading)
                 focusedID = first
             }, landed: { focusedID == first },
@@ -3015,7 +3016,7 @@ private struct ContinueWatchingRow: View {
         let firstID = items.first?.id
         ContentFocusRouter.shared.register(Self.routerID) {
             guard let first = firstID else { return false }
-            ContentFocusRouter.land(assign: {
+            ContentFocusRouter.shared.land(in: Self.routerID, assign: {
                 proxy.scrollTo(first, anchor: .leading)
                 focusedCWCard = first
             }, landed: { focusedCWCard == first },

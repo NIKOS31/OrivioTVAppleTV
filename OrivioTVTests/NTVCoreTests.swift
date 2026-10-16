@@ -3,6 +3,52 @@ import UIKit
 @testable import OrivioTV
 
 final class NTVCoreTests: XCTestCase {
+    @MainActor
+    func testADeferredFocusLandingCannotPullTheUserBackFromAnotherRow() async throws {
+        let router = ContentFocusRouter()
+        var oldAssignments = 0
+        router.land(in: "row-a", assign: { oldAssignments += 1 }, landed: { false })
+        XCTAssertEqual(oldAssignments, 1)
+        router.noteFocused(row: "row-b")
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertEqual(oldAssignments, 1, "An old landing must never reassign focus after another row takes it.")
+    }
+
+    @MainActor
+    func testANewerLandingCancelsThePreviousRowsRetries() async throws {
+        let router = ContentFocusRouter()
+        var first = 0
+        var second = 0
+        router.land(in: "row-a", assign: { first += 1 }, landed: { false })
+        router.land(in: "row-b", assign: { second += 1 }, landed: { true })
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertEqual(first, 1)
+        XCTAssertEqual(second, 1)
+    }
+
+    @MainActor
+    func testUnmountingARowCancelsItsDeferredScrollAndFocusWork() async throws {
+        let router = ContentFocusRouter()
+        var assignments = 0
+        router.register("row-a") { true }
+        router.land(in: "row-a", assign: { assignments += 1 }, landed: { false })
+        router.unregister("row-a")
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertEqual(assignments, 1)
+    }
+
+    func testNuvioRuntimePortFloorsTimeAndTogglesRemainingWithoutNegativeDurations() {
+        XCTAssertEqual(NTVNuvioRuntime.time(0), "00:00")
+        XCTAssertEqual(NTVNuvioRuntime.time(59.99), "00:59")
+        XCTAssertEqual(NTVNuvioRuntime.time(3601.8), "1:00:01")
+        XCTAssertEqual(NTVNuvioRuntime.text(position: 373, duration: 5842, remaining: false), "06:13 / 1:37:22")
+        XCTAssertEqual(NTVNuvioRuntime.text(position: 373, duration: 5842, remaining: true), "−1:31:09")
+        XCTAssertEqual(NTVNuvioRuntime.text(position: 120, duration: 90, remaining: true), "−00:00")
+        XCTAssertEqual(NTVNuvioRuntime.text(position: -20, duration: -30, remaining: true), "−00:00")
+        XCTAssertEqual(NTVNuvioRuntime.time(.infinity), "00:00")
+        XCTAssertEqual(NTVNuvioRuntime.time(.nan), "00:00")
+    }
+
     func testPrimaryIconNameUsesTheCompiledReference() {
         XCTAssertEqual(NTVSystemIconManifest.primaryName(in: ["CFBundleIcons": ["CFBundlePrimaryIcon": "NTVPrimaryIconV2"]]), "NTVPrimaryIconV2")
         XCTAssertEqual(NTVSystemIconManifest.primaryName(in: ["CFBundleIcons": ["CFBundlePrimaryIcon": ["CFBundleIconName": "NTVPrimaryIconV2"]]]), "NTVPrimaryIconV2")

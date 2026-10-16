@@ -35,6 +35,7 @@ xcodebuild test \
   -resultBundlePath "$results/navigation.xcresult" \
   -only-testing:OrivioTVUITests/NTVDesignSmoke \
   -only-testing:OrivioTVTests/NTVCoreTests \
+  -only-testing:OrivioTVTests/NTVAnimeTests \
   -only-testing:OrivioTVTests/NTVTwitchTests \
   -only-testing:OrivioTVTests/NTVSecurityTests \
   -only-testing:OrivioTVTests/NTVAddonPayloadTests \

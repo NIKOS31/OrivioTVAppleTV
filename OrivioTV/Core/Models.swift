@@ -643,6 +643,18 @@ extension Array where Element == MetaVideo {
 /// target on focus moves) — on an A8 the ICU formatter construction dwarfs the
 /// parse itself. Both formatter classes are documented thread-safe.
 enum ReleaseDateParser {
+    private final class ParsedDate: NSObject {
+        let value: Date?
+        init(_ value: Date?) { self.value = value }
+    }
+    // A date string is immutable, while "is this already released?" is not.
+    // Cache only parsing, never the time-dependent released/unreleased result.
+    private static let parsedDates: NSCache<NSString, ParsedDate> = {
+        let cache = NSCache<NSString, ParsedDate>()
+        cache.countLimit = 1024
+        cache.totalCostLimit = 128 * 1024
+        return cache
+    }()
     static let isoFractional: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -675,9 +687,17 @@ enum ReleaseDateParser {
     }()
     /// Full ISO 8601 (with or without fractional seconds), else bare date.
     static func parse(_ released: String) -> Date? {
-        if let d = isoFractional.date(from: released) { return d }
-        if let d = iso.date(from: released) { return d }
-        return ymdGMT.date(from: String(released.prefix(10)))
+        let key = released as NSString
+        if let saved = parsedDates.object(forKey: key) { return saved.value }
+        let date = isoFractional.date(from: released)
+            ?? iso.date(from: released)
+            ?? ymdGMT.date(from: String(released.prefix(10)))
+        // Do not retain arbitrary long metadata as cache keys. Unknown dates
+        // are also cached, avoiding repeated failed ICU parses while browsing.
+        if released.utf8.count <= 128 {
+            parsedDates.setObject(ParsedDate(date), forKey: key, cost: released.utf8.count + 64)
+        }
+        return date
     }
 }
 

@@ -27,7 +27,7 @@ struct CollectionRowSection: View {
         let firstID = collection.folders.first?.id
         ContentFocusRouter.shared.register("collection.\(collection.id)") {
             guard let first = firstID else { return false }
-            ContentFocusRouter.land(assign: {
+            ContentFocusRouter.shared.land(in: "collection.\(collection.id)", assign: {
                 proxy.scrollTo(first, anchor: .leading)
                 focusedID = first
             }, landed: { focusedID == first },
@@ -127,7 +127,7 @@ struct CollectionsRowSection: View {
         let firstID = ordered.first?.id
         ContentFocusRouter.shared.register("collections.shared") {
             guard let first = firstID else { return false }
-            ContentFocusRouter.land(assign: {
+            ContentFocusRouter.shared.land(in: "collections.shared", assign: {
                 proxy.scrollTo(first, anchor: .leading)
                 focusedID = first
             }, landed: { focusedID == first },

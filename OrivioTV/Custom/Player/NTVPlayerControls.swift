@@ -8,7 +8,7 @@ struct NTVPlayerControls: View {
     var onRestoreFocus: () -> Void = {}
     @FocusState private var focus: Control?
 
-    private enum Control: String, Hashable { case timeline, play, video, speed, audio, subtitles, sources, episodes, more, info, next }
+    private enum Control: String, Hashable { case timeline, play, runtime, video, speed, audio, subtitles, sources, episodes, more, info, next }
     private var pickingTracks: Bool { viewModel.overlay == .audio || viewModel.overlay == .subtitles }
     private var toolOrder: [Control] {
         var order: [Control] = [.video, .speed, .subtitles, .audio, .sources]
@@ -20,7 +20,7 @@ struct NTVPlayerControls: View {
     private var footerOrder: [Control] { detailOrder + toolOrder }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 24) {
+        VStack(alignment: .trailing, spacing: 12) {
             // Reserve the picker's real height above the entire transport.
             // An offset above the tool row still covers the timeline and time.
             if pickingTracks {
@@ -61,7 +61,21 @@ struct NTVPlayerControls: View {
                     NTVPlayerTimeValue(viewModel: viewModel, clock: viewModel.clock)
                     playControl
                     Spacer()
-                    NTVPlayerTimeValue(viewModel: viewModel, clock: viewModel.clock, totalDuration: true)
+                    NTVPlayerRuntimeControl(clock: viewModel.clock) {
+                        viewModel.noteSelectPressed()
+                        viewModel.restartHideTimer()
+                    }
+                    .focused($focus, equals: .runtime)
+                    .onMoveCommand { direction in
+                        guard !viewModel.moveSuppressed else { return }
+                        viewModel.restartHideTimer()
+                        switch direction {
+                        case .up: focus = .timeline
+                        case .down: focus = .more
+                        case .left: focus = .play
+                        default: break
+                        }
+                    }
                 }
                 .frame(height: 42)
 
@@ -174,7 +188,7 @@ struct NTVPlayerControls: View {
             viewModel.noteSelectPressed()
             viewModel.restartHideTimer()
             switch direction {
-            case .up: focus = .timeline
+            case .up: focus = control == .more ? .runtime : .timeline
             case .left, .right:
                 if let index = footerOrder.firstIndex(of: control) {
                     let next = index + (direction == .right ? 1 : -1)
@@ -300,6 +314,40 @@ struct NTVPlayerSeekOverlay: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .ignoresSafeArea()
         .allowsHitTesting(false)
+    }
+}
+
+/// Nuvio's runtime toggle, adapted to the remote. Only this leaf observes
+/// the playback clock; ticking time does not rebuild the action/focus rail.
+private struct NTVPlayerRuntimeControl: View {
+    let clock: PlaybackClock
+    let onInteraction: () -> Void
+    @AppStorage("ntv.player.remainingTime") private var remaining = false
+
+    var body: some View {
+        Button {
+            remaining.toggle()
+            onInteraction()
+        } label: { NTVPlayerRuntimeLabel(clock: clock, remaining: remaining) }
+        .buttonStyle(PlainCardButtonStyle())
+        .accessibilityHint(remaining ? "Afficher le temps écoulé et la durée totale." : "Afficher le temps restant.")
+        .accessibilityValue(remaining ? "Temps restant" : "Temps écoulé et durée totale")
+        .accessibilityIdentifier("ntv.player.runtime")
+    }
+}
+
+private struct NTVPlayerRuntimeLabel: View {
+    @Environment(\.isFocused) private var focused
+    @ObservedObject var clock: PlaybackClock
+    let remaining: Bool
+    var body: some View {
+        Text(NTVNuvioRuntime.text(position: clock.scrubTarget ?? clock.position,
+                                 duration: clock.duration, remaining: remaining))
+            .font(.system(size: 20, weight: .medium).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.9))
+            .padding(.horizontal, 14)
+            .frame(minWidth: 220).frame(height: 42)
+            .background(Capsule().fill(.white.opacity(focused ? 0.18 : 0)))
     }
 }
 

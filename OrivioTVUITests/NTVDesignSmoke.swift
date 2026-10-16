@@ -724,6 +724,82 @@ final class NTVDesignSmoke: XCTestCase {
         app.terminate()
     }
 
+    func testAnimeSeasonCalendarDetailsAndAddonSearchWithRemote() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvTopMenuDemo", "-ntvAnimeFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        let settings = app.buttons["ntv.navigation.3"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 20))
+        for _ in 0..<3 {
+            if settings.hasFocus { break }
+            remote.press(.menu)
+            if focused(settings, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(settings, timeout: 5))
+        let animeTab = app.buttons["ntv.navigation.8"]
+        for _ in 0..<8 {
+            if animeTab.hasFocus { break }
+            remote.press(.left)
+        }
+        XCTAssertTrue(focused(animeTab, timeout: 5))
+        remote.press(.select)
+        let season = app.buttons["ntv.anime.season"]
+        let planning = app.buttons["ntv.anime.planning"]
+        let featured = app.buttons["ntv.anime.featured"]
+        XCTAssertTrue(featured.waitForExistence(timeout: 20))
+        XCTAssertTrue(focused(season, timeout: 8), "The new page must seed a reachable section selector.")
+        let screen = app.windows.firstMatch.frame
+        XCTAssertTrue(screen.contains(featured.frame))
+        XCTAssertGreaterThan(featured.frame.minY, app.buttons["ntv.navigation.8"].frame.maxY + 8)
+        capture("ntv-anime-season")
+        remote.press(.right)
+        XCTAssertTrue(focused(planning, timeout: 5))
+        remote.press(.select)
+        let dayButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.anime.day."))
+        XCTAssertEqual(dayButtons.count, 7, "The calendar must display a complete local week.")
+        let card = app.buttons["ntv.anime.card.airing.195516"]
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        XCTAssertTrue(screen.contains(card.frame))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "La diffusion ne garantit pas")).firstMatch.exists)
+        capture("ntv-anime-planning")
+        remote.press(.down)
+        let focusedDay = dayButtons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        XCTAssertTrue(focusedDay.waitForExistence(timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(focusedDay.value as? String == "Sélectionné")
+        let focusedCard = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.anime.card.airing.")).firstMatch
+        for _ in 0..<3 {
+            if focusedCard.exists { break }
+            remote.press(.down)
+            if focusedCard.waitForExistence(timeout: 2) { break }
+        }
+        XCTAssertTrue(focusedCard.waitForExistence(timeout: 5))
+        let selectedCard = app.buttons[focusedCard.identifier]
+        let selectedTitle = focusedCard.label.components(separatedBy: ", épisode ").first ?? ""
+        XCTAssertFalse(selectedTitle.isEmpty)
+        remote.press(.select)
+        let search = app.buttons["ntv.anime.searchSources"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        XCTAssertTrue(focused(search, timeout: 5))
+        XCTAssertTrue(screen.contains(search.frame))
+        capture("ntv-anime-detail")
+        remote.press(.menu)
+        XCTAssertTrue(focused(selectedCard, timeout: 8), "Closing an anime must return to its selected calendar card.")
+        remote.press(.select)
+        XCTAssertTrue(focused(search, timeout: 8))
+        remote.press(.select)
+        let searchField = app.buttons["ntv.search.field"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 15), "The title must route to existing addon search after dismissal.")
+        XCTAssertEqual(searchField.value as? String, selectedTitle, "The selected anime title must be retained as the search query.")
+        capture("ntv-anime-addon-search")
+    }
+
     func testTopMenuRemoteRoundTrip() {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -753,11 +829,11 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(library, timeout: 5), "Back must restore the selected top tab.")
         capture("ntv-top-glass-navigation")
         let screen = app.windows.firstMatch.frame
-        for id in [0, 1, 2, 3, 4, 5, 6, 7] {
+        for id in [0, 1, 2, 3, 4, 5, 6, 7, 8] {
             let button = app.buttons["ntv.navigation.\(id)"]
             XCTAssertTrue(screen.contains(button.frame), "Top tab \(id) must stay within the TV screen.")
         }
-        for _ in 0..<3 { remote.press(.left) }
+        for _ in 0..<4 { remote.press(.left) }
         let home = app.buttons["ntv.navigation.0"]
         XCTAssertTrue(focused(home, timeout: 5))
         remote.press(.select)
@@ -877,16 +953,16 @@ final class NTVDesignSmoke: XCTestCase {
             XCTAssertTrue(app.windows.firstMatch.frame.contains(trackPicker.frame),
                           "The menu must remain entirely on screen.")
         }
-        assertTrackMenuClearsTransport()
         capture("ntv-player-subtitle-menu-near-actions")
+        assertTrackMenuClearsTransport()
         remote.press(.menu)
         XCTAssertTrue(focused(subtitlesTool, timeout: 5))
         remote.press(.right)
         let audioTool = app.buttons["ntv.player.audio"]
         XCTAssertTrue(focused(audioTool, timeout: 5))
         remote.press(.select)
-        assertTrackMenuClearsTransport()
         capture("ntv-player-audio-near-actions")
+        assertTrackMenuClearsTransport()
         remote.press(.menu)
         XCTAssertTrue(focused(audioTool, timeout: 5))
         remote.press(.right)
@@ -899,6 +975,20 @@ final class NTVDesignSmoke: XCTestCase {
         capture("ntv-player-sources-near-actions")
         remote.press(.menu)
         XCTAssertTrue(focused(sourcesTool, timeout: 5), "Back from sources must return to its toolbar control.")
+        remote.press(.right)
+        XCTAssertTrue(focused(app.buttons["ntv.player.more"], timeout: 5))
+        remote.press(.up)
+        let runtime = app.buttons["ntv.player.runtime"]
+        XCTAssertTrue(focused(runtime, timeout: 5), "The time toggle must be reachable from the rightmost tool.")
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(runtime.frame))
+        let previousTimeMode = runtime.value as? String
+        remote.press(.select)
+        XCTAssertNotEqual(runtime.value as? String, previousTimeMode, "Clicking the runtime must toggle elapsed/remaining time.")
+        capture("ntv-player-nuvio-remaining-time")
+        remote.press(.select)
+        XCTAssertEqual(runtime.value as? String, previousTimeMode)
+        remote.press(.left)
+        XCTAssertTrue(focused(play, timeout: 5))
         remote.press(.up)
         XCTAssertTrue(focused(timeline, timeout: 5))
         remote.press(.select)

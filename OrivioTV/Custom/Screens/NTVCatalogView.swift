@@ -4,8 +4,18 @@ import UIKit
 struct NTVCatalogSource: Identifiable {
     let addon: InstalledAddon
     let catalog: ManifestCatalog
-    var id: String { ImageCache.artworkKey("\(addon.id)#\(catalog.type)#\(catalog.id)", budget: nil) }
-    var title: String { NTVFrench.catalogTitle(catalog.name ?? catalog.id.capitalized) }
+    let id: String
+    let title: String
+
+    init(addon: InstalledAddon, catalog: ManifestCatalog) {
+        self.addon = addon
+        self.catalog = catalog
+        // Both inputs are immutable values. Derive their opaque identity once,
+        // rather than rebuilding its string and consulting the image-key
+        // cache for every ForEach/focus/router lookup.
+        id = ImageCache.artworkKey("\(addon.id)#\(catalog.type)#\(catalog.id)", budget: nil)
+        title = NTVFrench.catalogTitle(catalog.name ?? catalog.id.capitalized)
+    }
 }
 
 /// Only visible shelves load. Focus stays inside a row and cannot republish
@@ -78,8 +88,10 @@ struct NTVCatalogSource: Identifiable {
     }
     func adjacentNavigableSourceID(to sourceID: String, forward: Bool) -> String? {
         guard let index = sources.firstIndex(where: { $0.id == sourceID }) else { return nil }
-        let candidates = forward ? Array(sources.dropFirst(index + 1)) : Array(sources.prefix(index).reversed())
-        return candidates.first { !emptyVisibleSources.contains($0.id) }?.id
+        if forward {
+            return sources.dropFirst(index + 1).first { !emptyVisibleSources.contains($0.id) }?.id
+        }
+        return sources.prefix(index).reversed().first { !emptyVisibleSources.contains($0.id) }?.id
     }
     func configure(addons: [InstalledAddon], type: String, scope: String) {
         let available = addons.flatMap { addon in

@@ -13,6 +13,15 @@ published under GPL-3.0. Files consulted under
 - `PlayerTimeline.kt`: thin progress track that thickens for interaction.
 - `PlayerControlActions.kt`: compact lower action rail.
 - `AudioTrackModal.kt`, `SubtitleModal.kt`: separate track selection surfaces.
+- `PlayerLayout.kt`: `formatPlaybackTime` and `formatPlaybackRuntime`.
+
+`NTVNuvioRuntime.swift` contains a Swift port of those two formatting functions
+under GPLv3, using seconds instead of milliseconds and explicitly handling
+non-finite or malformed engine durations. `NTVPlayerRuntimeControl` implements
+the corresponding elapsed/remaining toggle from `PlayerControlActions.kt`.
+The updating time label observes the clock independently of the focus rail.
+On tvOS the button is reached by Up from the rightmost tool, and returns to
+Play with Left. This is a documented partial port, not the entire Nuvio player.
 
 nTV implements that arrangement in SwiftUI, with its own colours and focus
 navigation. The native remote retains discrete skips, a separate scrub mode,
@@ -28,6 +37,12 @@ Validation must include a native screenshot of the lower toolbar and a remote
 round trip from play to timeline, Infos, the video/audio/subtitle tools, and back.
 Windows playback or a passing screenshot check does not establish Apple TV
 frame pacing.
+
+The revised track picker reserves its measured height above the **whole**
+transport, rather than offsetting a panel above the tools while covering the
+timeline. The previous native attempt compiled but failed the adjacency test
+(49.5pt gap with a 48pt limit). The local correction reduces actual stack
+spacing; the test tolerance is unchanged. It still requires a fresh native run.
 
 The supplied desktop screenshot also shows direct aspect, speed, subtitle, audio
 and source controls. nTV exposes those tools in its lower rail, plus episodes

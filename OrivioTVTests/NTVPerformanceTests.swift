@@ -6,6 +6,39 @@ import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    func testReleaseDateReusePreservesFractionsZonesAndUnknownDates() throws {
+        let expected = Date(timeIntervalSince1970: 1_760_572_800)
+        for _ in 0..<20 {
+            XCTAssertEqual(ReleaseDateParser.parse("2025-10-16"), expected)
+            XCTAssertEqual(ReleaseDateParser.parse("2025-10-16T02:00:00+02:00"), expected)
+            XCTAssertEqual(ReleaseDateParser.parse("2025-10-16T00:00:00.250Z")?.timeIntervalSince1970 ?? 0,
+                           expected.timeIntervalSince1970 + 0.25, accuracy: 0.001)
+            XCTAssertNil(ReleaseDateParser.parse("unknown-date"))
+        }
+        XCTAssertEqual(ReleaseDateParser.parse("2025-10-16" + String(repeating: "x", count: 300)), expected,
+                       "Long values must retain the existing ten-character date fallback without being cached.")
+    }
+
+    @MainActor
+    func testCatalogIdentityAndAdjacentRowRoutingSurviveEmptyShelves() throws {
+        let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"routing-fixture","name":"Fixture","version":"1","types":["movie"],"resources":["catalog"],"catalogs":[{"id":"first","type":"movie"},{"id":"empty","type":"movie"},{"id":"last","type":"movie"}]}"#.utf8))
+        let addon = InstalledAddon(manifestURL: "https://example.invalid/catalog/manifest.json", manifest: manifest)
+        let model = NTVCatalogBrowserModel()
+        model.configure(addons: [addon], type: "movie", scope: "profile-one")
+        XCTAssertEqual(model.sources.count, 3)
+        let first = model.sources[0], middle = model.sources[1], last = model.sources[2]
+        let rebuilt = NTVCatalogSource(addon: addon, catalog: first.catalog)
+        XCTAssertEqual(rebuilt.id, first.id, "Recreating immutable source data must preserve poster/focus identity.")
+        XCTAssertFalse(first.id.contains(addon.manifestURL), "Router identifiers must remain opaque.")
+        model.noteVisibleStart(sourceID: middle.id, itemID: nil)
+        XCTAssertEqual(model.adjacentNavigableSourceID(to: first.id, forward: true), last.id)
+        XCTAssertEqual(model.adjacentNavigableSourceID(to: last.id, forward: false), first.id)
+        XCTAssertNil(model.adjacentNavigableSourceID(to: first.id, forward: false))
+        XCTAssertNil(model.adjacentNavigableSourceID(to: last.id, forward: true))
+        model.noteVisibleStart(sourceID: middle.id, itemID: "now-visible")
+        XCTAssertEqual(model.adjacentNavigableSourceID(to: first.id, forward: true), middle.id)
+    }
+
     private actor AvailabilityProbe {
         var active = 0
         var maximum = 0

@@ -88,4 +88,12 @@ final class NTVAnimeLibrary: ObservableObject {
         defaults.set(values.sorted(), forKey: key(profile))
         revision += 1
     }
+    func forget(_ item: MetaItem, profile: Int = ProfileScopedDefaults.activeProfileID) {
+        guard item.id.utf8.count <= 512 else { return }
+        var values = identities(profile)
+        guard values.remove(identity(type: item.type, id: item.id)) != nil else { return }
+        cached[profile] = values
+        defaults.set(values.sorted(), forKey: key(profile))
+        revision += 1
+    }
 }

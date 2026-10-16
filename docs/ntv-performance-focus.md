@@ -16,6 +16,9 @@ cadence du thread principal, pas les images effectivement présentées par GPU.
   indépendant qui pouvait sauter au premier élément après le geste suivant.
   L'affectation immédiate et les reprises nécessaires au montage paresseux
   passent par le même routeur annulable.
+- L'observateur de commandes qui annule ces relances est installé uniquement
+  sur les rangées de catalogue, qui gèrent leurs frontières. Les rangées de
+  l'accueil gardent les commandes de bord libres de remonter au menu racine.
 - Le fond regroupe les changements lors d'un balayage rapide (intervalles
   inférieurs à 140 ms, attente de stabilisation de 180 ms au minimum). Les
   pas isolés conservent le délai habituel et les appareils modestes gardent
@@ -33,6 +36,11 @@ cadence du thread principal, pas les images effectivement présentées par GPU.
 Les tests unitaires et les parcours télécommande sont ajoutés aux sources,
 mais n'ont pas encore été exécutés sur macOS pour ce lot local. La vérification
 syntaxique sous Windows ne remplace ni la compilation ni ces parcours.
+
+Le lecteur a aussi une correction indépendante : l'ancrage bas n'était pas
+transmis du panneau d'informations à ses sélecteurs imbriqués (police, taille,
+couleur des sous-titres). Il est désormais propagé. Un nouveau parcours
+télécommande vérifie la position du sous-menu et le retour au bouton Police.
 
 À comparer avec les mêmes réglages visuels et la même fréquence :
 

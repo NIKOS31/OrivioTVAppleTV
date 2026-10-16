@@ -44,6 +44,10 @@ final class NTVAnimeTests: XCTestCase {
         XCTAssertTrue(store.contains(MetaItem(id: "simkl_upnext_tmdb:123_S1E2", type: "series", name: "Épisode"), profile: 1))
         XCTAssertFalse(String(describing: defaults.dictionaryRepresentation()).contains("Autre nom"), "Persist identifiers only, not metadata or URLs.")
         XCTAssertFalse(String(describing: defaults.dictionaryRepresentation()).contains("tmdb:123"), "Persist opaque digests rather than raw addon identifiers.")
+        store.forget(sparse, profile: 2)
+        XCTAssertTrue(store.contains(sparse, profile: 1), "A different profile cannot undo this profile’s classification.")
+        store.forget(sparse, profile: 1)
+        XCTAssertFalse(NTVAnimeLibrary(defaults: defaults).contains(sparse, profile: 1))
     }
 
     @MainActor

@@ -54,6 +54,13 @@ struct NTVAnimeSavedLibrary: View {
                             .buttonStyle(PlainCardButtonStyle())
                             .accessibilityLabel(entry.meta.name)
                             .accessibilityIdentifier("ntv.anime.saved.\(entry.id)")
+                            .contextMenu {
+                                if !NTVAnimeDomain.contains(entry.meta) {
+                                    Button(entry.meta.isSeries ? "Remettre dans Séries" : "Remettre dans Films", systemImage: "arrow.uturn.backward") {
+                                        anime.forget(entry.meta)
+                                    }
+                                }
+                            }
                         }
                     }
                 }

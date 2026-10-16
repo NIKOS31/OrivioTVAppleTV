@@ -4,6 +4,62 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testAdvancedSubtitleOptionsStayNearTransportAndRestoreFocus() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvPlayerDemo"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        let play = app.buttons["ntv.player.play"]
+        for _ in 0..<10 {
+            if play.exists { break }
+            remote.press(.up)
+            if play.waitForExistence(timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(play, timeout: 8))
+        if play.label == "Pause" { remote.press(.playPause) }
+        remote.press(.down)
+        XCTAssertTrue(focused(app.buttons["ntv.player.info"], timeout: 5))
+        for _ in 0..<3 { remote.press(.right) }
+        let subtitles = app.buttons["ntv.player.subtitles"]
+        XCTAssertTrue(focused(subtitles, timeout: 5))
+        remote.press(.select)
+        let settings = app.buttons["ntv.player.tracks.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        for _ in 0..<8 {
+            if settings.hasFocus { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(focused(settings, timeout: 5))
+        remote.press(.select)
+        let tab = app.buttons["ntv.player.settings.tab.3"]
+        XCTAssertTrue(focused(tab, timeout: 8))
+        let card = app.descendants(matching: .any)["ntv.player.settings.card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        let screen = app.windows.firstMatch.frame
+        XCTAssertTrue(screen.contains(card.frame))
+        XCTAssertGreaterThan(card.frame.midY, screen.midY, "Advanced subtitle settings must be anchored in the lower half.")
+        capture("ntv-player-subtitle-advanced-settings-bottom")
+        remote.press(.down)
+        let font = app.buttons["ntv.player.settings.row.sub.font"]
+        if !font.hasFocus { remote.press(.right) }
+        if !font.hasFocus { remote.press(.down) }
+        XCTAssertTrue(focused(font, timeout: 5), "Font must be reachable from the subtitle track and option columns.")
+        remote.press(.select)
+        let picker = app.descendants(matching: .any)["ntv.player.picker"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        let gap = screen.maxY - picker.frame.maxY
+        capture("ntv-player-subtitle-font-picker-bottom")
+        XCTAssertTrue(screen.contains(picker.frame))
+        XCTAssertGreaterThanOrEqual(gap, 96, "A nested option must inherit the transport anchor, not open as a full-screen picker.")
+        XCTAssertLessThanOrEqual(gap, 180)
+        remote.press(.menu)
+        XCTAssertTrue(focused(font, timeout: 8), "Back from a nested choice must restore its settings row.")
+    }
+
     func testSearchFocusKeepsGlassAndOpensNativeInputOnSelection() {
         continueAfterFailure = false
         let app = XCUIApplication()

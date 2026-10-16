@@ -38,6 +38,8 @@ AniList/Kitsu/MAL, jamais le titre ni le seul genre Animation. Lorsqu'un
 utilisateur ouvre un résultat depuis l'espace Animés, l'identité est retenue
 localement par profil pour reconnaître ensuite une progression sans genres.
 Seules des empreintes opaques sont persistées, sans nom, URL ou jeton.
+Pour un titre placé ici par ce choix, un appui long dans Ma liste permet de
+le remettre dans Films ou Séries sans supprimer sa progression ni son favori.
 
 **Limite réelle** : un addon qui décrit un animé comme une série ordinaire,
 sans indice anime et jamais ouvert dans cet espace, peut encore l'afficher

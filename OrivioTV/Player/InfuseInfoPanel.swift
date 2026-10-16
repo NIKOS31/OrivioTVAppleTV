@@ -62,6 +62,8 @@ struct InfuseInfoPanel: View {
                 if anchoredToTransport {
                     ScrollView(.vertical) { card.padding(6) }
                         .frame(height: 480)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("ntv.player.settings.card")
                 } else {
                     card
                     Spacer(minLength: 0)
@@ -78,7 +80,7 @@ struct InfuseInfoPanel: View {
             .disabled(picker != nil)
 
             if let picker {
-                InfusePickerScreen(viewModel: viewModel, spec: picker) {
+                InfusePickerScreen(viewModel: viewModel, spec: picker, anchoredToTransport: anchoredToTransport) {
                     closePicker()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -834,6 +836,7 @@ struct InfuseInfoPanel: View {
         }
         .buttonStyle(PlainCardButtonStyle())
         .focused($focus, equals: .row(id))
+        .accessibilityIdentifier("ntv.player.settings.row.\(id)")
     }
 
     private func actionRow(_ id: String, label: String, value: String? = nil,

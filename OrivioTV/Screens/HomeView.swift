@@ -2699,12 +2699,8 @@ struct HomePosterRow: View {
                 // Back: jump to the first card if scrolled in; on the first
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
-                .onMoveCommand { _ in
-                    // Observes a command without issuing a second native move.
-                    // In particular, Right after arriving must cancel a retry
-                    // that would otherwise pull the viewer back to card one.
-                    ContentFocusRouter.shared.noteUserMovement(in: row.id)
-                }
+                .modifier(CatalogRowMovementObserver(
+                    enabled: onVerticalMove != nil, rowID: row.id))
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIFocusSystem.movementDidFailNotification)) { note in
                     // A move command also fires when UIKit successfully moves
@@ -2858,6 +2854,27 @@ struct HomePosterRow: View {
                 .padding(.trailing, theme.palette.id == NTVDesign.palette.id
                          ? NTVViewport.horizontalInset : OrivioSpacing.huge)
             }
+        }
+    }
+}
+
+/// Catalog shelves bridge their own failed moves below. Home shelves must
+/// leave the command handler absent so boundary moves reach RootView.
+/// `enabled` is fixed for the lifetime of a row, preserving its view identity.
+private struct CatalogRowMovementObserver: ViewModifier {
+    let enabled: Bool
+    let rowID: String
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.onMoveCommand { _ in
+                // A new command after landing cancels stale retries that
+                // could otherwise pull the viewer back to the first card.
+                ContentFocusRouter.shared.noteUserMovement(in: rowID)
+            }
+        } else {
+            content
         }
     }
 }

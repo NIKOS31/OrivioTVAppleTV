@@ -49,7 +49,7 @@ struct LibraryView: View {
     private var columns: [GridItem] { [GridItem(.adaptive(minimum: posterLayout.posterSize.posterWidth, maximum: posterLayout.posterSize.posterWidth), spacing: OrivioSpacing.lg, alignment: .top)] }
 
     private var sorted: [SavedLibraryItem] {
-        var items = library.sorted
+        var items = library.sorted.filter { !NTVAnimeLibrary.shared.contains($0.metaItem) }
         switch sort {
         case "Name":
             items = items.sorted { $0.metaItem.name.lowercased() < $1.metaItem.name.lowercased() }

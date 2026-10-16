@@ -109,8 +109,9 @@ struct DiscoverView: View {
 
     private var stremioType: String { type == "Séries" || type == "Series" ? "series" : "movie" }
     private var displayedItems: [MetaItem] {
-        guard posterLayout.hideUnreleasedContent || posterLayout.hideUnavailableSources else { return viewModel.items }
+        let profile = ProfileScopedDefaults.activeProfileID
         return viewModel.items.filter {
+            !NTVAnimeLibrary.shared.contains($0, profile: profile) &&
             (!posterLayout.hideUnreleasedContent || !$0.isUnreleased) &&
             (!posterLayout.hideUnavailableSources || (unavailableUntil[$0.id] ?? .distantPast) <= Date() || $0.id == focusedID)
         }
@@ -120,7 +121,7 @@ struct DiscoverView: View {
     private var catalogs: [(addon: InstalledAddon, catalog: ManifestCatalog)] {
         addonManager.catalogAddons.flatMap { addon in
             (addon.manifest.catalogs ?? [])
-                .filter { $0.type == stremioType && !$0.requiresExtra }
+                .filter { $0.type == stremioType && !$0.requiresExtra && !NTVAnimeDomain.contains($0) }
                 .map { (addon, $0) }
         }
     }

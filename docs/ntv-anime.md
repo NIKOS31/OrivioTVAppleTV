@@ -3,6 +3,11 @@
 L'espace reprend les principes d'organisation de [Seanime](https://seanime.app/)
 dans la navigation et les couleurs nTV existantes : une sélection de saison
 avec bannière fixe et affiches, un planning de sept jours et des fiches.
+La comparaison visuelle du 16 octobre porte sur les captures officielles
+de l'application (pas seulement son site) : grand visuel horizontal,
+affiche et résumé court au premier plan, séparation nette avec la galerie,
+métadonnées discrètes sur les affiches. Ces principes sont adaptés à la
+télécommande et aux dimensions nTV ; sa barre horizontale reste conservée.
 Il ne contient pas de serveur vidéo, de téléchargement automatique ou de
 nouveau moteur. Aucun code ni asset Seanime n'est intégré.
 
@@ -14,9 +19,33 @@ historique personnel, URL d'addon, identifiant de débrideur ou URL de lecture.
 Les semaines commencent lundi et les journées sont calculées dans le fuseau
 de l'appareil avec les changements d'heure. Un horaire est une **diffusion
 prévue**, pas la garantie d'un fichier, d'une VF/VOSTFR ou d'un flux disponible.
-Le bouton d'une fiche ouvre la recherche existante dans les addons. Le titre
+Le bouton d'une fiche ouvre une recherche dédiée aux addons **dans l'onglet
+Animés**, avec sa propre pile de navigation et sa propre requête. Le titre
 n'est pas utilisé pour déduire automatiquement un identifiant de série, une
 saison ou un numéro d'épisode d'un autre fournisseur.
+
+## Séparation des catalogues
+
+L'accueil, Films, Séries, la recherche générale, Découvrir, Tout voir et la
+bibliothèque générale écartent les titres identifiés comme animés. Les
+catalogues explicitement nommés/typés anime ne sont plus proposés dans les
+catégories générales. Les favoris et progressions restent enregistrés ;
+**Ma liste**, dans Animés, les présente avec accès aux fiches et à la lecture
+existantes. Le Top Shelf système garde son rôle transversal de reprise.
+
+La classification utilise le type/genre explicite anime et les identifiants
+AniList/Kitsu/MAL, jamais le titre ni le seul genre Animation. Lorsqu'un
+utilisateur ouvre un résultat depuis l'espace Animés, l'identité est retenue
+localement par profil pour reconnaître ensuite une progression sans genres.
+Seules des empreintes opaques sont persistées, sans nom, URL ou jeton.
+
+**Limite réelle** : un addon qui décrit un animé comme une série ordinaire,
+sans indice anime et jamais ouvert dans cet espace, peut encore l'afficher
+dans les catalogues généraux. Il n'y a pas de balayage réseau de chaque
+affiche ni de correspondance AniList/IMDb approximative en arrière-plan.
+L'exclusivité ne peut donc pas encore être annoncée pour des données mal
+classées. La recherche dédiée conserve les résultats des sources généralistes
+pour que l'utilisateur puisse choisir la bonne correspondance.
 
 ## Limites de cette étape
 
@@ -49,4 +78,6 @@ Les requêtes exactes du service ont été exécutées contre l'API publique.
 Tests unitaires préparés : fuseau/changement d'heure, limites calendaires,
 validation de schéma/URLs, dédoublonnage, backoff et réutilisation du cache.
 Parcours natif préparé : saison → planning → fiche → retour au focus →
-recherche d'addon. Ces nouveaux tests attendent leur exécution macOS.
+recherche d'addon dans Animés → Ma liste. Tests supplémentaires de
+classification, persistance par profil, non-confusion avec Animation et
+pagination après filtrage. Ces nouveaux tests attendent leur exécution macOS.

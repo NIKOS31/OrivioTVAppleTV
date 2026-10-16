@@ -59,6 +59,7 @@ struct NTVCatalogSource: Identifiable {
             var preview: [MetaItem] = []
             preview.reserveCapacity(Self.previews)
             for item in page where seen.insert(item.id).inserted {
+                guard !NTVAnimeLibrary.shared.contains(item) else { continue }
                 preview.append(item)
                 if preview.count == Self.previews { break }
             }
@@ -95,7 +96,7 @@ struct NTVCatalogSource: Identifiable {
     }
     func configure(addons: [InstalledAddon], type: String, scope: String) {
         let available = addons.flatMap { addon in
-            (addon.manifest.catalogs ?? []).filter { $0.type == type && !$0.requiresExtra }
+            (addon.manifest.catalogs ?? []).filter { $0.type == type && !$0.requiresExtra && !NTVAnimeDomain.contains($0) }
                 .map { NTVCatalogSource(addon: addon, catalog: $0) }
         }
         let next = scope + "#" + available.map { "\($0.id)#\($0.catalog.hashValue)" }.joined(separator: "#")

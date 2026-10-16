@@ -4,6 +4,35 @@ import UIKit
 
 final class NTVCoreTests: XCTestCase {
     @MainActor
+    func testANewRemoteMovementCancelsSameRowRetriesAndInvalidatesPendingRestoration() async throws {
+        let router = ContentFocusRouter()
+        var assignments = 0
+        let restoreGeneration = router.interactionGeneration
+        router.land(in: "row-a", assign: { assignments += 1 }, landed: { false })
+        router.noteUserMovement()
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertEqual(assignments, 1, "Right after arriving in a row must not be followed by a pull back to its start.")
+        XCTAssertNotEqual(router.interactionGeneration, restoreGeneration)
+    }
+    @MainActor
+    func testTheDepartingRowsMoveNotificationCannotCancelTheNewRowsLanding() async throws {
+        let router = ContentFocusRouter()
+        var assignments = 0
+        let retried = expectation(description: "The destination keeps its deferred landing")
+        router.land(in: "row-b", assign: {
+            assignments += 1
+            if assignments == 2 { retried.fulfill() }
+        }, landed: { false })
+        router.noteUserMovement(in: "row-a")
+        await fulfillment(of: [retried], timeout: 2)
+        XCTAssertGreaterThan(assignments, 1)
+        router.noteUserMovement(in: "row-b")
+        let stoppedAt = assignments
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertEqual(assignments, stoppedAt)
+    }
+
+    @MainActor
     func testADeferredFocusLandingCannotPullTheUserBackFromAnotherRow() async throws {
         let router = ContentFocusRouter()
         var oldAssignments = 0

@@ -249,6 +249,7 @@ struct RootView: View {
     // NavigationStack makes the tab bar hard to reach and focus feel stuck).
     @State private var homePath = NavigationPath()
     @State private var searchPath = NavigationPath()
+    @State private var animePath = NavigationPath()
     @State private var libraryPath = NavigationPath()
     @State private var liveTVPath = NavigationPath()
     @State private var moviesPath = NavigationPath()
@@ -261,6 +262,7 @@ struct RootView: View {
     // Persisted here (not inside SearchView) so leaving the Search tab and
     // coming back keeps the query and results instead of clearing them.
     @StateObject private var searchViewModel = SearchViewModel()
+    @StateObject private var animeSearchViewModel = SearchViewModel(includesAnime: true)
     @State private var playback: PlaybackRequest?
     /// An Auto Link Selector auto-play is on screen; pop its source page once the
     /// player closes so Back returns to the title page, not the source list.
@@ -1143,6 +1145,7 @@ struct RootView: View {
         switch selectedTab {
         case 0: return homePath.isEmpty
         case 1: return searchPath.isEmpty
+        case 8: return animePath.isEmpty
         case 2: return libraryPath.isEmpty
         case 4: return liveTVPath.isEmpty
         case 5: return moviesPath.isEmpty
@@ -1464,8 +1467,14 @@ struct RootView: View {
         }
         .onAppear { ntvCanvas.activate(ntvBackdropID) }
         .onChange(of: ntvBackdropID) { _, id in ntvCanvas.activate(id) }
-        .onChange(of: profiles.activeProfileID) { _, _ in ntvCanvas.clear() }
-        .onChange(of: account.currentUserID) { _, _ in ntvCanvas.clear() }
+        .onChange(of: profiles.activeProfileID) { _, _ in
+            ntvCanvas.clear()
+            clearPrivateSearchState()
+        }
+        .onChange(of: account.currentUserID) { _, _ in
+            ntvCanvas.clear()
+            clearPrivateSearchState()
+        }
         .animation(perf.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: showSidebar)
         .animation(perf.sidebarAnimationEffective && !(navIsTop && theme.palette.id == NTVDesign.palette.id)
@@ -1476,6 +1485,7 @@ struct RootView: View {
         // moves into from the first card of a row — goes through neither, and
         // that is exactly the case a swipe hits.
         .onChange(of: sidebarFocus) { old, new in
+            if new != nil { ContentFocusRouter.shared.noteUserMovement() }
             if old == nil, new != nil { sidebarEngagedAt = Date() }
             // Focus left a revealed auto-hiding rail by some route other than
             // Back / Right (which hide it themselves): it goes away again.
@@ -1543,15 +1553,25 @@ struct RootView: View {
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $seriesPath) }
             }
         case 8:
-            NavigationStack {
+            NavigationStack(path: $animePath) {
                 NTVAnimeView(onSearch: { title in
-                    if !searchPath.isEmpty { searchPath.removeLast(searchPath.count) }
-                    searchViewModel.query = title
-                    selectTab(1)
-                    searchViewModel.search(addonManager: addonManager)
-                }, onBackAtRoot: { focusSidebar(8) })
+                    animePath.append(title)
+                }, onOpenItem: { animePath.append(Route.detail($0)) }, onBackAtRoot: { focusSidebar(8) })
+                .id(profiles.activeProfileID)
                 .modifier(NTVPageTopClearance())
                 .probeScreen("Anime")
+                .navigationDestination(for: String.self) { title in
+                    SearchView(viewModel: animeSearchViewModel, onSelect: { item in
+                        NTVAnimeLibrary.shared.remember(item)
+                        animePath.append(Route.detail(item))
+                    }, animeContext: true)
+                    .modifier(NTVPageTopClearance())
+                    .task(id: title) {
+                        animeSearchViewModel.query = title
+                        animeSearchViewModel.search(addonManager: addonManager)
+                    }
+                }
+                .navigationDestination(for: Route.self) { destination(for: $0, path: $animePath) }
             }
         case 7:
             NavigationStack {
@@ -1637,7 +1657,7 @@ struct RootView: View {
     /// Handles tapping a rail tab: collapse the panel and force focus into the
     /// fresh tab's content by making the rail momentarily unfocusable.
     private func selectTab(_ newTab: Int) {
-        ContentFocusRouter.shared.cancelLanding()
+        ContentFocusRouter.shared.noteUserMovement()
         let enteringHomeFresh = selectedTab != 0 && newTab == 0
         AppProbe.nav("tab \(Self.tabName(selectedTab)) → \(Self.tabName(newTab))"
                      + (enteringHomeFresh ? "  (Home rebuilds; rail waits on content)" : ""))
@@ -1665,7 +1685,7 @@ struct RootView: View {
     /// dropped — a Menu press in one of those windows did nothing. A deliberate
     /// Back always wins: enable now, focus on the next tick.
     private func focusSidebar(_ tab: Int) {
-        ContentFocusRouter.shared.cancelLanding()
+        ContentFocusRouter.shared.noteUserMovement()
         AppProbe.focus("focusSidebar(\(Self.tabName(tab)))"
                        + "  revealed=\(sidebarRevealed.probe) enabled=\(sidebarEnabled.probe)")
         // Menu at a tab root is the other way back to a hidden rail.
@@ -1805,6 +1825,14 @@ struct RootView: View {
             onOpenDiscover: { searchPath.append(Route.discover) }
         )
         .probeScreen("Search")
+    }
+
+    private func clearPrivateSearchState() {
+        ContentFocusRouter.shared.noteUserMovement()
+        searchViewModel.resetForProfile()
+        animeSearchViewModel.resetForProfile()
+        if !searchPath.isEmpty { searchPath.removeLast(searchPath.count) }
+        if !animePath.isEmpty { animePath.removeLast(animePath.count) }
     }
 
     private var libraryRoot: some View {
@@ -2227,6 +2255,7 @@ struct RootView: View {
         switch selectedTab {
         case 0: if !homePath.isEmpty { homePath.removeLast() }
         case 1: if !searchPath.isEmpty { searchPath.removeLast() }
+        case 8: if !animePath.isEmpty { animePath.removeLast() }
         case 2: if !libraryPath.isEmpty { libraryPath.removeLast() }
         case 4: if !liveTVPath.isEmpty { liveTVPath.removeLast() }
         case 5: if !moviesPath.isEmpty { moviesPath.removeLast() }
@@ -2542,6 +2571,7 @@ struct RootView: View {
             // leaves the pushed screen behind as a grey ghost.
             switch selectedTab {
             case 1: if !searchPath.isEmpty { searchPath.removeLast(searchPath.count) }
+            case 8: if !animePath.isEmpty { animePath.removeLast(animePath.count) }
             case 2: if !libraryPath.isEmpty { libraryPath.removeLast(libraryPath.count) }
             case 4: if !liveTVPath.isEmpty { liveTVPath.removeLast(liveTVPath.count) }
             case 5: if !moviesPath.isEmpty { moviesPath.removeLast(moviesPath.count) }

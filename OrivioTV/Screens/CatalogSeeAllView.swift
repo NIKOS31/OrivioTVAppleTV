@@ -5,18 +5,24 @@ final class CatalogSeeAllViewModel: ObservableObject {
     @Published var items: [MetaItem] = []
     @Published var isLoading = false
     @Published var reachedEnd = false
+    @Published private(set) var failed = false
+    @Published private(set) var needsPageAdvance = false
 
     let addon: InstalledAddon
     let catalog: ManifestCatalog
     private var seenIDs = Set<String>()
+    private var consumedItems = 0
+    private let fetch: (Int) async throws -> [MetaItem]
 
-    init(addon: InstalledAddon, catalog: ManifestCatalog) {
+    init(addon: InstalledAddon, catalog: ManifestCatalog, fetch: ((Int) async throws -> [MetaItem])? = nil) {
         self.addon = addon
         self.catalog = catalog
+        self.fetch = fetch ?? { try await StremioAPI.catalog(addon: addon, catalog: catalog, skip: $0) }
     }
 
     /// Load the next page. Stremio paginates via `skip`; we advance by however
-    /// many items we already have and stop when a page adds nothing new.
+    /// many provider items were consumed, including hidden anime. A filtered
+    /// page must not be fetched forever from the same visible-item offset.
     func loadMore() async {
         guard !isLoading, !reachedEnd else { return }
         isLoading = true
@@ -26,13 +32,20 @@ final class CatalogSeeAllViewModel: ObservableObject {
         // showed "no titles" for a full catalog with no way to retry, and one
         // mid-scroll ended infinite scroll for the visit. A failed page just
         // leaves the trigger cell in place to try again.
-        guard let page = try? await StremioAPI.catalog(addon: addon, catalog: catalog, skip: items.count)
-        else { return }
+        let page: [MetaItem]
+        do { page = try await fetch(consumedItems) }
+        catch { failed = true; return }
+        failed = false
         let fresh = page.filter { seenIDs.insert($0.id).inserted }
+        consumedItems += page.count
         if fresh.isEmpty {
             reachedEnd = true
+            needsPageAdvance = false
         } else {
-            items.append(contentsOf: fresh)
+            let profile = ProfileScopedDefaults.activeProfileID
+            let visible = fresh.filter { !NTVAnimeLibrary.shared.contains($0, profile: profile) }
+            items.append(contentsOf: visible)
+            needsPageAdvance = visible.isEmpty
         }
     }
 }
@@ -70,7 +83,15 @@ struct CatalogSeeAllView: View {
             if viewModel.items.isEmpty && viewModel.isLoading {
                 OrivioLoadingView(label: "Chargement de \(title)", holdsFocus: true)
             } else if viewModel.items.isEmpty {
-                OrivioEmptyState(icon: "square.stack.3d.up.slash", title: title, message: "Ce catalogue ne contient aucun titre.", holdsFocus: true)
+                VStack(spacing: 24) {
+                    Text(title).font(.system(size: 38, weight: .semibold))
+                    Text(viewModel.failed ? "Le catalogue n’a pas pu être chargé." : viewModel.reachedEnd ? "Aucun autre titre dans ce catalogue." : "Les animés de cette page sont disponibles dans l’espace Animés.")
+                        .font(.system(size: 29)).foregroundStyle(theme.palette.textSecondary)
+                    if !viewModel.reachedEnd {
+                        Button(viewModel.failed ? "Réessayer" : "Continuer dans ce catalogue") { Task { await viewModel.loadMore() } }
+                            .buttonStyle(NTVActionButtonStyle())
+                    }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
@@ -102,6 +123,10 @@ struct CatalogSeeAllView: View {
                             ProgressView().tint(theme.palette.secondary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.bottom, OrivioSpacing.huge)
+                        } else if !viewModel.reachedEnd && (viewModel.needsPageAdvance || viewModel.failed) {
+                            Button(viewModel.failed ? "Réessayer" : "Charger la suite") { Task { await viewModel.loadMore() } }
+                                .buttonStyle(NTVActionButtonStyle())
+                                .padding(.horizontal, OrivioSpacing.huge)
                         }
                     }
                     .padding(.bottom, OrivioSpacing.huge)

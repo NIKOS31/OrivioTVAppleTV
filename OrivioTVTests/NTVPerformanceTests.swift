@@ -6,6 +6,16 @@ import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    func testFastFocusSweepCoalescesHeroWorkWithoutSlowingAnIsolatedStep() {
+        var policy = NTVFocusSettlePolicy()
+        XCTAssertEqual(policy.delay(at: 10, minimumNanoseconds: 60_000_000), 60_000_000)
+        XCTAssertEqual(policy.delay(at: 10.08, minimumNanoseconds: 60_000_000), 180_000_000)
+        XCTAssertEqual(policy.delay(at: 10.16, minimumNanoseconds: 60_000_000), 180_000_000)
+        XCTAssertEqual(policy.delay(at: 10.60, minimumNanoseconds: 60_000_000), 60_000_000)
+        XCTAssertEqual(policy.delay(at: 10.68, minimumNanoseconds: 220_000_000), 220_000_000)
+        XCTAssertEqual(policy.delay(at: .nan, minimumNanoseconds: 60_000_000), 60_000_000)
+        XCTAssertEqual(policy.delay(at: 9, minimumNanoseconds: 60_000_000), 60_000_000)
+    }
     func testReleaseDateReusePreservesFractionsZonesAndUnknownDates() throws {
         let expected = Date(timeIntervalSince1970: 1_760_572_800)
         for _ in 0..<20 {

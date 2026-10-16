@@ -2,6 +2,89 @@ import XCTest
 @testable import OrivioTV
 
 final class NTVAnimeTests: XCTestCase {
+    func testAnimeDomainUsesExplicitProviderHintsInsteadOfAnimationOrTitleGuessing() {
+        XCTAssertTrue(NTVAnimeDomain.contains(MetaItem(id: "fixture", type: "anime", name: "Titre")))
+        XCTAssertTrue(NTVAnimeDomain.contains(MetaItem(id: "kitsu:123", type: "series", name: "Titre")))
+        XCTAssertTrue(NTVAnimeDomain.contains(MetaItem(id: "fixture", type: "movie", name: "Titre", genres: ["Animés", "Action"])))
+        XCTAssertTrue(NTVAnimeDomain.contains(MetaItem(id: "fixture", type: "series", name: "Titre", genres: ["Japanese Animation"])))
+        XCTAssertFalse(NTVAnimeDomain.contains(MetaItem(id: "fixture", type: "movie", name: "Film d’animation", genres: ["Animation", "Family"])))
+        XCTAssertFalse(NTVAnimeDomain.contains(MetaItem(id: "fixture", type: "movie", name: "Anime dans le titre", genres: ["Documentary"])))
+        XCTAssertTrue(MetaItem(id: "kitsu:123", type: "anime", name: "Série").isSeries)
+        XCTAssertFalse(MetaItem(id: "fixture", type: "movie", name: "Film", genres: ["Anime"]).isSeries)
+    }
+
+    @MainActor
+    func testSearchStateDoesNotCarryResultsAcrossProfiles() {
+        let model = SearchViewModel(includesAnime: true)
+        model.query = "Ancienne recherche"
+        model.results = [MetaItem(id: "fixture", type: "anime", name: "Titre du profil précédent")]
+        model.trending = model.results
+        model.resetForProfile()
+        XCTAssertTrue(model.query.isEmpty)
+        XCTAssertTrue(model.results.isEmpty)
+        XCTAssertTrue(model.trending.isEmpty)
+        XCTAssertFalse(model.isSearching)
+    }
+
+    @MainActor
+    func testAnimeRecognitionPersistsPerProfileAndKeepsMovieAndSeriesIDsDistinct() throws {
+        let suite = "ntv.anime.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let sparse = MetaItem(id: "tmdb:123", type: "series", name: "Titre")
+        let store = NTVAnimeLibrary(defaults: defaults)
+        XCTAssertFalse(store.contains(sparse, profile: 1))
+        store.remember(sparse, profile: 1)
+        store.remember(sparse, profile: 1)
+        XCTAssertEqual(store.revision, 1, "A duplicate selection must not republish the library.")
+        XCTAssertTrue(store.contains(MetaItem(id: "tmdb:123", type: "tv", name: "Autre nom"), profile: 1))
+        XCTAssertFalse(store.contains(MetaItem(id: "tmdb:123", type: "movie", name: "Film"), profile: 1))
+        XCTAssertFalse(store.contains(sparse, profile: 2))
+        XCTAssertTrue(NTVAnimeLibrary(defaults: defaults).contains(sparse, profile: 1))
+        XCTAssertTrue(store.contains(MetaItem(id: "simkl_upnext_tmdb:123_S1E2", type: "series", name: "Épisode"), profile: 1))
+        XCTAssertFalse(String(describing: defaults.dictionaryRepresentation()).contains("Autre nom"), "Persist identifiers only, not metadata or URLs.")
+        XCTAssertFalse(String(describing: defaults.dictionaryRepresentation()).contains("tmdb:123"), "Persist opaque digests rather than raw addon identifiers.")
+    }
+
+    @MainActor
+    func testGeneralCatalogDoesNotOfferAnExplicitAnimeShelf() throws {
+        let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"fixture","name":"Fixture","version":"1","types":["series"],"resources":["catalog"],"catalogs":[{"type":"series","id":"all","name":"Populaires"},{"type":"series","id":"anime-top","name":"Animés"},{"type":"series","id":"animation","name":"Animation"}]}"#.utf8))
+        let addon = InstalledAddon(manifestURL: "https://example.invalid/manifest.json", manifest: manifest)
+        let model = NTVCatalogBrowserModel()
+        model.configure(addons: [addon], type: "series", scope: "fixture")
+        XCTAssertEqual(model.sources.map(\.catalog.id), ["all", "animation"])
+    }
+
+    @MainActor
+    func testFilteringAnimeDoesNotRepeatTheFirstPageOrHideLaterMovies() async throws {
+        let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"fixture","name":"Fixture","version":"1","types":["movie"],"resources":["catalog"],"catalogs":[{"type":"movie","id":"all"}]}"#.utf8))
+        let addon = InstalledAddon(manifestURL: "https://example.invalid/manifest.json", manifest: manifest)
+        var offsets: [Int] = []
+        let model = CatalogSeeAllViewModel(addon: addon, catalog: manifest.catalogs![0], fetch: { offset in
+            offsets.append(offset)
+            if offset == 0 { return [MetaItem(id: "fixture.anime", type: "movie", name: "Animé", genres: ["Anime"])] }
+            if offset == 1 { return [MetaItem(id: "fixture.movie", type: "movie", name: "Film")] }
+            return []
+        })
+        await model.loadMore()
+        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertFalse(model.reachedEnd)
+        XCTAssertTrue(model.needsPageAdvance)
+        await model.loadMore()
+        XCTAssertEqual(offsets, [0, 1])
+        XCTAssertEqual(model.items.map(\.id), ["fixture.movie"])
+        XCTAssertFalse(model.needsPageAdvance)
+        await model.loadMore()
+        XCTAssertTrue(model.reachedEnd)
+    }
+
+    func testAnimePresentationUsesFrenchSeasonAndFormatLabels() throws {
+        XCTAssertEqual(NTVAnimeRequest.season(year: 2026, name: "FALL").seasonLabel, "Automne 2026")
+        XCTAssertNil(NTVAnimeRequest.day(start: 1, end: 2).seasonLabel)
+        let data = Data(#"{"id":1,"title":{"romaji":"Titre"},"isAdult":false,"format":"MOVIE"}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(NTVAnimeMedia.self, from: data).formatLabel, "Film")
+    }
+
     private func calendar() -> Calendar {
         var value = Calendar(identifier: .gregorian)
         value.timeZone = TimeZone(identifier: "Europe/Paris")!

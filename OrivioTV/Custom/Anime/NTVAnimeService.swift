@@ -20,6 +20,16 @@ struct NTVAnimeMedia: Decodable, Identifiable, Sendable {
         return "Animé"
     }
     var searchTitle: String { displayTitle }
+    var formatLabel: String {
+        switch format {
+        case "TV", "TV_SHORT": return "Série"
+        case "MOVIE": return "Film"
+        case "OVA", "ONA": return format ?? "Animé"
+        case "SPECIAL": return "Épisode spécial"
+        case "MUSIC": return "Musique"
+        default: return "Animé"
+        }
+    }
     var summary: String {
         // AniList can retain inline tags even with asHtml:false. Treat these
         // as plain text; never instantiate an HTML renderer for metadata.
@@ -88,6 +98,12 @@ enum NTVAnimeRequest: Hashable, Sendable {
         case let .season(year, name): return "season.\(year).\(name)"
         case let .day(start, end): return "day.\(start).\(end)"
         }
+    }
+    var seasonLabel: String? {
+        guard case let .season(year, name) = self else { return nil }
+        let names = ["WINTER": "Hiver", "SPRING": "Printemps", "SUMMER": "Été", "FALL": "Automne"]
+        guard let label = names[name] else { return nil }
+        return "\(label) \(year)"
     }
 }
 

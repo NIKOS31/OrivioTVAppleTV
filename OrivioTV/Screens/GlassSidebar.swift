@@ -27,7 +27,7 @@ enum AppTab: Int, CaseIterable, Identifiable {
         case .home: return "house.fill"
         case .movies: return "film.fill"
         case .series: return "play.rectangle.on.rectangle.fill"
-        case .anime: return "sparkles.tv"
+        case .anime: return "play.rectangle"
         case .addons: return "puzzlepiece.extension.fill"
         case .search: return "magnifyingglass"
         case .library: return "bookmark.fill"

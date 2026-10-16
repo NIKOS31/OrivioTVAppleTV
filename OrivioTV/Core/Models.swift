@@ -539,7 +539,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         return year > Calendar.current.component(.year, from: Date())
     }
 
-    var isSeries: Bool { type == "series" || type == "tv" }
+    var isSeries: Bool { type == "series" || type == "tv" || type == "anime" }
 
     /// Capitalized content type for meta lines ("Movie" / "Series"), matching the APK.
     var typeLabel: String {

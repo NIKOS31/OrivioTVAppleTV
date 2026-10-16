@@ -14,14 +14,16 @@ final class SearchViewModel: ObservableObject {
     private var completedQuery: String?
     private let requestLimit: Int
     private let debounce: Duration
+    let includesAnime: Bool
     private let catalogLoader: @Sendable (InstalledAddon, ManifestCatalog, String) async throws -> [MetaItem]
 
-    init(requestLimit: Int = AddonSweepLimits.catalogs,
+    init(includesAnime: Bool = false, requestLimit: Int = AddonSweepLimits.catalogs,
          debounce: Duration = .milliseconds(350),
          catalogLoader: @escaping @Sendable (InstalledAddon, ManifestCatalog, String) async throws -> [MetaItem] = {
              try await StremioAPI.catalog(addon: $0, catalog: $1, search: $2)
          }) {
         self.requestLimit = max(1, requestLimit)
+        self.includesAnime = includesAnime
         self.debounce = debounce
         self.catalogLoader = catalogLoader
     }
@@ -30,6 +32,12 @@ final class SearchViewModel: ObservableObject {
         searchTask?.cancel()
         searchTask = nil
         isSearching = false
+    }
+
+    func resetForProfile() {
+        suspendSearch()
+        query = ""; results = []; trending = []
+        loadedTrending = false; completedQuery = nil
     }
 
     func resumeSearchIfNeeded(addonManager: AddonManager) {
@@ -49,7 +57,7 @@ final class SearchViewModel: ObservableObject {
             return
         }
         isSearching = true
-        let targets: [(InstalledAddon, ManifestCatalog)] = Self.searchTargets(addonManager)
+        let targets = Self.searchTargets(addonManager).filter { includesAnime || !NTVAnimeDomain.contains($0.1) }
         let work = targets.map { ($0.0, $0.1, Self.limit(for: $0.0)) }
         let loader = catalogLoader, limit = requestLimit, delay = debounce
         searchTask = Task {
@@ -75,6 +83,7 @@ final class SearchViewModel: ObservableObject {
                 // `MetaItem.id`, so "tt123" as `series` from one addon and
                 // as `tv` from another must not both survive.
                 for item in items where !seen.contains(item.id) {
+                    guard includesAnime || !NTVAnimeLibrary.shared.contains(item) else { continue }
                     seen.insert(item.id)
                     merged.append(item)
                 }
@@ -150,12 +159,12 @@ final class SearchViewModel: ObservableObject {
             .map(\.element)
         for addon in ranked {
             guard !Task.isCancelled else { loadedTrending = false; return }
-            guard let catalog = (addon.manifest.catalogs ?? []).first(where: { !$0.requiresExtra })
+            guard let catalog = (addon.manifest.catalogs ?? []).first(where: { !$0.requiresExtra && NTVAnimeDomain.contains($0) == includesAnime })
             else { continue }
             if let items = try? await StremioAPI.catalog(addon: addon, catalog: catalog),
                !items.isEmpty {
                 guard !Task.isCancelled else { loadedTrending = false; return }
-                trending = Array(items.deduplicatedByID().prefix(18))
+                trending = Array(items.deduplicatedByID().filter { includesAnime || !NTVAnimeLibrary.shared.contains($0) }.prefix(18))
                 return
             }
         }
@@ -173,6 +182,7 @@ struct SearchView: View {
 
     let onSelect: (MetaItem) -> Void
     var onOpenDiscover: () -> Void = {}
+    var animeContext = false
 
     private var usesNTVLayout: Bool { theme.palette.id == NTVDesign.palette.id }
     private var contentInset: CGFloat { usesNTVLayout ? NTVViewport.horizontalInset : OrivioSpacing.huge }
@@ -208,25 +218,35 @@ struct SearchView: View {
     }
 
     private func searchContent(availableWidth: CGFloat?) -> some View {
-        ZStack {
+        let profile = ProfileScopedDefaults.activeProfileID
+        let results = viewModel.results.filter { animeContext || !NTVAnimeLibrary.shared.contains($0, profile: profile) }
+        let trending = viewModel.trending.filter { animeContext || !NTVAnimeLibrary.shared.contains($0, profile: profile) }
+        let movieResults = results.filter { !$0.isSeries }
+        let showResults = results.filter(\.isSeries)
+        return ZStack {
             ATVBackground()
             VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
+                if animeContext {
+                    Text("Animés · Mes sources").font(.system(size: 38, weight: .semibold))
+                        .padding(.horizontal, contentInset)
+                        .accessibilityIdentifier("ntv.anime.sources.heading")
+                }
                 // Above the grid in z as well as in layout: the scroller below
                 // is deliberately unclipped (see `scrollClipDisabled`), so a
                 // row riding up used to draw straight over the field.
                 searchBar
                     .zIndex(1)
                 ScrollView(.vertical) {
-                    if viewModel.isSearching && viewModel.results.isEmpty {
+                    if viewModel.isSearching && results.isEmpty {
                         OrivioLoadingView(label: "Recherche").frame(height: 480)
-                    } else if !viewModel.results.isEmpty {
+                    } else if !results.isEmpty {
                         // Results split by type: Movies on top, Shows below.
                         VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
                             if !movieResults.isEmpty {
-                                resultSection(title: "Films", items: movieResults, availableWidth: availableWidth)
+                                resultSection(title: animeContext ? "Films et résultats de mes addons" : "Films", items: movieResults, availableWidth: availableWidth)
                             }
                             if !showResults.isEmpty {
-                                resultSection(title: "Séries", items: showResults, availableWidth: availableWidth)
+                                resultSection(title: animeContext ? "Séries et épisodes" : "Séries", items: showResults, availableWidth: availableWidth)
                             }
                         }
                         .padding(.top, OrivioSpacing.sm)
@@ -238,9 +258,9 @@ struct SearchView: View {
                             message: "Aucun résultat pour « \(viewModel.query) »."
                         )
                         .frame(height: 480)
-                    } else if !viewModel.trending.isEmpty {
+                    } else if !trending.isEmpty {
                         // Idle: something to browse instead of an empty void.
-                        resultSection(title: "Tendances", items: viewModel.trending, availableWidth: availableWidth)
+                        resultSection(title: animeContext ? "Animés de mes sources" : "Tendances", items: trending, availableWidth: availableWidth)
                             .padding(.top, OrivioSpacing.sm)
                             .padding(.bottom, OrivioSpacing.huge)
                     } else {
@@ -281,20 +301,14 @@ struct SearchView: View {
 
     private var searchBar: some View {
         HStack(spacing: OrivioSpacing.md) {
-            SearchField(text: $viewModel.query)
-            Button(action: onOpenDiscover) { SearchBarIcon(systemName: "square.grid.2x2") }
-                .buttonStyle(PlainCardButtonStyle())
+            SearchField(text: $viewModel.query, placeholder: animeContext ? "Rechercher un animé dans mes addons" : "Rechercher un film ou une série")
+            if !animeContext {
+                Button(action: onOpenDiscover) { SearchBarIcon(systemName: "square.grid.2x2") }
+                    .buttonStyle(PlainCardButtonStyle())
+            }
         }
         .padding(.horizontal, contentInset)
         .focusSection()
-    }
-
-    private var movieResults: [MetaItem] {
-        viewModel.results.filter { !$0.isSeries }
-    }
-
-    private var showResults: [MetaItem] {
-        viewModel.results.filter(\.isSeries)
     }
 
     /// One titled grid section ("Movies" / "Shows" / "Trending"), its own focus
@@ -354,6 +368,7 @@ private struct SearchField: View {
     @EnvironmentObject private var theme: ThemeManager
     @FocusState private var focused: Bool
     @Binding var text: String
+    var placeholder = "Rechercher un film ou une série"
     @State private var editing = false
 
     @ViewBuilder
@@ -362,7 +377,7 @@ private struct SearchField: View {
             Button { editing = true } label: {
                 HStack(spacing: 16) {
                     Image(systemName: "magnifyingglass")
-                    Text(text.isEmpty ? "Rechercher un film ou une série" : text)
+                    Text(text.isEmpty ? placeholder : text)
                         .foregroundStyle(text.isEmpty ? NTVDesign.textSecondary : NTVDesign.textPrimary)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -375,12 +390,12 @@ private struct SearchField: View {
             }
             .buttonStyle(PlainCardButtonStyle())
             .focused($focused)
-            .accessibilityLabel("Rechercher un film ou une série")
+            .accessibilityLabel(placeholder)
             .accessibilityValue(text)
             .accessibilityHint("Ouvrir la saisie et la dictée.")
             .accessibilityIdentifier("ntv.search.field")
             .fullScreenCover(isPresented: $editing, onDismiss: { focused = true }) {
-                NTVSearchEntry(text: $text) { editing = false }
+                NTVSearchEntry(text: $text, placeholder: placeholder) { editing = false }
             }
         } else {
             legacyField
@@ -392,7 +407,7 @@ private struct SearchField: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(theme.palette.textTertiary)
-            TextField("Rechercher un film ou une série", text: $text)
+            TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .focused($focused)
                 .font(.system(size: 26))
@@ -412,12 +427,13 @@ private struct SearchField: View {
 /// surface remains glass; the native editor appears only after selection.
 private struct NTVSearchEntry: View {
     @Binding var text: String
+    var placeholder = "Film ou série"
     let done: () -> Void
     @FocusState private var editing: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
             Text("Rechercher").font(.system(size: 38, weight: .semibold))
-            TextField("Film ou série", text: $text)
+            TextField(placeholder, text: $text)
                 .font(.system(size: 29))
                 .foregroundStyle(editing ? .black : .white)
                 .focused($editing)

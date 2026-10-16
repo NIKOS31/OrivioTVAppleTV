@@ -145,7 +145,12 @@ final class HomeViewModel: ObservableObject {
 
     static func heroCatalogRow(_ entries: [HomeEntry], heroKey: String) -> HomeRow? {
         let catalogs = entries.compactMap { entry -> HomeRow? in
-            if case .catalog(let row) = entry { return row }
+            if case .catalog(let row) = entry {
+                let profile = ProfileScopedDefaults.activeProfileID
+                let items = row.items.filter { !NTVAnimeLibrary.shared.contains($0, profile: profile) }
+                guard !items.isEmpty else { return nil }
+                return HomeRow(id: row.id, title: row.title, items: items, addon: row.addon, catalog: row.catalog)
+            }
             return nil
         }
         if !heroKey.isEmpty, let chosen = catalogs.first(where: { $0.catalogKey == heroKey }) {
@@ -226,7 +231,7 @@ final class HomeViewModel: ObservableObject {
     func continueItems(
         progress store: ProgressStore, sortMode: ContinueWatchingSortMode
     ) -> [WatchProgress] {
-        store.continueWatching(sortMode: sortMode).map(withCatalogArt)
+        store.continueWatching(sortMode: sortMode).filter { !NTVAnimeLibrary.shared.contains(metaFor($0)) }.map(withCatalogArt)
     }
 
     /// Collections that share ONE combined "Collections" row (viewMode other
@@ -385,7 +390,7 @@ final class HomeViewModel: ObservableObject {
         // user's order was merged in. `maxHomeRows` below is the real ceiling,
         // and it cuts in the user's own order.
         for addon in activeCatalogAddons {
-            for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome {
+            for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome && !NTVAnimeDomain.contains(catalog) {
                 let key = HomeCatalogSettingsStore.catalogKey(
                     addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id
                 )
@@ -501,7 +506,7 @@ final class HomeViewModel: ObservableObject {
                     // shipped could still hold duplicate ids. Unreleased items
                     // are dropped here too — the cache may predate the setting
                     // (or the title's release date may have passed since).
-                    var staleItems = items.deduplicatedByID()
+                    var staleItems = items.deduplicatedByID().filter { !NTVAnimeLibrary.shared.contains($0) }
                     if settings.hideUnreleasedContent {
                         staleItems = staleItems.filter { !$0.isUnreleased }
                     }
@@ -604,6 +609,7 @@ final class HomeViewModel: ObservableObject {
                     // "Hide unreleased content" (Settings → Layout). Filtered
                     // BEFORE the 30-item trim so a row full of upcoming titles
                     // still fills up with things you can actually watch.
+                    items = items.filter { !NTVAnimeDomain.contains($0) }
                     if hideUnreleased { items = items.filter { !$0.isUnreleased } }
                     guard !items.isEmpty else {
                         NSLog("[OrivioHome] row dropped — %@: %@ (%@)",
@@ -1067,7 +1073,7 @@ final class HeroFocus: ObservableObject {
         // cutting the first title short — on the pinned billboard, right
         // after its trailer had finally started.
         lastRotation = Date()
-        if item == nil, let first = items.first { item = first }
+        if item == nil || item.map({ NTVAnimeLibrary.shared.contains($0) }) == true { item = items.first }
     }
 
     /// Record a user interaction so the timer holds off for a beat.
@@ -1118,6 +1124,7 @@ final class HeroFocus: ObservableObject {
     /// passed the guard (item still X) without cancelling the pending Y, so Y
     /// landed while focus sat on X — the "wrong hero" flash.
     private var pendingID: String?
+    private var focusSettle = NTVFocusSettlePolicy()
     private var enriched: [String: MetaItem] = [:]
     /// Insertion order for `enriched`, so the cache can be capped. Each entry
     /// can be a full series (hundreds of episodes); unbounded, a long browse
@@ -1164,8 +1171,9 @@ final class HeroFocus: ObservableObject {
         }
         task?.cancel()
         pendingID = newItem.id
+        let settle = focusSettle.delay(at: ProcessInfo.processInfo.systemUptime, minimumNanoseconds: settleNanos)
         task = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: settleNanos)   // let focus settle
+            try? await Task.sleep(nanoseconds: settle)   // let focus settle
             guard !Task.isCancelled else { return }
             let display = enriched[newItem.id] ?? newItem
             let fade = PerformanceSettingsStore.shared.heroCrossfadeEffective
@@ -2116,7 +2124,7 @@ struct HomeView: View {
         // went back to that episode) is shown at once, without waiting for the
         // refresh to re-judge it.
         let active = progressStore.continueWatching(sortMode: sortMode)
-            .filter { !supersededContinueRows.contains(Self.continueRowStamp($0)) }
+            .filter { !supersededContinueRows.contains(Self.continueRowStamp($0)) && !NTVAnimeLibrary.shared.contains(viewModel.metaFor($0)) }
         let activeMetaIDs = Set(active.map(\.metaID))
         // Also filtered here, not only in the async refresh: `removeShow` on a
         // synthesised card has no progress rows to delete, so the card would sit
@@ -2124,6 +2132,7 @@ struct HomeView: View {
         // sequential metadata fetches first.
         let additions = nextUpContinueItems.filter {
             !activeMetaIDs.contains($0.metaID)
+                && !NTVAnimeLibrary.shared.contains(viewModel.metaFor($0))
                 && !progressStore.dismissedNextUpShows.contains($0.metaID)
                 && !trakt.droppedShowIDs.contains($0.metaID)
         }
@@ -2621,8 +2630,9 @@ struct HomePosterRow: View {
     @FocusState private var seeAllFocused: Bool
 
     private var displayedItems: [MetaItem] {
-        guard homeCatalogSettings.hideUnreleasedContent || homeCatalogSettings.hideUnavailableSources else { return row.items }
+        let profile = ProfileScopedDefaults.activeProfileID
         return row.items.filter {
+            !NTVAnimeLibrary.shared.contains($0, profile: profile) &&
             (!homeCatalogSettings.hideUnreleasedContent || !$0.isUnreleased) &&
             (!homeCatalogSettings.hideUnavailableSources || (unavailableUntil[$0.id] ?? .distantPast) <= Date() || $0.id == focusedID)
         }
@@ -2689,6 +2699,12 @@ struct HomePosterRow: View {
                 // Back: jump to the first card if scrolled in; on the first
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
+                .onMoveCommand { _ in
+                    // Observes a command without issuing a second native move.
+                    // In particular, Right after arriving must cancel a retry
+                    // that would otherwise pull the viewer back to card one.
+                    ContentFocusRouter.shared.noteUserMovement(in: row.id)
+                }
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIFocusSystem.movementDidFailNotification)) { note in
                     // A move command also fires when UIKit successfully moves
@@ -2728,13 +2744,13 @@ struct HomePosterRow: View {
                         currentRow: row.id, restorationItem: restoreItemID)
                     ContentFocusRouter.shared.noteFocused(row: row.id)
                     guard enteredRow, let first = displayedItems.first?.id, first != new else { return }
-                    // Only the row receiving focus does this work. A later
-                    // touch movement wins over this deferred entry correction.
-                    DispatchQueue.main.async {
-                        guard focusedID == new else { return }
+                    // Normalize in this update, rather than scheduling an
+                    // unowned next-turn jump that can outlive a quick Up/Down.
+                    // The router owns/cancels retries while lazy cards mount.
+                    ContentFocusRouter.shared.land(in: row.id, assign: {
                         proxy.scrollTo(first, anchor: .leading)
                         focusedID = first
-                    }
+                    }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
                 .onChange(of: emptyRowFocused) { _, focused in
                     if focused { ContentFocusRouter.shared.noteFocused(row: row.id) }
@@ -2750,11 +2766,10 @@ struct HomePosterRow: View {
                     // its See All header, before any poster receives focus.
                     // Treat that as a row entry too; otherwise poster-only
                     // normalization never runs and Down strands focus here.
-                    DispatchQueue.main.async {
-                        guard seeAllFocused else { return }
+                    ContentFocusRouter.shared.land(in: row.id, assign: {
                         proxy.scrollTo(first, anchor: .leading)
                         focusedID = first
-                    }
+                    }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
                 .task(id: focusFirstRequestID) {
                     guard focusFirstRequestID != nil else { return }
@@ -2765,29 +2780,22 @@ struct HomePosterRow: View {
                     // This task belongs to ONE catalog move. A newer move, a
                     // detail push or disappearance cancels it; no detached
                     // router retry may drag focus back to an obsolete row.
-                    if focusFirstScroll { proxy.scrollTo(first, anchor: .leading) }
-                    focusedID = first
-                    for _ in 0..<12 {
-                        do { try await Task.sleep(for: .milliseconds(40)) } catch { return }
-                        guard !Task.isCancelled else { return }
-                        if focusedID == first { return }
+                    ContentFocusRouter.shared.land(in: row.id, assign: {
+                        if focusFirstScroll { proxy.scrollTo(first, anchor: .leading) }
                         focusedID = first
-                    }
+                    }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
                 .task(id: restoreItemID) {
                     guard let target = restoreItemID, row.items.contains(where: { $0.id == target }) else { return }
+                    let interaction = ContentFocusRouter.shared.interactionGeneration
                     // Allow the pop transition to mount this row before a focus
                     // write. Reuse its loaded data and scroll only this shelf.
                     try? await Task.sleep(for: .milliseconds(320))
-                    guard !Task.isCancelled else { return }
-                    proxy.scrollTo(target, anchor: .center)
-                    focusedID = target
-                    for _ in 0..<8 {
-                        try? await Task.sleep(for: .milliseconds(50))
-                        guard !Task.isCancelled else { return }
-                        if focusedID == target { return }
+                    guard !Task.isCancelled, ContentFocusRouter.shared.interactionGeneration == interaction else { return }
+                    ContentFocusRouter.shared.land(in: row.id, assign: {
+                        proxy.scrollTo(target, anchor: .center)
                         focusedID = target
-                    }
+                    }, landed: { focusedID == target }, focusToken: { focusedID })
                 }
             }
         }
@@ -2828,9 +2836,10 @@ struct HomePosterRow: View {
             onBackAtStart()
             return
         }
-        withAnimation(FusionMotion.focusMove) { proxy.scrollTo(first, anchor: .leading) }
-        // Defer the focus so the just-rendered first card exists to receive it.
-        DispatchQueue.main.async { focusedID = first }
+        ContentFocusRouter.shared.land(in: row.id, assign: {
+            withAnimation(FusionMotion.focusMove) { proxy.scrollTo(first, anchor: .leading) }
+            focusedID = first
+        }, landed: { focusedID == first }, focusToken: { focusedID })
     }
 
     @ViewBuilder

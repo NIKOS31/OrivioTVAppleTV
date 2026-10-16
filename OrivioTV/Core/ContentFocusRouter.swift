@@ -21,6 +21,17 @@ final class ContentFocusRouter {
     private var landingTask: Task<Void, Never>?
     private var landingRowID: String?
     private var landingGeneration: UUID?
+    private(set) var interactionGeneration: UInt64 = 0
+
+    /// A fresh remote command or page/menu transition supersedes restoration
+    /// too, including a task still waiting for a navigation pop to settle.
+    func noteUserMovement(in rowID: String? = nil) {
+        interactionGeneration &+= 1
+        // onMoveCommand may arrive after UIKit has already entered another
+        // row for this same gesture. The departing row must not cancel the
+        // destination's newly issued correction.
+        if rowID == nil || landingRowID == rowID { cancelLanding() }
+    }
 
     /// Normalize an actual entry from another catalog row, never an ordinary
     /// horizontal/diagonal step or a return to a remembered detail selection.

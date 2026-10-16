@@ -36,7 +36,7 @@ final class NTVAnimeModel: ObservableObject {
 }
 
 struct NTVAnimeView: View {
-    private enum Section: String, CaseIterable { case season = "Cette saison", calendar = "Planning" }
+    private enum Section: String, CaseIterable { case season = "Cette saison", calendar = "Planning", library = "Ma liste" }
     @StateObject private var model = NTVAnimeModel()
     @State private var section: Section = .season
     // A calendar snapshot is seeded once, then refreshed on foreground entry.
@@ -50,6 +50,7 @@ struct NTVAnimeView: View {
     @FocusState private var focus: String?
     @Environment(\.scenePhase) private var scenePhase
     let onSearch: (String) -> Void
+    let onOpenItem: (MetaItem) -> Void
     let onBackAtRoot: () -> Void
 
     private var request: NTVAnimeRequest {
@@ -66,16 +67,20 @@ struct NTVAnimeView: View {
                 Spacer()
                 ForEach(Section.allCases, id: \.self) { value in
                     Button { section = value } label: {
-                        Label(value.rawValue, systemImage: value == .calendar ? "calendar" : "sparkles")
+                        Label(value.rawValue, systemImage: value == .calendar ? "calendar" : value == .library ? "bookmark" : "sparkles")
                     }
                     .buttonStyle(NTVActionButtonStyle())
                     .focused($focus, equals: value.rawValue)
                     .accessibilityValue(section == value ? "Sélectionné" : "")
-                    .accessibilityIdentifier(value == .calendar ? "ntv.anime.planning" : "ntv.anime.season")
+                    .accessibilityIdentifier(value == .calendar ? "ntv.anime.planning" : value == .library ? "ntv.anime.library" : "ntv.anime.season")
                     .overlay(alignment: .bottom) {
                         if section == value { Capsule().fill(NTVDesign.textPrimary).frame(width: 24, height: 3).padding(.bottom, 4) }
                     }
                 }
+                Button { onSearch("") } label: { Image(systemName: "magnifyingglass") }
+                    .buttonStyle(NTVActionButtonStyle())
+                    .accessibilityLabel("Rechercher dans mes sources d’animés")
+                    .accessibilityIdentifier("ntv.anime.sources")
             }
             .focusSection()
 
@@ -102,12 +107,14 @@ struct NTVAnimeView: View {
                 .focusSection()
                 Text("Heures locales · \(TimeZone.current.identifier) · La diffusion ne garantit pas une source disponible.")
                     .font(.system(size: 24)).foregroundStyle(NTVDesign.textSecondary)
-            } else {
-                Text("Les animés de la saison, à retrouver dans tes addons.")
+            } else if section == .season {
+                Text("\(seasonRequest.seasonLabel ?? "Cette saison") · Ton espace animé, à retrouver dans tes addons.")
                     .font(.system(size: 26)).foregroundStyle(NTVDesign.textSecondary)
             }
 
-            content
+            if section == .library {
+                NTVAnimeSavedLibrary(onSelect: onOpenItem)
+            } else { content }
         }
         .padding(.horizontal, NTVViewport.horizontalInset)
         .padding(.top, 28)
@@ -115,7 +122,10 @@ struct NTVAnimeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NTVDesign.background.ignoresSafeArea())
         .ignoresSafeArea(edges: .horizontal)
-        .task(id: requestID) { await model.load(request) }
+        .task(id: requestID + "." + section.rawValue) {
+            guard section != .library else { return }
+            await model.load(request)
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 seasonRequest = .season(at: Date())
@@ -167,6 +177,13 @@ struct NTVAnimeView: View {
                         .accessibilityLabel("À l’affiche : " + entry.media.displayTitle)
                         .accessibilityIdentifier("ntv.anime.featured")
                         .padding(.bottom, 24)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("À suivre cette saison").font(.system(size: 30, weight: .semibold))
+                        Spacer()
+                        Text(seasonRequest.seasonLabel ?? "Cette saison")
+                            .font(.system(size: 25)).foregroundStyle(NTVDesign.textSecondary)
+                    }
+                    .padding(.bottom, 22)
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: section == .calendar ? 470 : 238), spacing: 28)], spacing: 28) {
                     ForEach(model.feed.entries) { entry in
@@ -200,26 +217,38 @@ struct NTVAnimeView: View {
     }
 }
 
-/// One stable banner for the season. No carousel timer, animated blur, or
-/// artwork replacement on each focus movement; image decoding is shared.
+/// Seanime reference: wide artwork, cover + concise metadata, then a clearly
+/// separated poster gallery. The composition stays fixed when the image loads.
+/// No carousel timer or artwork replacement on each focus movement.
 private struct NTVAnimeFeature: View {
     @Environment(\.isFocused) private var focused
     let media: NTVAnimeMedia
     var body: some View {
         ZStack(alignment: .leading) {
             RemoteImage(url: media.backdrop, maxDimension: 1600)
-                .frame(height: 232).clipped()
-            LinearGradient(colors: [NTVDesign.background, NTVDesign.background.opacity(0.82), .clear],
+                .frame(height: 300).clipped()
+            LinearGradient(colors: [NTVDesign.background.opacity(0.98), NTVDesign.background.opacity(0.88), .clear],
                            startPoint: .leading, endPoint: .trailing)
-            VStack(alignment: .leading, spacing: 16) {
-                Text("À L’AFFICHE CETTE SAISON").font(.system(size: 23, weight: .medium)).tracking(2)
-                    .foregroundStyle(NTVDesign.textSecondary)
-                Text(media.displayTitle).font(.system(size: 38, weight: .semibold)).lineLimit(2)
-                Label("Voir la fiche", systemImage: "info.circle").font(.system(size: 26, weight: .medium))
+            LinearGradient(colors: [.clear, NTVDesign.background.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+            HStack(alignment: .center, spacing: 32) {
+                RemoteImage(url: media.artwork, maxDimension: 400)
+                    .frame(width: 150, height: 225)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("À L’AFFICHE CETTE SAISON").font(.system(size: 23, weight: .medium)).tracking(1.5)
+                        .foregroundStyle(NTVDesign.textSecondary)
+                    Text(media.displayTitle).font(.system(size: 40, weight: .semibold)).lineLimit(2)
+                    Text(verbatim: media.summary).font(.system(size: 26)).lineLimit(2)
+                        .foregroundStyle(NTVDesign.textSecondary)
+                    Label("Explorer cet animé", systemImage: "arrow.right")
+                        .font(.system(size: 26, weight: .semibold))
+                }
+                .frame(maxWidth: 780, alignment: .leading)
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: 760, alignment: .leading).padding(32)
+            .padding(.horizontal, 32)
         }
-        .frame(maxWidth: .infinity).frame(height: 232)
+        .frame(maxWidth: .infinity).frame(height: 300)
         .background(NTVDesign.surface)
         .clipShape(RoundedRectangle(cornerRadius: 22))
         .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(.white.opacity(focused ? 0.85 : 0.12), lineWidth: focused ? 3 : 1) }
@@ -234,6 +263,12 @@ private struct NTVAnimePoster: View {
             Color.clear.aspectRatio(2.0 / 3.0, contentMode: .fit)
                 .overlay { RemoteImage(url: media.artwork, maxDimension: 640) }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(alignment: .topLeading) {
+                    Text(media.formatLabel).font(.system(size: 21, weight: .semibold))
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(.black.opacity(0.76), in: Capsule())
+                        .padding(12)
+                }
                 .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(focused ? 0.9 : 0.08), lineWidth: focused ? 3 : 1) }
             Text(media.displayTitle).font(.system(size: 27, weight: .semibold)).lineLimit(2)
                 .frame(height: 68, alignment: .topLeading)

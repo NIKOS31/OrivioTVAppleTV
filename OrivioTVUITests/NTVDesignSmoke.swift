@@ -797,7 +797,19 @@ final class NTVDesignSmoke: XCTestCase {
         let searchField = app.buttons["ntv.search.field"]
         XCTAssertTrue(searchField.waitForExistence(timeout: 15), "The title must route to existing addon search after dismissal.")
         XCTAssertEqual(searchField.value as? String, selectedTitle, "The selected anime title must be retained as the search query.")
+        XCTAssertTrue(app.staticTexts["ntv.anime.sources.heading"].exists, "Anime source search must remain inside its own space.")
         capture("ntv-anime-addon-search")
+        remote.press(.menu)
+        XCTAssertTrue(season.waitForExistence(timeout: 10))
+        let animeLibrary = app.buttons["ntv.anime.library"]
+        for _ in 0..<5 {
+            if animeLibrary.hasFocus { break }
+            remote.press(.right)
+        }
+        XCTAssertTrue(focused(animeLibrary, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["Ta liste commence ici"].waitForExistence(timeout: 8))
+        capture("ntv-anime-library-empty")
     }
 
     func testTopMenuRemoteRoundTrip() {

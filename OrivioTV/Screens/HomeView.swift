@@ -1384,6 +1384,13 @@ struct HomeView: View {
 
     var body: some View {
         layoutContent
+        .overlay(alignment: .bottom) {
+            if usesNTVLayout {
+                NTVResumePrompt(onResume: onResume, includes: {
+                    !NTVAnimeLibrary.shared.contains(viewModel.metaFor($0))
+                })
+            }
+        }
         .onAppear {
             isVisible = true
             hero.layout = usesNTVLayout ? .pinnedFocus : homeCatalogSettings.heroLayout

@@ -236,6 +236,13 @@ struct SearchView: View {
                 // row riding up used to draw straight over the field.
                 searchBar
                     .zIndex(1)
+                if viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    NTVRecentSearchRow { query in
+                        NTVRecentSearches.shared.record(query)
+                        viewModel.query = query
+                    }
+                    .padding(.horizontal, contentInset)
+                }
                 ScrollView(.vertical) {
                     if viewModel.isSearching && results.isEmpty {
                         OrivioLoadingView(label: "Recherche").frame(height: 480)
@@ -301,7 +308,9 @@ struct SearchView: View {
 
     private var searchBar: some View {
         HStack(spacing: OrivioSpacing.md) {
-            SearchField(text: $viewModel.query, placeholder: animeContext ? "Rechercher un animé dans mes addons" : "Rechercher un film ou une série")
+            SearchField(text: $viewModel.query,
+                        placeholder: animeContext ? "Rechercher un animé dans mes addons" : "Rechercher un film ou une série",
+                        onCommit: { NTVRecentSearches.shared.record(viewModel.query) })
             if !animeContext {
                 Button(action: onOpenDiscover) { SearchBarIcon(systemName: "square.grid.2x2") }
                     .buttonStyle(PlainCardButtonStyle())
@@ -325,7 +334,10 @@ struct SearchView: View {
                     GridPosterCell(
                         item: item,
                         captionWidth: width,
-                        onSelect: onSelect
+                        onSelect: { item in
+                            NTVRecentSearches.shared.record(viewModel.query)
+                            onSelect(item)
+                        }
                     )
                     .accessibilityIdentifier("ntv.search.poster.\(item.type).\(item.id)")
                 }
@@ -369,6 +381,7 @@ private struct SearchField: View {
     @FocusState private var focused: Bool
     @Binding var text: String
     var placeholder = "Rechercher un film ou une série"
+    var onCommit: () -> Void = {}
     @State private var editing = false
 
     @ViewBuilder
@@ -395,7 +408,8 @@ private struct SearchField: View {
             .accessibilityHint("Ouvrir la saisie et la dictée.")
             .accessibilityIdentifier("ntv.search.field")
             .fullScreenCover(isPresented: $editing, onDismiss: { focused = true }) {
-                NTVSearchEntry(text: $text, placeholder: placeholder) { editing = false }
+                NTVSearchEntry(text: $text, placeholder: placeholder,
+                               done: { onCommit(); editing = false }, cancel: { editing = false })
             }
         } else {
             legacyField
@@ -413,6 +427,8 @@ private struct SearchField: View {
                 .font(.system(size: 26))
                 .foregroundStyle(theme.palette.textPrimary)
                 .tint(theme.palette.secondary)
+                .submitLabel(.search)
+                .onSubmit(onCommit)
         }
         .padding(.horizontal, OrivioSpacing.xl)
         .frame(height: 74)
@@ -429,6 +445,7 @@ private struct NTVSearchEntry: View {
     @Binding var text: String
     var placeholder = "Film ou série"
     let done: () -> Void
+    let cancel: () -> Void
     @FocusState private var editing: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
@@ -449,6 +466,6 @@ private struct NTVSearchEntry: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(NTVDesign.background.ignoresSafeArea())
         .onAppear { editing = true }
-        .onExitCommand(perform: done)
+        .onExitCommand(perform: cancel)
     }
 }

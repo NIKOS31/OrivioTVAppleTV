@@ -3,6 +3,99 @@ import UIKit
 @testable import OrivioTV
 
 final class NTVCoreTests: XCTestCase {
+    func testSourceStatusDoesNotConfuseHealthyEmptyPartialAndTotalOutages() {
+        XCTAssertEqual(NTVSourceStatus.resolve(unreleased: false, requests: 2, failures: 0), .empty)
+        XCTAssertEqual(NTVSourceStatus.resolve(unreleased: false, requests: 2, failures: 1), .incomplete)
+        XCTAssertEqual(NTVSourceStatus.resolve(unreleased: false, requests: 2, failures: 2), .unavailable)
+        // Two configurations with the same display name are still two requests.
+        XCTAssertEqual(NTVSourceStatus.resolve(unreleased: false, requests: 3, failures: 2), .incomplete)
+        XCTAssertEqual(NTVSourceStatus.resolve(unreleased: false, requests: 0, failures: 0), .noCompatibleAddon)
+        XCTAssertEqual(NTVSourceStatus.resolve(unreleased: false, requests: 0, failures: 0, unavailableManifests: 1), .unavailable)
+        XCTAssertEqual(NTVSourceStatus.resolve(unreleased: true, requests: 1, failures: 0), .unreleased)
+        XCTAssertEqual(NTVSourceStatus.resolve(unreleased: false, requests: 1, failures: 0, filtered: true), .filtered)
+    }
+
+    func testSourceErrorReasonsNeverEchoURLsOrErrorUserInfo() {
+        let privateURL = "https://example.invalid/config/test-credential/stream.json"
+        let error = URLError(.cannotConnectToHost, userInfo: [NSURLErrorFailingURLStringErrorKey: privateURL,
+            NSLocalizedDescriptionKey: "failed " + privateURL])
+        XCTAssertEqual(StreamsViewModel.shortReason(for: error), "connexion à l’addon impossible")
+        XCTAssertEqual(StreamsViewModel.shortReason(for: StremioAPIError.badURL(privateURL)), "adresse de l’addon invalide")
+        XCTAssertEqual(StreamsViewModel.shortReason(for: URLError(.timedOut)), "délai de réponse dépassé")
+        XCTAssertEqual(StreamsViewModel.shortReason(for: StremioAPIError.badResponse(403)), "accès refusé (HTTP 403)")
+    }
+
+    @MainActor
+    func testUnreleasedSourceMessageUsesTheEpisodeDateBeforeTheSeriesPremiere() {
+        let show = MetaItem(id: "show", type: "series", name: "Série", released: "2020-01-01T00:00:00Z")
+        let episode = MetaVideo(id: "show:1:2", title: "Épisode", season: 1, episode: 2, released: "2999-01-01T00:00:00Z")
+        XCTAssertEqual(StreamsViewModel(meta: show, video: episode).emptyStatus, .unreleased)
+        let unknown = MetaItem(id: "unknown", type: "movie", name: "Date inconnue")
+        XCTAssertNotEqual(StreamsViewModel(meta: unknown, video: nil).emptyStatus, .unreleased)
+        let future = MetaItem(id: "future", type: "movie", name: "Film", released: "2999-01-01T00:00:00Z")
+        XCTAssertEqual(StreamsViewModel(meta: future, video: nil).emptyStatus, .unreleased)
+    }
+
+    @MainActor
+    func testRecentSearchesPersistPerProfileAndCanBeRemovedWithoutAffectingOthers() throws {
+        let suite = "ntv.recent.tests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let history = NTVRecentSearches(defaults: defaults)
+        history.record("  Silo  ", profile: 1)
+        history.record("Le   voyage de Chihiro", profile: 1)
+        history.record("silo", profile: 1)
+        history.record("Frieren", profile: 2)
+        XCTAssertEqual(NTVRecentSearches(defaults: defaults).queries(profile: 1), ["silo", "Le voyage de Chihiro"])
+        XCTAssertEqual(history.queries(profile: 2), ["Frieren"])
+        history.remove("SILO", profile: 1)
+        XCTAssertEqual(history.queries(profile: 1), ["Le voyage de Chihiro"])
+        history.clear(profile: 1)
+        XCTAssertTrue(history.queries(profile: 1).isEmpty)
+        XCTAssertEqual(history.queries(profile: 2), ["Frieren"])
+        XCTAssertNil(defaults.object(forKey: "ntv.search.recent.v1"), "There must be no shared fallback across profiles.")
+    }
+
+    @MainActor
+    func testRecentSearchesRejectSensitivePastesAndBoundStorage() throws {
+        let suite = "ntv.recent.tests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let history = NTVRecentSearches(defaults: defaults)
+        for input in ["https://example.invalid/private/config", "Bearer test-value", "api_key=test-value",
+                      "person@example.invalid", String(repeating: "a", count: 40), "a", "ab\u{0000}cd"] {
+            history.record(input, profile: 1)
+        }
+        XCTAssertTrue(history.queries(profile: 1).isEmpty)
+        for number in 0..<20 { history.record("Film \(number)", profile: 1) }
+        XCTAssertEqual(history.queries(profile: 1).count, NTVRecentSearches.limit)
+        XCTAssertEqual(history.queries(profile: 1).first, "Film 19")
+        XCTAssertEqual(NTVRecentSearches.title("Mr. Robot"), "Mr. Robot")
+        defaults.set(Data(repeating: 0, count: 8193), forKey: ProfileScopedDefaults.key("ntv.search.recent.v1", 2))
+        XCTAssertTrue(history.queries(profile: 2).isEmpty)
+    }
+
+    @MainActor
+    func testResumeSuggestionIsOncePerProfileAndAnEmptyLoadDoesNotConsumeIt() {
+        let session = NTVResumeSuggestion()
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func row(_ id: String, position: Double = 180, duration: Double = 3600, date: Date? = nil) -> WatchProgress {
+            WatchProgress(id: id, metaID: id, type: "movie", name: "Film", poster: nil,
+                background: nil, logo: nil, season: nil, episode: nil, episodeTitle: nil,
+                positionSeconds: position, durationSeconds: duration, updatedAt: date ?? now)
+        }
+        XCTAssertNil(session.claim(profile: 1, items: [], now: now))
+        let rows = [row("older", date: now.addingTimeInterval(-100)), row("latest")]
+        XCTAssertEqual(session.claim(profile: 1, items: rows, now: now)?.id, "latest")
+        XCTAssertNil(session.claim(profile: 1, items: rows, now: now))
+        XCTAssertEqual(session.claim(profile: 2, items: [row("other-profile")], now: now)?.id, "other-profile")
+        XCTAssertNil(NTVResumeSuggestion.latest(in: [row("finished", position: 3500),
+            row("next-up", position: 0), row("invalid", position: .nan),
+            row("unknown", duration: .infinity), row("future", date: now.addingTimeInterval(120)),
+            row("stale", date: now.addingTimeInterval(-31 * 86400))], now: now))
+        XCTAssertEqual(NTVResumeSuggestion.latest(in: [row("a"), row("b")], now: now)?.id, "b")
+    }
+
     @MainActor
     func testANewRemoteMovementCancelsSameRowRetriesAndInvalidatesPendingRestoration() async throws {
         let router = ContentFocusRouter()

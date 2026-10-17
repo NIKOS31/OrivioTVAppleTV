@@ -337,6 +337,7 @@ struct RootView: View {
     @State private var sidebarEnabled = false
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.root)
         content
             .onOpenURL { handleDeepLink($0) }
             .onChange(of: sidebarFocus) { old, new in traceSidebar(old, new) }
@@ -1277,7 +1278,7 @@ struct RootView: View {
         ZStack(alignment: navIsTop ? .top : .leading) {
             if theme.palette.id == NTVDesign.palette.id { NTVCanvasBackdrop(canvas: ntvCanvas) }
             selectedContent
-                .environmentObject(ntvCanvas)
+                .environment(\.ntvBackdropCanvas, ntvCanvas)
                 .modifier(NTVFullWidthViewport(enabled: theme.palette.id == NTVDesign.palette.id))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Tab changes CUT. No fade, in either direction.

@@ -525,18 +525,22 @@ struct MetaItem: Codable, Identifiable, Hashable {
     /// leave the field off constantly, and hiding undated items would quietly
     /// empty half of most catalogs.
     var isUnreleased: Bool {
-        if let released, let date = ReleaseDateParser.parse(released) { return date > Date() }
+        isUnreleased(at: Date())
+    }
+
+    func isUnreleased(at now: Date) -> Bool {
+        if let released, let date = ReleaseDateParser.parse(released) { return date > now }
         guard let releaseInfo, !releaseInfo.isEmpty else { return false }
         // Full date: compare properly, so something due later THIS year is
         // still correctly hidden.
         if releaseInfo.count >= 10 {
             if let date = ReleaseDateParser.ymdGMT.date(from: String(releaseInfo.prefix(10))) {
-                return date > Date()
+                return date > now
             }
         }
         let start = releaseInfo.prefix { $0 != "-" && $0 != "–" && $0 != "—" }
         guard let year = Int(start), year > 1800 else { return false }
-        return year > Calendar.current.component(.year, from: Date())
+        return year > Calendar.current.component(.year, from: now)
     }
 
     var isSeries: Bool { type == "series" || type == "tv" || type == "anime" }

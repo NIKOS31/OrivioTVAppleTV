@@ -37,6 +37,17 @@ struct NTVPageTopClearance: ViewModifier {
 
 /// The root owns this object without observing its artwork. Only the canvas
 /// redraws when focus changes, preserving the catalog rows' rendering policy.
+private struct NTVBackdropCanvasKey: EnvironmentKey {
+    static let defaultValue: NTVBackdropCanvas? = nil
+}
+extension EnvironmentValues {
+    /// Reporting layers need a reference, not a subscription to artwork.
+    var ntvBackdropCanvas: NTVBackdropCanvas? {
+        get { self[NTVBackdropCanvasKey.self] }
+        set { self[NTVBackdropCanvasKey.self] = newValue }
+    }
+}
+
 @MainActor final class NTVBackdropCanvas: ObservableObject {
     @Published private(set) var url: String?
     private var active: String?
@@ -75,6 +86,7 @@ struct NTVCanvasBackdrop: View {
     @ObservedObject var canvas: NTVBackdropCanvas
     @ObservedObject private var performance = PerformanceSettingsStore.shared
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.canvas)
         GeometryReader { geometry in
             ZStack {
                 NTVDesign.background

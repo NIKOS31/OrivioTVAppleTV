@@ -158,6 +158,7 @@ struct NTVCatalogView: View {
         String(profiles.activeProfileID) + "#" + addons.catalogAddons.map { "\($0.id)#\($0.manifest.catalogs?.hashValue ?? 0)" }.joined(separator: "#")
     }
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.catalog)
         ZStack(alignment: .leading) {
             NTVFocusBackdrop(hero: hero, identifier: "ntv.catalog.\(mediaType).backdrop")
             ScrollViewReader { proxy in

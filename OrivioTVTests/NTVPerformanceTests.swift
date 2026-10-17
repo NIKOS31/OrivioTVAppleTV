@@ -6,6 +6,112 @@ import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    func testRenderMeterSeparatesBodyCountsFromTimedWorkAndRejectsInvalidDurations() throws {
+        let meter = NTVRenderMeter()
+        meter.record(.posterRow); meter.record(.posterRow)
+        meter.record(.posterEligibility, milliseconds: 2)
+        meter.record(.posterEligibility, milliseconds: 4)
+        meter.record(.posterEligibility, milliseconds: .nan)
+        meter.record(.posterEligibility, milliseconds: -1)
+        let snapshot = meter.snapshot()
+        let body = try XCTUnwrap(snapshot[.posterRow]), filter = try XCTUnwrap(snapshot[.posterEligibility])
+        XCTAssertEqual(body.evaluations, 2)
+        XCTAssertEqual(body.timedEvaluations, 0, "A body evaluation count must not be presented as frame duration.")
+        XCTAssertEqual(filter.evaluations, 2)
+        XCTAssertEqual(filter.totalMilliseconds, 6)
+        XCTAssertEqual(filter.maximumMilliseconds, 4)
+        meter.reset()
+        XCTAssertTrue(meter.snapshot().isEmpty)
+    }
+
+    func testRenderMeterCountsConcurrentWorkWithoutGrowingPerItemEntries() {
+        let meter = NTVRenderMeter()
+        DispatchQueue.concurrentPerform(iterations: 512) { _ in meter.record(.posterCell) }
+        let snapshot = meter.snapshot()
+        XCTAssertEqual(snapshot[.posterCell]?.evaluations, 512)
+        XCTAssertEqual(snapshot.count, 1, "The store has fixed scopes, not a new entry for every poster or evaluation.")
+    }
+
+    func testPosterVisibilityDoesNotReclassifyContentDuringFocusSteps() {
+        let items = (0..<16).map { MetaItem(id: "fixture.\($0)", type: "movie", name: "Fixture \($0)") }
+        var classifications = 0
+        let snapshot = NTVPosterVisibility(items: items, hideUnreleased: false, hideUnavailable: false,
+            unavailableUntil: [:], now: Date()) { _ in classifications += 1; return false }
+        for step in 0..<160 {
+            XCTAssertEqual(snapshot.items(keeping: items[step % items.count].id).count, 16)
+        }
+        XCTAssertEqual(classifications, 16, "Local focus steps must not repeat anime classification or title filtering.")
+    }
+
+    func testPosterVisibilityPinsOnlyTheFocusedUnavailableItemAndExpiresOnTime() {
+        let items = ["a", "b", "c", "d"].map { MetaItem(id: $0, type: "movie", name: $0) }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let absence = ["b": now.addingTimeInterval(10), "c": now.addingTimeInterval(20)]
+        func snapshot(at date: Date) -> NTVPosterVisibility {
+            NTVPosterVisibility(items: items, hideUnreleased: false, hideUnavailable: true,
+                unavailableUntil: absence, now: date, isAnime: { _ in false })
+        }
+        let initial = snapshot(at: now)
+        XCTAssertEqual(initial.items(keeping: nil).map(\.id), ["a", "d"])
+        XCTAssertEqual(initial.items(keeping: "b").map(\.id), ["a", "b", "d"])
+        XCTAssertEqual(initial.items(keeping: "c").map(\.id), ["a", "c", "d"])
+        XCTAssertEqual(initial.items(keeping: "d").map(\.id), ["a", "d"])
+        XCTAssertEqual(initial.nextRefresh, absence["b"])
+        let firstExpiry = snapshot(at: now.addingTimeInterval(10))
+        XCTAssertEqual(firstExpiry.items(keeping: nil).map(\.id), ["a", "b", "d"])
+        XCTAssertEqual(firstExpiry.nextRefresh, absence["c"])
+        let expired = snapshot(at: now.addingTimeInterval(20))
+        XCTAssertEqual(expired.items(keeping: nil).map(\.id), ["a", "b", "c", "d"])
+        XCTAssertNil(expired.nextRefresh)
+    }
+
+    func testPosterVisibilityNeverPinsAnimeOrAnUnreleasedTitle() throws {
+        let now = try XCTUnwrap(ReleaseDateParser.parse("2026-10-17T12:00:00Z"))
+        let items = [MetaItem(id: "anime", type: "series", name: "Anime"),
+            MetaItem(id: "future", type: "movie", name: "Future", released: "2027-01-10T12:00:00Z"),
+            MetaItem(id: "unknown", type: "movie", name: "Unknown date")]
+        let hidden = NTVPosterVisibility(items: items, hideUnreleased: true, hideUnavailable: true,
+            unavailableUntil: [:], now: now, isAnime: { $0.id == "anime" })
+        XCTAssertEqual(hidden.items(keeping: "anime").map(\.id), ["unknown"])
+        XCTAssertEqual(hidden.items(keeping: "future").map(\.id), ["unknown"])
+        XCTAssertEqual(hidden.nextRefresh, ReleaseDateParser.parse("2027-01-10T12:00:00Z"))
+        let shown = NTVPosterVisibility(items: items, hideUnreleased: false, hideUnavailable: false,
+            unavailableUntil: [:], now: now, isAnime: { $0.id == "anime" })
+        XCTAssertEqual(shown.items(keeping: nil).map(\.id), ["future", "unknown"])
+    }
+
+    func testPosterVisibilityRechecksExactDatesAndBareYearBoundaries() throws {
+        let release = try XCTUnwrap(ReleaseDateParser.parse("2026-10-18T18:30:00Z"))
+        let dated = MetaItem(id: "dated", type: "movie", name: "Dated", released: "2026-10-18T18:30:00Z")
+        let before = NTVPosterVisibility(items: [dated], hideUnreleased: true, hideUnavailable: false,
+            unavailableUntil: [:], now: release.addingTimeInterval(-1), isAnime: { _ in false })
+        XCTAssertTrue(before.items(keeping: nil).isEmpty); XCTAssertEqual(before.nextRefresh, release)
+        let after = NTVPosterVisibility(items: [dated], hideUnreleased: true, hideUnavailable: false,
+            unavailableUntil: [:], now: release, isAnime: { _ in false })
+        XCTAssertEqual(after.items(keeping: nil).map(\.id), ["dated"])
+        XCTAssertNil(after.nextRefresh)
+        let newYear = try XCTUnwrap(Calendar.current.date(from: DateComponents(year: 2027, month: 1, day: 1)))
+        let yearly = MetaItem(id: "yearly", type: "movie", name: "Year", releaseInfo: "2027")
+        let lastYear = NTVPosterVisibility(items: [yearly], hideUnreleased: true, hideUnavailable: false,
+            unavailableUntil: [:], now: newYear.addingTimeInterval(-1), isAnime: { _ in false })
+        XCTAssertTrue(lastYear.items(keeping: nil).isEmpty); XCTAssertEqual(lastYear.nextRefresh, newYear)
+        let thisYear = NTVPosterVisibility(items: [yearly], hideUnreleased: true, hideUnavailable: false,
+            unavailableUntil: [:], now: newYear, isAnime: { _ in false })
+        XCTAssertEqual(thisYear.items(keeping: nil).map(\.id), ["yearly"])
+    }
+
+    func testPosterVisibilityRebuildHonorsNewClassificationAndFiltersInSourceOrder() {
+        let items = ["z", "a", "m"].map { MetaItem(id: $0, type: "movie", name: $0) }
+        let now = Date()
+        let first = NTVPosterVisibility(items: items, hideUnreleased: false, hideUnavailable: false,
+            unavailableUntil: ["a": now.addingTimeInterval(60)], now: now, isAnime: { _ in false })
+        XCTAssertEqual(first.items(keeping: nil).map(\.id), ["z", "a", "m"])
+        let changed = NTVPosterVisibility(items: items, hideUnreleased: false, hideUnavailable: true,
+            unavailableUntil: ["a": now.addingTimeInterval(60)], now: now, isAnime: { $0.id == "z" })
+        XCTAssertEqual(changed.items(keeping: nil).map(\.id), ["m"])
+        XCTAssertEqual(changed.items(keeping: "a").map(\.id), ["a", "m"])
+    }
+
     @MainActor
     func testInitialHomeFocusAppliesOnceWhenItsContextIsStillCurrent() async throws {
         let gate = Gate(), router = ContentFocusRouter(), hero = HeroFocus()

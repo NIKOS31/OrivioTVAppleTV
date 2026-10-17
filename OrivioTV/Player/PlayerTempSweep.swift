@@ -153,7 +153,73 @@ enum ProbeGate {
     }
 
     static func set(_ on: Bool) {
-        lock.lock(); enabled = on; lock.unlock()
+        lock.lock(); let wasEnabled = enabled; enabled = on; lock.unlock()
+        if on && !wasEnabled { NTVRenderProbe.reset() }
+    }
+}
+
+/// Fixed, content-free scopes. Body counts describe SwiftUI evaluation, NOT
+/// GPU frames, view mounts, or a full render of every descendant.
+enum NTVRenderScope: String, CaseIterable, Hashable, Sendable {
+    case root = "body.root", home = "body.home", catalog = "body.catalog"
+    case posterContainer = "body.posterContainer", posterRow = "body.posterRow", posterCell = "body.posterCell"
+    case search = "body.search", canvas = "body.canvas", focusBackdrop = "body.focusBackdrop"
+    case catalogSpotlight = "body.catalogSpotlight", homeSpotlight = "body.homeSpotlight"
+    case posterEligibility = "work.posterEligibility", searchPartition = "work.searchPartition"
+}
+
+/// Bounded aggregate store: at most one entry per enum case, no per-frame log,
+/// media ID, URL, addon, profile name, or observable publication.
+final class NTVRenderMeter: @unchecked Sendable {
+    struct Sample: Equatable {
+        var evaluations = 0
+        var timedEvaluations = 0
+        var totalMilliseconds = 0.0
+        var maximumMilliseconds = 0.0
+    }
+    private let lock = NSLock()
+    private var samples: [NTVRenderScope: Sample] = [:]
+    func record(_ scope: NTVRenderScope, milliseconds: Double? = nil) {
+        if let milliseconds, !milliseconds.isFinite || milliseconds < 0 { return }
+        lock.lock(); defer { lock.unlock() }
+        var sample = samples[scope] ?? Sample()
+        sample.evaluations += 1
+        if let milliseconds {
+            sample.timedEvaluations += 1
+            sample.totalMilliseconds += milliseconds
+            sample.maximumMilliseconds = max(sample.maximumMilliseconds, milliseconds)
+        }
+        samples[scope] = sample
+    }
+    func snapshot() -> [NTVRenderScope: Sample] {
+        lock.lock(); defer { lock.unlock() }; return samples
+    }
+    func reset() { lock.lock(); samples.removeAll(keepingCapacity: true); lock.unlock() }
+}
+
+enum NTVRenderProbe {
+    private static let meter = NTVRenderMeter()
+    static func reset() { meter.reset() }
+    static func evaluated(_ scope: NTVRenderScope) {
+        guard ProbeGate.isEnabled else { return }
+        meter.record(scope)
+    }
+    static func measure<T>(_ scope: NTVRenderScope, _ work: () -> T) -> T {
+        guard ProbeGate.isEnabled else { return work() }
+        let start = CACurrentMediaTime()
+        defer { meter.record(scope, milliseconds: (CACurrentMediaTime() - start) * 1000) }
+        return work()
+    }
+    static func lines() -> [String] {
+        guard ProbeGate.isEnabled else { return [] }
+        let samples = meter.snapshot()
+        return NTVRenderScope.allCases.compactMap { scope in
+            guard let sample = samples[scope] else { return nil }
+            if sample.timedEvaluations == 0 { return "\(scope.rawValue) evaluations=\(sample.evaluations)" }
+            return String(format: "%@ evaluations=%d total=%.3fms mean=%.3fms max=%.3fms", scope.rawValue,
+                sample.evaluations, sample.totalMilliseconds,
+                sample.totalMilliseconds / Double(sample.timedEvaluations), sample.maximumMilliseconds)
+        }
     }
 }
 
@@ -359,6 +425,11 @@ enum PlayerProbe {
         if !health.isEmpty {
             out.append("[health]")
             out.append(contentsOf: health.map { "  " + $0 })
+        }
+        let ui = NTVRenderProbe.lines()
+        if !ui.isEmpty {
+            out.append("[ui-evaluations]")
+            out.append(contentsOf: ui.map { "  " + $0 })
         }
         return out
     }

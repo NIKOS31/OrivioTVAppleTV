@@ -1446,6 +1446,7 @@ struct HomeView: View {
     @State private var isVisible = true
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.home)
         layoutContent
         .overlay(alignment: .bottom) {
             if usesNTVLayout {
@@ -2676,20 +2677,121 @@ struct HomeView: View {
     }
 }
 
-/// Continue Watching as its OWN view so the per-card focus bookkeeping stays
-/// local. The remembered-card snap-back state used to live on HomeView itself,
-/// so every left/right step inside this row wrote HomeView @State and
-/// re-rendered the ENTIRE Home body — all rows — once per step. That's why
-/// only this row lagged while the rest of Home was fine. Here, a focus step
-/// re-renders just this row.
-/// A catalog poster row with LOCAL focus state, so a focus move re-renders
-/// only this row (not all of Home) and the row can implement Back navigation:
-/// Back while scrolled into the row jumps to the first card; Back on the first
-/// card bubbles up (`onBackAtStart`) to open the sidebar / focus the tab bar.
+/// A visibility snapshot changes with content, filters, classification and
+/// expiry, not with every arrow press. A currently focused unavailable item
+/// stays in its original position until focus leaves, matching the old policy.
+struct NTVPosterVisibility {
+    private let available: [MetaItem]
+    private let availableIDs: Set<String>
+    private let hidden: [String: (item: MetaItem, insertion: Int)]
+    let nextRefresh: Date?
+
+    init(items: [MetaItem], hideUnreleased: Bool, hideUnavailable: Bool,
+         unavailableUntil: [String: Date], now: Date, isAnime: (MetaItem) -> Bool) {
+        var available: [MetaItem] = [], ids: Set<String> = []
+        var hidden: [String: (item: MetaItem, insertion: Int)] = [:]
+        var refresh: Date?
+        func reconsider(at date: Date?) {
+            guard let date, date > now else { return }
+            refresh = min(refresh ?? date, date)
+        }
+        for item in items {
+            guard !isAnime(item) else { continue }
+            if hideUnreleased && item.isUnreleased(at: now) {
+                reconsider(at: Self.releaseTransition(item))
+                continue
+            }
+            if hideUnavailable, let until = unavailableUntil[item.id], until > now {
+                hidden[item.id] = (item, available.count)
+                reconsider(at: until)
+                continue
+            }
+            available.append(item); ids.insert(item.id)
+        }
+        self.available = available; availableIDs = ids; self.hidden = hidden; nextRefresh = refresh
+    }
+
+    func items(keeping focusedID: String?) -> [MetaItem] {
+        guard let focusedID, !availableIDs.contains(focusedID), let pinned = hidden[focusedID] else { return available }
+        var result = available
+        result.insert(pinned.item, at: pinned.insertion)
+        return result
+    }
+
+    private static func releaseTransition(_ item: MetaItem) -> Date? {
+        if let released = item.released, let date = ReleaseDateParser.parse(released) { return date }
+        guard let info = item.releaseInfo, !info.isEmpty else { return nil }
+        if info.count >= 10, let date = ReleaseDateParser.ymdGMT.date(from: String(info.prefix(10))) { return date }
+        let start = info.prefix { $0 != "-" && $0 != "–" && $0 != "—" }
+        guard let year = Int(start), year > 1800 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: year, month: 1, day: 1))
+    }
+}
+
+/// Input-driven filtering is outside the view that owns per-arrow FocusState.
+/// The inner row keeps the existing item IDs, remote handlers and layout.
 struct HomePosterRow: View {
+    @EnvironmentObject private var homeCatalogSettings: HomeCatalogSettingsStore
+    @EnvironmentObject private var profiles: ProfileStore
+    @ObservedObject private var animeLibrary = NTVAnimeLibrary.shared
+    @State private var unavailableUntil: [String: Date] = [:]
+    @State private var filterClock = Date()
+    let row: HomeRow
+    let useLandscape: Bool
+    let hero: HeroFocus
+    let onSelect: (MetaItem) -> Void
+    let onPlayManually: (MetaItem, MetaVideo?) -> Void
+    let onSeeAll: (InstalledAddon, ManifestCatalog, String) -> Void
+    let onBackAtStart: () -> Void
+    var accessibilityPrefix = "ntv.home.poster"
+    var restoreItemID: String? = nil
+    var onVerticalMove: ((MoveCommandDirection) -> Void)? = nil
+    var focusFirstRequest: ContentFocusRouter.EntryRequest? = nil
+    var restoreFocusRequest: ContentFocusRouter.EntryRequest? = nil
+    var onLeftAtStart: (() -> Void)? = nil
+    var onFirstVisibleChange: ((String?) -> Void)? = nil
+    var focusFirstScroll = true
+
+    var body: some View {
+        let _ = NTVRenderProbe.evaluated(.posterContainer)
+        let now = max(filterClock, Date()), profile = profiles.activeProfileID
+        let visibility = NTVRenderProbe.measure(.posterEligibility) {
+            NTVPosterVisibility(items: row.items, hideUnreleased: homeCatalogSettings.hideUnreleasedContent,
+                hideUnavailable: homeCatalogSettings.hideUnavailableSources, unavailableUntil: unavailableUntil,
+                now: now, isAnime: { animeLibrary.contains($0, profile: profile) })
+        }
+        HomePosterRowContent(unavailableUntil: $unavailableUntil,
+            row: row, useLandscape: useLandscape, hero: hero, onSelect: onSelect,
+            onPlayManually: onPlayManually, onSeeAll: onSeeAll, onBackAtStart: onBackAtStart,
+            accessibilityPrefix: accessibilityPrefix, restoreItemID: restoreItemID, onVerticalMove: onVerticalMove,
+            focusFirstRequest: focusFirstRequest, restoreFocusRequest: restoreFocusRequest,
+            onLeftAtStart: onLeftAtStart, onFirstVisibleChange: onFirstVisibleChange,
+            focusFirstScroll: focusFirstScroll, visibility: visibility)
+        .task(id: visibility.nextRefresh) {
+            guard let deadline = visibility.nextRefresh else { return }
+            // Addon dates are external input. Never convert an arbitrarily
+            // distant timestamp into an overflowing Duration; long waits are
+            // checked at most once a day and remain cancellation-aware.
+            while deadline > Date() {
+                let remaining = deadline.timeIntervalSinceNow
+                guard remaining.isFinite else { return }
+                do { try await Task.sleep(for: .seconds(min(max(0, remaining), 86_400))) } catch { return }
+                guard !Task.isCancelled else { return }
+            }
+            guard !Task.isCancelled else { return }
+            filterClock = max(Date(), deadline)
+        }
+        .onChange(of: profiles.activeProfileID) { _, _ in
+            unavailableUntil = [:]
+            filterClock = Date()
+        }
+    }
+}
+
+private struct HomePosterRowContent: View {
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var homeCatalogSettings: HomeCatalogSettingsStore
-    @State private var unavailableUntil: [String: Date] = [:]
+    @Binding var unavailableUntil: [String: Date]
     let row: HomeRow
     let useLandscape: Bool
     let hero: HeroFocus
@@ -2706,21 +2808,18 @@ struct HomePosterRow: View {
     var onLeftAtStart: (() -> Void)? = nil
     var onFirstVisibleChange: ((String?) -> Void)? = nil
     var focusFirstScroll = true
+    let visibility: NTVPosterVisibility
 
     @FocusState private var focusedID: String?
     @FocusState private var emptyRowFocused: Bool
     @FocusState private var seeAllFocused: Bool
 
     private var displayedItems: [MetaItem] {
-        let profile = ProfileScopedDefaults.activeProfileID
-        return row.items.filter {
-            !NTVAnimeLibrary.shared.contains($0, profile: profile) &&
-            (!homeCatalogSettings.hideUnreleasedContent || !$0.isUnreleased) &&
-            (!homeCatalogSettings.hideUnavailableSources || (unavailableUntil[$0.id] ?? .distantPast) <= Date() || $0.id == focusedID)
-        }
+        visibility.items(keeping: focusedID)
     }
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.posterRow)
         let visible = displayedItems
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             header
@@ -3047,6 +3146,7 @@ private struct HomePosterCell: View, Equatable {
     }
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.posterCell)
         let _ = HoldProbe.renderTick("poster \(item.name)")
         VStack(alignment: .leading, spacing: 0) {
             Button {

@@ -195,6 +195,7 @@ struct SearchView: View {
     }
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.search)
         Group {
             if usesNTVLayout {
                 GeometryReader { geometry in searchContent(availableWidth: geometry.size.width) }
@@ -220,10 +221,13 @@ struct SearchView: View {
 
     private func searchContent(availableWidth: CGFloat?) -> some View {
         let profile = ProfileScopedDefaults.activeProfileID
-        let results = viewModel.results.filter { animeContext || !NTVAnimeLibrary.shared.contains($0, profile: profile) }
-        let trending = viewModel.trending.filter { animeContext || !NTVAnimeLibrary.shared.contains($0, profile: profile) }
-        let movieResults = results.filter { !$0.isSeries }
-        let showResults = results.filter(\.isSeries)
+        let presentation = NTVRenderProbe.measure(.searchPartition) {
+            let results = viewModel.results.filter { animeContext || !NTVAnimeLibrary.shared.contains($0, profile: profile) }
+            let trending = viewModel.trending.filter { animeContext || !NTVAnimeLibrary.shared.contains($0, profile: profile) }
+            return (results: results, trending: trending, movies: results.filter { !$0.isSeries }, shows: results.filter(\.isSeries))
+        }
+        let results = presentation.results, trending = presentation.trending
+        let movieResults = presentation.movies, showResults = presentation.shows
         return ZStack {
             ATVBackground()
             VStack(alignment: .leading, spacing: OrivioSpacing.lg) {

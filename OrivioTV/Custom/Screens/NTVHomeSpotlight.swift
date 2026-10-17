@@ -5,10 +5,11 @@ import SwiftUI
 struct NTVFocusBackdrop: View {
     @ObservedObject var hero: HeroFocus
     @ObservedObject private var performance = PerformanceSettingsStore.shared
-    @EnvironmentObject private var canvas: NTVBackdropCanvas
+    @Environment(\.ntvBackdropCanvas) private var canvas
     let identifier: String
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.focusBackdrop)
         Color.clear
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
@@ -23,7 +24,7 @@ struct NTVFocusBackdrop: View {
     }
 
     private func reportArtwork() {
-        canvas.update(identifier, url: performance.settings.heroBackdrop ? (hero.item?.background ?? hero.item?.poster) : nil)
+        canvas?.update(identifier, url: performance.settings.heroBackdrop ? (hero.item?.background ?? hero.item?.poster) : nil)
     }
 }
 
@@ -34,6 +35,7 @@ struct NTVCatalogSpotlight: View {
     @ScaledMetric(relativeTo: .body) private var synopsisSize: CGFloat = 29
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.catalogSpotlight)
         if let item = hero.item {
             HStack(alignment: .center, spacing: 30) {
                 NTVSpotlightCover(item: item, width: 132, height: 198)
@@ -76,6 +78,7 @@ struct NTVHomeSpotlight: View {
     let onBack: () -> Void
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.homeSpotlight)
         if let item = hero.item {
             HStack(alignment: .center, spacing: 36) {
                 NTVSpotlightCover(item: item, width: 192, height: 288)

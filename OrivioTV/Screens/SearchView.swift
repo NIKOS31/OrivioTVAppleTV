@@ -1,10 +1,43 @@
 import SwiftUI
 
+enum NTVSearchOutcome: Equatable {
+    case idle, searching, complete, empty, noCatalogs, unavailable
+    case partial(failed: Int)
+
+    var notice: String? {
+        if case let .partial(failed) = self {
+            return "Résultats partiels : \(failed) catalogue\(failed > 1 ? "s" : "") n’\(failed > 1 ? "ont" : "a") pas répondu correctement."
+        }
+        return nil
+    }
+    var emptyTitle: String {
+        switch self {
+        case .noCatalogs: return "Aucun catalogue de recherche"
+        case .unavailable: return "Recherche indisponible"
+        case .partial: return "Recherche incomplète"
+        default: return "Aucun résultat"
+        }
+    }
+    var emptyMessage: String {
+        switch self {
+        case .noCatalogs: return "Ajoute ou active un addon proposant la recherche dans les réglages des addons."
+        case .unavailable: return "Les catalogues de tes addons n’ont pas pu être interrogés. Vérifie ta connexion puis réessaie."
+        case .partial: return "Aucune correspondance dans les catalogues qui ont répondu. D’autres catalogues sont en échec : réessaie pour compléter la recherche."
+        default: return "Aucun titre correspondant dans les résultats affichables de tes addons."
+        }
+    }
+    var canRetry: Bool {
+        if case .partial = self { return true }
+        return self == .unavailable
+    }
+}
+
 @MainActor
 final class SearchViewModel: ObservableObject {
     @Published var query = ""
     @Published var results: [MetaItem] = []
     @Published var isSearching = false
+    @Published private(set) var outcome: NTVSearchOutcome = .idle
     /// Shown while the query is empty — the tab opens onto something browseable
     /// (Apple TV style) instead of a bare "start typing" void. Loaded once.
     @Published var trending: [MetaItem] = []
@@ -12,6 +45,8 @@ final class SearchViewModel: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var loadedTrending = false
     private var completedQuery: String?
+    private var searchRevision = UUID()
+    private struct Batch { let items: [MetaItem]; let succeeded: Bool }
     private let requestLimit: Int
     private let debounce: Duration
     let includesAnime: Bool
@@ -29,36 +64,53 @@ final class SearchViewModel: ObservableObject {
     }
 
     func suspendSearch() {
+        searchRevision = UUID()
         searchTask?.cancel()
         searchTask = nil
         isSearching = false
+        if outcome == .searching { outcome = .idle }
     }
 
     func resetForProfile() {
         suspendSearch()
         query = ""; results = []; trending = []
         loadedTrending = false; completedQuery = nil
+        outcome = .idle
     }
 
     func resumeSearchIfNeeded(addonManager: AddonManager) {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.count >= 2, completedQuery != trimmed {
             search(addonManager: addonManager)
         }
     }
 
     func search(addonManager: AddonManager) {
+        search(targets: Self.searchTargets(addonManager))
+    }
+
+    /// The same path accepts explicit targets for offline model tests.
+    func search(targets: [(InstalledAddon, ManifestCatalog)]) {
         searchTask?.cancel()
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let revision = UUID()
+        searchRevision = revision
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
             results = []
             isSearching = false
             completedQuery = nil
+            outcome = .idle
             return
         }
         isSearching = true
-        let targets = Self.searchTargets(addonManager).filter { includesAnime || !NTVAnimeDomain.contains($0.1) }
-        let work = targets.map { ($0.0, $0.1, Self.limit(for: $0.0)) }
+        outcome = .searching
+        if completedQuery != trimmed { results = [] }
+        let work = targets.filter { includesAnime || !NTVAnimeDomain.contains($0.1) }
+            .map { ($0.0, $0.1, Self.limit(for: $0.0)) }
+        guard !work.isEmpty else {
+            results = []; isSearching = false; outcome = .noCatalogs; completedQuery = nil
+            return
+        }
         let loader = catalogLoader, limit = requestLimit, delay = debounce
         searchTask = Task {
             do { try await Task.sleep(for: delay) } catch { return }
@@ -71,18 +123,20 @@ final class SearchViewModel: ObservableObject {
             // the same search could come back in a different order twice in a
             // row. Now the order is the one `searchTargets` decided.
             let batches = await boundedConcurrentMap(work, limit: limit) { target in
-                let items = (try? await loader(target.0, target.1, trimmed)) ?? []
-                return Array(items.prefix(target.2))
+                do {
+                    let items = try await loader(target.0, target.1, trimmed)
+                    return Batch(items: Array(items.prefix(target.2)), succeeded: true)
+                } catch { return Batch(items: [], succeeded: false) }
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, searchRevision == revision else { return }
 
             var merged: [MetaItem] = []
             var seen = Set<String>()
-            for items in batches {
+            for batch in batches {
                 // Keyed on `id` alone: the grids' `ForEach` identify rows by
                 // `MetaItem.id`, so "tt123" as `series` from one addon and
                 // as `tv` from another must not both survive.
-                for item in items where !seen.contains(item.id) {
+                for item in batch.items where !seen.contains(item.id) {
                     guard includesAnime || !NTVAnimeLibrary.shared.contains(item) else { continue }
                     seen.insert(item.id)
                     merged.append(item)
@@ -90,7 +144,12 @@ final class SearchViewModel: ObservableObject {
             }
             results = merged
             isSearching = false
-            completedQuery = trimmed
+            let failures = batches.filter { !$0.succeeded }.count
+            if failures == batches.count { outcome = .unavailable }
+            else if failures > 0 { outcome = .partial(failed: failures) }
+            else { outcome = merged.isEmpty ? .empty : .complete }
+            // A failed or partial query must be retryable on return to Search.
+            completedQuery = failures == 0 ? trimmed : nil
         }
     }
 
@@ -255,6 +314,15 @@ struct SearchView: View {
                     } else if !results.isEmpty {
                         // Results split by type: Movies on top, Shows below.
                         VStack(alignment: .leading, spacing: OrivioSpacing.xl) {
+                            if let notice = viewModel.outcome.notice {
+                                HStack(spacing: 24) {
+                                    Text(notice).font(.system(size: 26)).foregroundStyle(NTVDesign.textSecondary)
+                                    Spacer(minLength: 0)
+                                    Button("Réessayer") { viewModel.search(addonManager: addonManager) }
+                                        .buttonStyle(NTVActionButtonStyle())
+                                        .accessibilityIdentifier("ntv.search.retry")
+                                }.padding(.horizontal, contentInset).focusSection()
+                            }
                             if !movieResults.isEmpty {
                                 resultSection(title: animeContext ? "Films et résultats de mes addons" : "Films", items: movieResults, availableWidth: availableWidth)
                             }
@@ -264,13 +332,19 @@ struct SearchView: View {
                         }
                         .padding(.top, OrivioSpacing.sm)
                         .padding(.bottom, OrivioSpacing.huge)
-                    } else if viewModel.query.count >= 2 {
-                        OrivioEmptyState(
-                            icon: "magnifyingglass",
-                            title: "Aucun résultat",
-                            message: "Aucun résultat pour « \(viewModel.query) »."
-                        )
-                        .frame(height: 480)
+                    } else if viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 {
+                        VStack(spacing: 24) {
+                            OrivioEmptyState(
+                                icon: viewModel.outcome.canRetry ? "wifi.exclamationmark" : "magnifyingglass",
+                                title: viewModel.outcome.emptyTitle,
+                                message: viewModel.outcome.emptyMessage
+                            )
+                            if viewModel.outcome.canRetry {
+                                Button("Réessayer") { viewModel.search(addonManager: addonManager) }
+                                    .buttonStyle(NTVActionButtonStyle())
+                                    .accessibilityIdentifier("ntv.search.retry")
+                            }
+                        }.frame(minHeight: 420).padding(.horizontal, contentInset)
                     } else if !trending.isEmpty {
                         // Idle: something to browse instead of an empty void.
                         resultSection(title: animeContext ? "Animés de mes sources" : "Tendances", items: trending, availableWidth: availableWidth)

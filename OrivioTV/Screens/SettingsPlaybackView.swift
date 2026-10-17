@@ -26,6 +26,33 @@ struct PlaybackSettingsDetail: View {
     @ViewBuilder
     private var settingsScaffold: some View {
         DetailScaffold(title: SettingsCategory.playback.title, subtitle: SettingsCategory.playback.subtitle) {
+            SettingsGroupCard(title: "Langues des animés", subtitle: "Préférences distinctes des films et séries, appliquées à la prochaine lecture") {
+                PlaybackToggleRow(icon: "sparkles.tv", title: "Réglages propres aux animés",
+                    subtitle: "Utiliser une langue audio et des sous-titres différents pour les contenus reconnus comme animés",
+                    isOn: s.animeLanguages.enabled)
+                    .accessibilityIdentifier("ntv.settings.animeLanguages")
+                if store.settings.animeLanguages.enabled {
+                    OrivioDropdown(title: "Audio des animés", subtitle: "Choisir la piste lorsqu’elle est disponible", icon: "waveform",
+                        selection: store.settings.animeLanguages.audio,
+                        options: PlayerSettings.audioLanguageOptions(showAll: store.settings.allAudioLanguages,
+                            enabled: Set(store.settings.enabledAudioLanguages), current: store.settings.animeLanguages.audio)
+                            .map { OrivioDropdownOption($0.0, $0.1) }) {
+                            store.settings.animeLanguages.audio = $0
+                        }
+                    PlaybackToggleRow(icon: "captions.bubble.fill", title: "Sous-titres des animés",
+                        subtitle: "Activer automatiquement les sous-titres lorsqu’ils sont disponibles",
+                        isOn: s.animeLanguages.subtitlesEnabled)
+                    if store.settings.animeLanguages.subtitlesEnabled {
+                        OrivioDropdown(title: "Langue des sous-titres", subtitle: "Pour les animés uniquement", icon: "globe",
+                            selection: store.settings.animeLanguages.subtitle,
+                            options: PlayerSettings.subtitleLanguageOptions(showAll: store.settings.allSubtitleLanguages,
+                                enabled: Set(store.settings.enabledSubtitleLanguages), current: store.settings.animeLanguages.subtitle)
+                                .map { OrivioDropdownOption($0.0, $0.1) }) {
+                                store.settings.animeLanguages.subtitle = $0
+                            }
+                    }
+                }
+            }
             SettingsGroupCard(title: "Lecture automatique", subtitle: "Comportement à la fin d’un épisode") {
                 autoPlayControls
             }

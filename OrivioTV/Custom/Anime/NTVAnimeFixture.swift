@@ -4,7 +4,7 @@ import Foundation
 /// Deterministic public metadata for the remote-navigation test only.
 /// No account, private source, availability claim or playback URL is seeded.
 enum NTVAnimeFixture {
-    static func feed(for request: NTVAnimeRequest) -> NTVAnimeFeed {
+    static func feed(for request: NTVAnimeRequest, page: Int = 1) -> NTVAnimeFeed {
         let examples: [(Int, String, String)] = [
             (195516, "Kusuriya no Hitorigoto 3rd Season", "bx195516-MJpUZlOberqH.jpg"),
             (195604, "Black Clover 2nd Season", "bx195604-tSZcfKbVqSEG.jpg"),
@@ -14,7 +14,7 @@ enum NTVAnimeFixture {
             (160275, "Made in Abyss: Mezameru Shinpi", "bx160275-cBOWJpcCGeMq.jpg")
         ]
         let entries = examples.enumerated().map { index, example in
-            let media = NTVAnimeMedia(id: example.0,
+            let media = NTVAnimeMedia(id: example.0 + (page - 1) * 1_000_000,
                 title: .init(romaji: example.1, english: nil, native: nil),
                 coverImage: .init(
                     large: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/" + example.2,
@@ -30,7 +30,7 @@ enum NTVAnimeFixture {
                     airingAt: Date(timeIntervalSince1970: Double(start + (12 + index) * 3600)))
             }
         }
-        return NTVAnimeFeed(entries: entries, hasMore: false)
+        return NTVAnimeFeed(entries: entries, hasMore: page == 1)
     }
 }
 #endif

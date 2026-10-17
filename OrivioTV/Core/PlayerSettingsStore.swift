@@ -1,5 +1,20 @@
 import Foundation
 
+struct NTVAnimeLanguagePreferences: Codable, Equatable {
+    var enabled = false
+    var audio = "ja"
+    var subtitlesEnabled = true
+    var subtitle = "fr"
+    init() {}
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = (try? values.decode(Bool.self, forKey: .enabled)) ?? false
+        audio = (try? values.decode(String.self, forKey: .audio)) ?? "ja"
+        subtitlesEnabled = (try? values.decode(Bool.self, forKey: .subtitlesEnabled)) ?? true
+        subtitle = (try? values.decode(String.self, forKey: .subtitle)) ?? "fr"
+    }
+}
+
 /// How much of the stream to buffer AHEAD (read-ahead cache), so a slow or
 /// bursty connection doesn't cause mid-playback rebuffering.
 ///
@@ -191,6 +206,21 @@ struct PlayerSettings: Codable, Equatable {
     /// Preferred audio language (ISO 639-1 code); "" = stream default. When a
     /// stream carries a matching track it's selected automatically.
     var preferredAudioLanguage: String = ""
+    /// Opt-in defaults for explicitly recognized anime. Film/series defaults
+    /// and manual per-title playback memory remain stored independently.
+    var animeLanguages = NTVAnimeLanguagePreferences()
+
+    func resolvedForAnime(_ isAnime: Bool) -> Self {
+        guard isAnime, animeLanguages.enabled else { return self }
+        let codes = Set(Self.allAudioLanguageOptions.map { $0.0 })
+        var value = self
+        value.preferredAudioLanguage = codes.contains(animeLanguages.audio) ? animeLanguages.audio : "ja"
+        value.subtitlesOnByDefault = animeLanguages.subtitlesEnabled
+        value.preferredSubtitleLanguage = codes.contains(animeLanguages.subtitle) ? animeLanguages.subtitle : "fr"
+        value.subtitleSecondaryLanguage = ""
+        value.subtitlePreferForced = false
+        return value
+    }
     /// Picker language lists. Each picker shows the short common set by
     /// default; the "… languages" drill-ins under Audio / Subtitles turn on
     /// either EVERY language or a hand-picked subset, so a viewer who needs an
@@ -525,6 +555,7 @@ struct PlayerSettings: Codable, Equatable {
         subtitleBackgroundOpacity = (try? c.decode(Int.self, forKey: .subtitleBackgroundOpacity)) ?? d.subtitleBackgroundOpacity
         subtitleVerticalOffset = (try? c.decode(Int.self, forKey: .subtitleVerticalOffset)) ?? d.subtitleVerticalOffset
         preferredAudioLanguage = (try? c.decode(String.self, forKey: .preferredAudioLanguage)) ?? d.preferredAudioLanguage
+        animeLanguages = (try? c.decode(NTVAnimeLanguagePreferences.self, forKey: .animeLanguages)) ?? d.animeLanguages
         allAudioLanguages = (try? c.decode(Bool.self, forKey: .allAudioLanguages)) ?? d.allAudioLanguages
         enabledAudioLanguages = (try? c.decode([String].self, forKey: .enabledAudioLanguages)) ?? d.enabledAudioLanguages
         allSubtitleLanguages = (try? c.decode(Bool.self, forKey: .allSubtitleLanguages)) ?? d.allSubtitleLanguages

@@ -1,8 +1,8 @@
 import Foundation
 
-struct NTVAnimeMedia: Decodable, Identifiable, Sendable {
-    struct Title: Decodable, Sendable { let romaji: String?; let english: String?; let native: String? }
-    struct Cover: Decodable, Sendable {
+struct NTVAnimeMedia: Codable, Identifiable, Sendable {
+    struct Title: Codable, Sendable { let romaji: String?; let english: String?; let native: String? }
+    struct Cover: Codable, Sendable {
         let large: String?
         let extraLarge: String?
         init(large: String?, extraLarge: String? = nil) {
@@ -86,11 +86,21 @@ struct NTVAnimeDay: Identifiable, Hashable, Sendable {
         }
     }
     func contains(_ date: Date) -> Bool { date >= start && date < end }
+
+    static func shiftedWeek(from date: Date, by offset: Int, calendar: Calendar = .current) -> [Self] {
+        guard (-1...1).contains(offset),
+              let shifted = calendar.date(byAdding: .weekOfYear, value: offset, to: date) else { return [] }
+        return week(containing: shifted, calendar: calendar)
+    }
 }
 
 enum NTVAnimeRequest: Hashable, Sendable {
     case season(year: Int, name: String)
     case day(start: Int, end: Int)
+
+    static let seasons = [("WINTER", "Hiver"), ("SPRING", "Printemps"), ("SUMMER", "Été"), ("FALL", "Automne")]
+    var seasonYear: Int? { if case let .season(year, _) = self { return year }; return nil }
+    var seasonName: String? { if case let .season(_, name) = self { return name }; return nil }
 
     static func season(at date: Date, calendar: Calendar = .current) -> Self {
         let names = ["WINTER", "SPRING", "SUMMER", "FALL"]
@@ -125,25 +135,29 @@ actor NTVAnimeService {
     static let shared = NTVAnimeService()
     private let transport: Transport
     private let pool = NTVSharedWorkPool<NTVAnimeFeed>(limit: 1)
-    private var cache: [NTVAnimeRequest: (Date, NTVAnimeFeed)] = [:]
+    private var cache: [String: (Date, NTVAnimeFeed)] = [:]
     private var nextRequest = Date.distantPast
     private var blockedUntil = Date.distantPast
 
     init(transport: @escaping Transport = NTVAnimeService.send) { self.transport = transport }
 
-    func load(_ request: NTVAnimeRequest) async throws -> NTVAnimeFeed {
+    static let maximumPages = 100
+
+    func load(_ request: NTVAnimeRequest, page: Int = 1) async throws -> NTVAnimeFeed {
         try Task.checkCancellation()
-        if let (saved, feed) = cache[request], Date().timeIntervalSince(saved) < 600 { return feed }
-        return try await pool.value(for: request.cacheKey) { try await self.perform(request) }
+        guard (1...Self.maximumPages).contains(page) else { throw NTVAnimeError.invalidResponse }
+        let key = request.cacheKey + ".page.\(page)"
+        if let (saved, feed) = cache[key], Date().timeIntervalSince(saved) < 600 { return feed }
+        return try await pool.value(for: key) { try await self.perform(request, page: page, cacheKey: key) }
     }
 
-    private func perform(_ selection: NTVAnimeRequest) async throws -> NTVAnimeFeed {
+    private func perform(_ selection: NTVAnimeRequest, page: Int, cacheKey: String) async throws -> NTVAnimeFeed {
         guard Date() >= blockedUntil else { throw NTVAnimeError.limited }
         let delay = nextRequest.timeIntervalSinceNow
         if delay > 0 { try await Task.sleep(nanoseconds: UInt64(min(delay, 2) * 1_000_000_000)) }
         try Task.checkCancellation()
         nextRequest = Date().addingTimeInterval(2)
-        let payload = try Self.payload(for: selection)
+        let payload = try Self.payload(for: selection, page: page)
         var request = URLRequest(url: URL(string: "https://graphql.anilist.co")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -161,24 +175,25 @@ actor NTVAnimeService {
         let feed = try Self.decode(data, for: selection)
         cache = cache.filter { Date().timeIntervalSince($0.value.0) < 600 }
         if cache.count >= 10, let oldest = cache.min(by: { $0.value.0 < $1.value.0 })?.key { cache.removeValue(forKey: oldest) }
-        cache[selection] = (Date(), feed)
+        cache[cacheKey] = (Date(), feed)
         return feed
     }
 
-    static func payload(for selection: NTVAnimeRequest) throws -> Data {
+    static func payload(for selection: NTVAnimeRequest, page: Int = 1) throws -> Data {
+        guard (1...maximumPages).contains(page) else { throw NTVAnimeError.invalidResponse }
         let fields = "id title { romaji english native } coverImage { extraLarge large } bannerImage description(asHtml: false) episodes format isAdult"
         let query: String
         let variables: [String: Any]
         switch selection {
         case let .season(year, name):
             guard (1900...2200).contains(year), ["WINTER", "SPRING", "SUMMER", "FALL"].contains(name) else { throw NTVAnimeError.invalidResponse }
-            query = "query($year: Int!, $season: MediaSeason!) { Page(page: 1, perPage: 24) { pageInfo { hasNextPage } media(type: ANIME, seasonYear: $year, season: $season, isAdult: false, sort: POPULARITY_DESC) { \(fields) } } }"
-            variables = ["year": year, "season": name]
+            query = "query($year: Int!, $season: MediaSeason!, $page: Int!) { Page(page: $page, perPage: 24) { pageInfo { hasNextPage } media(type: ANIME, seasonYear: $year, season: $season, isAdult: false, sort: POPULARITY_DESC) { \(fields) } } }"
+            variables = ["year": year, "season": name, "page": page]
         case let .day(start, end):
             guard start > 0, end > start, end <= Int(Int32.max), end - start <= 26 * 3600 else { throw NTVAnimeError.invalidResponse }
             // Strict GraphQL comparisons become a half-open calendar day.
-            query = "query($from: Int!, $to: Int!) { Page(page: 1, perPage: 50) { pageInfo { hasNextPage } airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, sort: TIME) { id episode airingAt media { \(fields) } } } }"
-            variables = ["from": start - 1, "to": end]
+            query = "query($from: Int!, $to: Int!, $page: Int!) { Page(page: $page, perPage: 50) { pageInfo { hasNextPage } airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, sort: TIME) { id episode airingAt media { \(fields) } } } }"
+            variables = ["from": start - 1, "to": end, "page": page]
         }
         return try JSONSerialization.data(withJSONObject: ["query": query, "variables": variables])
     }

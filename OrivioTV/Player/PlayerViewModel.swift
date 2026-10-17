@@ -3027,9 +3027,10 @@ final class PlayerViewModel: ObservableObject {
         request: PlaybackRequest,
         addonManager: AddonManager,
         progressStore: ProgressStore,
-        settings: PlayerSettings = .default,
+        settings baseSettings: PlayerSettings = .default,
         allowUnairedNextUp: Bool = true
     ) {
+        let settings = baseSettings.resolvedForAnime(NTVAnimeLibrary.shared.contains(request.meta))
         Self.liveInstanceCounter.mutate { $0 += 1 }
         // Hand the poster cache's RAM back before the player allocates its
         // own. See ImageCache.dropDecoded().

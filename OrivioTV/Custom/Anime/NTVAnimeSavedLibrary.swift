@@ -5,7 +5,10 @@ struct NTVAnimeSavedLibrary: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var progress: ProgressStore
     @ObservedObject private var anime = NTVAnimeLibrary.shared
+    @ObservedObject private var follows = NTVAnimeFollows.shared
+    @EnvironmentObject private var profiles: ProfileStore
     let onSelect: (MetaItem) -> Void
+    var onSelectFollow: (NTVAnimeMedia) -> Void = { _ in }
 
     private struct Entry: Identifiable {
         let meta: MetaItem
@@ -33,10 +36,29 @@ struct NTVAnimeSavedLibrary: View {
 
     var body: some View {
         let current = entries
+        let followed = follows.items(profile: profiles.activeProfileID)
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 Text("Reprendre et retrouver mes animés").font(.system(size: 30, weight: .semibold))
-                if current.isEmpty {
+                if !followed.isEmpty {
+                    Text("Animés suivis · \(followed.count)").font(.system(size: 30, weight: .semibold))
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 238), spacing: 28)], spacing: 28) {
+                        ForEach(followed) { media in
+                            Button { onSelectFollow(media) } label: {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Color.clear.aspectRatio(2.0 / 3.0, contentMode: .fit)
+                                        .overlay { RemoteImage(url: media.artwork, maxDimension: 550) }
+                                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    Text(media.displayTitle).font(.system(size: 25, weight: .medium)).lineLimit(2)
+                                }
+                            }
+                            .buttonStyle(PlainCardButtonStyle())
+                            .accessibilityLabel(media.displayTitle)
+                            .accessibilityIdentifier("ntv.anime.followed.\(media.id)")
+                        }
+                    }.focusSection()
+                }
+                if current.isEmpty && followed.isEmpty {
                     VStack(alignment: .leading, spacing: 20) {
                         Text("Ta liste commence ici").font(.system(size: 36, weight: .semibold))
                         Text("Ouvre un animé depuis cet espace et retrouve ici ta progression et tes favoris enregistrés dans nTV.")
@@ -45,7 +67,7 @@ struct NTVAnimeSavedLibrary: View {
                     .padding(36).frame(maxWidth: .infinity, alignment: .leading)
                     .background(NTVDesign.surface, in: RoundedRectangle(cornerRadius: 22))
                     .accessibilityIdentifier("ntv.anime.library.empty")
-                } else {
+                } else if !current.isEmpty {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 470), spacing: 28)], spacing: 28) {
                         ForEach(current) { entry in
                             Button { onSelect(entry.meta) } label: {

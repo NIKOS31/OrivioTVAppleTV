@@ -1004,19 +1004,31 @@ final class NTVDesignSmoke: XCTestCase {
         let screen = app.windows.firstMatch.frame
         XCTAssertTrue(screen.contains(featured.frame))
         XCTAssertGreaterThan(featured.frame.minY, app.buttons["ntv.navigation.8"].frame.maxY + 8)
+        XCTAssertTrue(app.buttons["ntv.anime.seasonPicker"].exists)
+        XCTAssertTrue(app.buttons["ntv.anime.yearPicker"].exists)
+        XCTAssertTrue(screen.contains(app.buttons["ntv.anime.currentSeason"].frame))
         capture("ntv-anime-season")
         remote.press(.right)
         XCTAssertTrue(focused(planning, timeout: 5))
         remote.press(.select)
         let dayButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.anime.day."))
         XCTAssertEqual(dayButtons.count, 7, "The calendar must display a complete local week.")
+        for id in ["previousWeek", "currentWeek", "nextWeek", "followingOnly"] {
+            let control = app.buttons["ntv.anime.\(id)"]
+            XCTAssertTrue(control.exists)
+            XCTAssertTrue(screen.contains(control.frame), "Calendar controls must fit inside the screen.")
+        }
         let card = app.buttons["ntv.anime.card.airing.195516"]
         XCTAssertTrue(card.waitForExistence(timeout: 10))
         XCTAssertTrue(screen.contains(card.frame))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "La diffusion ne garantit pas")).firstMatch.exists)
         capture("ntv-anime-planning")
-        remote.press(.down)
         let focusedDay = dayButtons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        for _ in 0..<3 {
+            if focusedDay.exists { break }
+            remote.press(.down)
+            if focusedDay.waitForExistence(timeout: 2) { break }
+        }
         XCTAssertTrue(focusedDay.waitForExistence(timeout: 5))
         remote.press(.select)
         XCTAssertTrue(focusedDay.value as? String == "Sélectionné")
@@ -1037,6 +1049,15 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(search, timeout: 5))
         XCTAssertTrue(screen.contains(search.frame))
         capture("ntv-anime-detail")
+        let follow = app.buttons["ntv.anime.follow"]
+        let wasFollowed = follow.label.contains("Ne plus suivre")
+        for _ in 0..<3 {
+            if follow.hasFocus { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(focused(follow, timeout: 5), "Following must be reachable from the detail search action.")
+        if !wasFollowed { remote.press(.select) }
+        XCTAssertTrue(follow.label.contains("Ne plus suivre"))
         remote.press(.menu)
         XCTAssertTrue(focused(selectedCard, timeout: 8), "Closing an anime must return to its selected calendar card.")
         remote.press(.select)
@@ -1056,8 +1077,27 @@ final class NTVDesignSmoke: XCTestCase {
         }
         XCTAssertTrue(focused(animeLibrary, timeout: 5))
         remote.press(.select)
-        XCTAssertTrue(app.staticTexts["Ta liste commence ici"].waitForExistence(timeout: 8))
-        capture("ntv-anime-library-empty")
+        let followedCard = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@",
+            "ntv.anime.followed.", selectedTitle)).firstMatch
+        XCTAssertTrue(followedCard.waitForExistence(timeout: 8))
+        capture("ntv-anime-library-followed")
+        for _ in 0..<6 {
+            if followedCard.hasFocus { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(focused(followedCard, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(focused(search, timeout: 8))
+        if !wasFollowed {
+            for _ in 0..<3 {
+                if follow.hasFocus { break }
+                remote.press(.down)
+            }
+            XCTAssertTrue(focused(follow, timeout: 5))
+            remote.press(.select)
+            XCTAssertTrue(follow.label.contains("Suivre cet animé"), "Restore the fixture’s original follow state.")
+        }
+        remote.press(.menu)
     }
 
     func testTopMenuRemoteRoundTrip() {

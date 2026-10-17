@@ -363,6 +363,7 @@ final class ProfileStore: ObservableObject {
     /// one's Continue Watching, library and watch history.
     private func purgeProfileData(id: Int) {
         guard id != 1 else { return }
+        NTVAnimeFollows.shared.forget(profile: id)
         let suffix = ".p\(id)"
         let defaults = UserDefaults.standard
         var removed = 0

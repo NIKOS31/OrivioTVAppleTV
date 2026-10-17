@@ -1348,6 +1348,13 @@ struct RootView: View {
                     // points AT it: Left for the edge rail, Up for the bar.
                     // Everything downstream is identical.
                     guard ctx.focusHeading.contains(navIsTop ? .up : .left) else { return }
+                    // Catalog shelves bridge their own failed vertical moves.
+                    // This broadcast reaches both observers: opening the bar
+                    // here would compete with the destination shelf's landing.
+                    // The first shelf explicitly calls onBackAtRoot; the
+                    // Categories trigger records a non-shelf focus identity.
+                    if navIsTop, ntvCatalogMenuRouterID != nil,
+                       ContentFocusRouter.shared.hasCatalogRowFocus { return }
                     // The rail is ON SCREEN and focus isn't in it, so the
                     // engine couldn't step into it — a `.disabled` window, or a
                     // geometry it didn't resolve. A disabled rail can't take

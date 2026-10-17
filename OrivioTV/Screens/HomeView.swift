@@ -2701,7 +2701,8 @@ struct HomePosterRow: View {
     var accessibilityPrefix = "ntv.home.poster"
     var restoreItemID: String? = nil
     var onVerticalMove: ((MoveCommandDirection) -> Void)? = nil
-    var focusFirstRequestID: UUID? = nil
+    var focusFirstRequest: ContentFocusRouter.EntryRequest? = nil
+    var restoreFocusRequest: ContentFocusRouter.EntryRequest? = nil
     var onLeftAtStart: (() -> Void)? = nil
     var onFirstVisibleChange: ((String?) -> Void)? = nil
     var focusFirstScroll = true
@@ -2816,9 +2817,10 @@ struct HomePosterRow: View {
                 .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
                 .onChange(of: focusedID) { old, new in
                     guard let new else { return }
-                    let enteredRow = onVerticalMove != nil && ContentFocusRouter.startsCatalogRow(
+                    let router = ContentFocusRouter.shared
+                    let enteredRow = onVerticalMove != nil && !router.hasPendingRestoration && !router.isLanding(in: row.id) && ContentFocusRouter.startsCatalogRow(
                         previousItem: old, previousRow: ContentFocusRouter.shared.lastRowID,
-                        currentRow: row.id, restorationItem: restoreItemID)
+                        currentRow: row.id, restorationItem: router.isPendingEntry(restoreFocusRequest) ? restoreItemID : nil)
                     ContentFocusRouter.shared.noteFocused(row: row.id)
                     guard enteredRow, let first = displayedItems.first?.id, first != new else { return }
                     // Normalize in this update, rather than scheduling an
@@ -2834,9 +2836,10 @@ struct HomePosterRow: View {
                 }
                 .onChange(of: seeAllFocused) { _, focused in
                     guard focused else { return }
-                    let enteredRow = onVerticalMove != nil && ContentFocusRouter.startsCatalogRow(
+                    let router = ContentFocusRouter.shared
+                    let enteredRow = onVerticalMove != nil && !router.hasPendingRestoration && !router.isLanding(in: row.id) && ContentFocusRouter.startsCatalogRow(
                         previousItem: nil, previousRow: ContentFocusRouter.shared.lastRowID,
-                        currentRow: row.id, restorationItem: restoreItemID)
+                        currentRow: row.id, restorationItem: router.isPendingEntry(restoreFocusRequest) ? restoreItemID : nil)
                     ContentFocusRouter.shared.noteFocused(row: row.id)
                     guard enteredRow, let first = displayedItems.first?.id else { return }
                     // At a far-right column UIKit can enter the NEXT shelf via
@@ -2848,8 +2851,9 @@ struct HomePosterRow: View {
                         focusedID = first
                     }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
-                .task(id: focusFirstRequestID) {
-                    guard focusFirstRequestID != nil else { return }
+                .task(id: focusFirstRequest) {
+                    guard let focusFirstRequest,
+                          ContentFocusRouter.shared.consumeEntry(focusFirstRequest) else { return }
                     guard let first = displayedItems.first?.id else {
                         if onLeftAtStart != nil { emptyRowFocused = true }
                         return
@@ -2862,13 +2866,16 @@ struct HomePosterRow: View {
                         focusedID = first
                     }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
-                .task(id: restoreItemID) {
-                    guard let target = restoreItemID, row.items.contains(where: { $0.id == target }) else { return }
-                    let interaction = ContentFocusRouter.shared.interactionGeneration
+                .task(id: restoreFocusRequest) {
+                    guard let request = restoreFocusRequest else { return }
+                    guard let target = restoreItemID, displayedItems.contains(where: { $0.id == target }) else {
+                        ContentFocusRouter.shared.cancelEntry(request)
+                        return
+                    }
                     // Allow the pop transition to mount this row before a focus
                     // write. Reuse its loaded data and scroll only this shelf.
-                    try? await Task.sleep(for: .milliseconds(320))
-                    guard !Task.isCancelled, ContentFocusRouter.shared.interactionGeneration == interaction else { return }
+                    do { try await Task.sleep(for: .milliseconds(320)) } catch { return }
+                    guard !Task.isCancelled, ContentFocusRouter.shared.consumeEntry(request) else { return }
                     ContentFocusRouter.shared.land(in: row.id, assign: {
                         proxy.scrollTo(target, anchor: .center)
                         focusedID = target

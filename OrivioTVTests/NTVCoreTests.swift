@@ -122,6 +122,101 @@ final class NTVCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testADeferredCatalogEntryCanBeClaimedOnlyOnceAcrossRemounts() {
+        let router = ContentFocusRouter()
+        let request = router.makeEntryRequest(in: "ntv.catalog.shelf.a")
+        XCTAssertTrue(router.isPendingEntry(request))
+        XCTAssertTrue(router.consumeEntry(request))
+        XCTAssertFalse(router.isPendingEntry(request))
+        XCTAssertFalse(router.consumeEntry(request), "Remounting with the same task ID must not replay an old category selection.")
+    }
+
+    @MainActor
+    func testANewerCategoryRequestSurvivesAnOlderViewsCleanupAndClaim() {
+        let router = ContentFocusRouter()
+        let old = router.makeEntryRequest(in: "ntv.catalog.shelf.a")
+        let current = router.makeEntryRequest(in: "ntv.catalog.shelf.b")
+        router.cancelEntry(old)
+        XCTAssertFalse(router.consumeEntry(old))
+        XCTAssertTrue(router.isPendingEntry(current))
+        XCTAssertTrue(router.consumeEntry(current))
+    }
+
+    @MainActor
+    func testMovingWithinTheDestinationCancelsItsUnclaimedRestoration() {
+        let router = ContentFocusRouter()
+        let request = router.makeEntryRequest(in: "ntv.catalog.shelf.a")
+        router.noteUserMovement(in: "ntv.catalog.shelf.a")
+        XCTAssertFalse(router.consumeEntry(request), "A delayed detail return must yield to the viewer's next movement.")
+    }
+
+    @MainActor
+    func testTheDepartingRowsLateCommandDoesNotInvalidateTheNewEntry() {
+        let router = ContentFocusRouter()
+        let request = router.makeEntryRequest(in: "ntv.catalog.shelf.b")
+        router.noteUserMovement(in: "ntv.catalog.shelf.a")
+        XCTAssertTrue(router.consumeEntry(request), "The command that caused a transfer may arrive after its failed-move notification.")
+    }
+
+    @MainActor
+    func testEnteringAnotherRowInvalidatesAnUnclaimedCatalogRequest() {
+        let router = ContentFocusRouter()
+        let request = router.makeEntryRequest(in: "ntv.catalog.shelf.a")
+        router.noteFocused(row: "ntv.catalog.shelf.b")
+        XCTAssertFalse(router.consumeEntry(request), "A lazy row must not reclaim focus after native navigation has already moved elsewhere.")
+    }
+
+    @MainActor
+    func testDetailRestorationSurvivesNativeFallbackButYieldsToMovementInAnyRow() {
+        let router = ContentFocusRouter()
+        let request = router.makeEntryRequest(in: "ntv.catalog.shelf.remembered", kind: .restoration)
+        router.noteFocused(row: "ntv.catalog.shelf.nearby")
+        XCTAssertTrue(router.hasPendingRestoration)
+        XCTAssertTrue(router.isPendingEntry(request), "An automatic pop-transition fallback must not lose the remembered poster.")
+        router.noteUserMovement(in: "ntv.catalog.shelf.nearby")
+        XCTAssertFalse(router.hasPendingRestoration)
+        XCTAssertFalse(router.consumeEntry(request), "A real command in the fallback row must prevent a later pull back.")
+    }
+
+    @MainActor
+    func testNativeEntryIntoTheRequestedRowKeepsItsPendingRestoration() {
+        let router = ContentFocusRouter()
+        let request = router.makeEntryRequest(in: "ntv.catalog.shelf.a")
+        router.noteFocused(row: "ntv.catalog.shelf.a")
+        XCTAssertTrue(router.isPendingEntry(request))
+        XCTAssertTrue(router.consumeEntry(request))
+        router.land(in: "ntv.catalog.shelf.a", assign: {}, landed: { false })
+        XCTAssertTrue(router.isLanding(in: "ntv.catalog.shelf.a"), "An explicit restoration owns the destination while the lazy poster mounts.")
+        XCTAssertFalse(router.isLanding(in: "ntv.catalog.shelf.b"))
+        router.cancelLanding()
+        XCTAssertFalse(router.isLanding(in: "ntv.catalog.shelf.a"))
+    }
+
+    @MainActor
+    func testUnmountingOrLeavingThePageInvalidatesAnUnclaimedEntry() {
+        let router = ContentFocusRouter()
+        let first = router.makeEntryRequest(in: "ntv.catalog.shelf.a")
+        router.unregister("ntv.catalog.shelf.a")
+        XCTAssertFalse(router.consumeEntry(first))
+        let second = router.makeEntryRequest(in: "ntv.catalog.shelf.b")
+        router.noteUserMovement()
+        XCTAssertFalse(router.consumeEntry(second), "Opening a menu or changing page supersedes all pending catalog entry work.")
+    }
+
+    @MainActor
+    func testCategoryHeaderHasDistinctFailedMoveOwnershipFromPosterShelves() {
+        let router = ContentFocusRouter()
+        router.noteFocused(row: "ntv.catalog.shelf.a")
+        XCTAssertTrue(router.hasCatalogRowFocus)
+        let pending = router.makeEntryRequest(in: "ntv.catalog.shelf.a", kind: .restoration)
+        router.noteFocused(row: "ntv.catalog.movie.entry")
+        XCTAssertFalse(router.hasCatalogRowFocus, "The Categories trigger must allow Up to reach the top navigation.")
+        XCTAssertFalse(router.consumeEntry(pending), "Focusing Categories must invalidate a pending poster landing.")
+        router.noteFocused(row: "fixture.row.0")
+        XCTAssertFalse(router.hasCatalogRowFocus, "Home retains its existing native boundary routing.")
+    }
+
+    @MainActor
     func testANewRemoteMovementCancelsSameRowRetriesAndInvalidatesPendingRestoration() async throws {
         let router = ContentFocusRouter()
         var assignments = 0
@@ -372,6 +467,17 @@ final class NTVCoreTests: XCTestCase {
         XCTAssertEqual(model.firstNavigableSourceID, first, "An entirely filtered gallery must keep its Categories recovery action reachable.")
         model.configure(addons: [addon], type: "movie", scope: "profile-two")
         XCTAssertEqual(model.firstNavigableSourceID, first)
+    }
+
+    @MainActor
+    func testCatalogEntryUsesThePreviousRowEvenWhenLocalFocusWasRetained() {
+        let first = "ntv.catalog.shelf.first", second = "ntv.catalog.shelf.second"
+        XCTAssertTrue(ContentFocusRouter.startsCatalogRow(previousItem: "remembered-tenth-poster", previousRow: first,
+            currentRow: second, restorationItem: nil), "A retained local focus value must not bypass first-poster entry from another row.")
+        XCTAssertFalse(ContentFocusRouter.startsCatalogRow(previousItem: "remembered-tenth-poster", previousRow: second,
+            currentRow: second, restorationItem: nil), "An ordinary step inside the row must stay native.")
+        XCTAssertFalse(ContentFocusRouter.startsCatalogRow(previousItem: "remembered-tenth-poster", previousRow: first,
+            currentRow: second, restorationItem: "remembered-tenth-poster"), "An explicit detail restoration must still retain its chosen poster.")
     }
 
     @MainActor

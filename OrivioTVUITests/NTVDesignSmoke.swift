@@ -4,6 +4,71 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testSeanimeCatalogRapidMovesYieldToNewNavigation() {
+        exerciseCatalogRapidMoves(seanime: true)
+    }
+
+    func testTopMenuCatalogRapidMovesYieldToNewNavigation() {
+        exerciseCatalogRapidMoves(seanime: false)
+    }
+
+    private func exerciseCatalogRapidMoves(seanime: Bool) {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvCatalogCategoriesDemo", "-ntvRowLayoutFixture"]
+        if seanime { app.launchArguments.append("-ntvSeanimeDemo") }
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        let movies = app.buttons["ntv.navigation.5"]
+        let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 20))
+        for _ in 0..<3 {
+            if movies.hasFocus { break }
+            remote.press(.menu)
+            if focused(movies, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(movies, timeout: 5))
+        remote.press(seanime ? .right : .down)
+        XCTAssertTrue(focused(first, timeout: 8))
+        if seanime {
+            remote.press(.up)
+            XCTAssertTrue(focused(app.buttons["ntv.catalog.movie.openCategories"], timeout: 8))
+            remote.press(.select)
+        } else { remote.press(.left) }
+        let categoryPrefix = "ntv.category.movie."
+        let categories = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", categoryPrefix))
+        XCTAssertTrue(categories.firstMatch.waitForExistence(timeout: 8))
+        let ids = categories.allElementsBoundByIndex.map(\.identifier)
+        XCTAssertGreaterThanOrEqual(ids.count, 2)
+        let sourceIDs = ids.prefix(2).map { String($0.dropFirst(categoryPrefix.count)) }
+        let rows = sourceIDs.map { app.descendants(matching: .any)["ntv.catalog.shelf." + $0].firstMatch }
+        remote.press(.right)
+        let rowFirst = rows[0].buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(focused(rowFirst, timeout: 8))
+        for _ in 0..<6 { remote.press(.right) }
+        remote.press(.down)
+        let nextPosters = rows[1].buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie."))
+        let nextFirst = nextPosters.firstMatch
+        XCTAssertTrue(focused(nextFirst, timeout: 8), "A vertical entry starts the next shelf at its first poster.")
+        remote.press(.right)
+        let nextSecond = nextPosters.element(boundBy: 1)
+        XCTAssertTrue(focused(nextSecond, timeout: 5))
+        // Covers the full existing 360ms retry window after the next action.
+        Thread.sleep(forTimeInterval: 0.5)
+        XCTAssertTrue(nextSecond.hasFocus, "An old category entry must not pull the viewer back after Right.")
+        remote.press(.up)
+        remote.press(.down)
+        remote.press(.up)
+        XCTAssertTrue(focused(rowFirst, timeout: 8), "Alternating rows must finish on the destination of the latest command.")
+        Thread.sleep(forTimeInterval: 0.5)
+        XCTAssertTrue(rowFirst.hasFocus)
+        XCTAssertFalse(app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch.exists)
+        capture(seanime ? "ntv-seanime-catalog-rapid-row-moves" : "ntv-top-catalog-rapid-row-moves")
+    }
+
     func testSeanimeCategoriesAndMainRailHaveDistinctRemotePaths() {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -286,9 +351,18 @@ final class NTVDesignSmoke: XCTestCase {
     }
 
     func testRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable() {
+        exerciseRepeatedHomeRows(seanime: false)
+    }
+
+    func testSeanimeRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable() {
+        exerciseRepeatedHomeRows(seanime: true)
+    }
+
+    private func exerciseRepeatedHomeRows(seanime: Bool) {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvRowLayoutFixture"]
+        if seanime { app.launchArguments.append("-ntvSeanimeDemo") }
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
@@ -300,9 +374,10 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(settings, timeout: 8))
         for _ in 0..<7 {
             if app.buttons["ntv.navigation.0"].hasFocus { break }
-            remote.press(.left)
+            remote.press(seanime ? .up : .left)
         }
         remote.press(.select)
+        if seanime { remote.press(.right) }
         let spotlight = app.buttons["ntv.home.spotlight"]
         XCTAssertTrue(spotlight.waitForExistence(timeout: 15))
         // Home may keep top-bar focus after a tab change. Enter through its
@@ -321,7 +396,7 @@ final class NTVDesignSmoke: XCTestCase {
             XCTAssertTrue(focused(destination, timeout: 8))
             Thread.sleep(forTimeInterval: 0.35)
             let settled = destination.frame
-            XCTAssertGreaterThan(settled.minY, navigation.frame.maxY + 8)
+            XCTAssertGreaterThan(settled.minY, seanime ? app.windows.firstMatch.frame.minY + 8 : navigation.frame.maxY + 8)
             XCTAssertLessThan(settled.maxY, app.windows.firstMatch.frame.maxY - 8)
             Thread.sleep(forTimeInterval: 0.8)
             XCTAssertTrue(destination.hasFocus, "No delayed retry may pull focus to a different row.")
@@ -332,7 +407,7 @@ final class NTVDesignSmoke: XCTestCase {
             remote.press(.down)
             XCTAssertTrue(focused(destination, timeout: 8))
         }
-        capture("ntv-home-repeated-row-navigation")
+        capture(seanime ? "ntv-seanime-home-repeated-row-navigation" : "ntv-home-repeated-row-navigation")
     }
 
     func testSystemIconRegistrationAndActualSwitcherCapture() {

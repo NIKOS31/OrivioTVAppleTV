@@ -644,6 +644,7 @@ final class HomeViewModel: ObservableObject {
             // many rows that is quadratic work on the main actor. Same throttle
             // the Sources sweep uses.
             var lastFlush = Date.distantPast
+            var needsFinalPublication = true
             for await (index, key, entry) in group {
                 // Stop the whole sweep once superseded, rather than only muting
                 // its results. The generation check below prevented a stale
@@ -655,12 +656,15 @@ final class HomeViewModel: ObservableObject {
                 guard let entry else { continue }
                 fetched.append((index: index, key: String?.some(key), entry: entry))
                 freshByKey[key] = entry
+                needsFinalPublication = true
                 if Date().timeIntervalSince(lastFlush) > 0.4, isCurrent() {
                     entries = compose(fresh: freshByKey)
+                    needsFinalPublication = false
                     lastFlush = Date()
                 }
             }
-            if isCurrent() { entries = compose(fresh: freshByKey) }
+            // The last response may already have flushed this exact snapshot.
+            if isCurrent(), needsFinalPublication { entries = compose(fresh: freshByKey) }
         }
 
         // Superseded mid-flight: a newer load owns the screen now. Bail before
@@ -672,7 +676,9 @@ final class HomeViewModel: ObservableObject {
         let ordered = fetched.sorted { $0.index < $1.index }
         // Per-row fallback, so one dead catalog can't blank its row and an
         // offline refresh can't blank the screen.
-        entries = compose(fresh: freshByKey)
+        // The task group's last publication above already includes every
+        // response and cached fallback. Publishing it again would rebuild the
+        // item index and invalidate Home a second time with identical rows.
 
         // Persist fresh catalog items for the next cold start. Only real
         // add-on catalog rows (whose key maps back to a live catalog) are
@@ -956,6 +962,55 @@ private struct HomeLiveChannelCard: View {
     }
 }
 
+/// Owns the one delayed initial focus request. A later navigation or row entry
+/// wins even if the wait operation finishes after cancellation.
+@MainActor
+final class NTVInitialHeroFocusRequest {
+    private let wait: @Sendable () async throws -> Void
+    private var task: Task<Void, Never>?
+    private var generation: UUID?
+
+    init(wait: @escaping @Sendable () async throws -> Void = {
+        try await Task.sleep(for: .milliseconds(100))
+    }) { self.wait = wait }
+
+    @discardableResult
+    func schedule(router: ContentFocusRouter, hero: HeroFocus,
+                  isEligible: @escaping @MainActor () -> Bool,
+                  apply: @escaping @MainActor () -> Void) -> Task<Void, Never> {
+        cancel()
+        let ticket = UUID(), interaction = router.interactionGeneration
+        let heroInteraction = hero.interactionRevision
+        let row = router.lastRowID, wait = self.wait
+        generation = ticket
+        let request = Task<Void, Never> { @MainActor [weak self] in
+            defer { self?.finish(ticket) }
+            do { try await wait() } catch { return }
+            guard !Task.isCancelled, self?.generation == ticket,
+                  router.interactionGeneration == interaction,
+                  hero.interactionRevision == heroInteraction,
+                  router.lastRowID == row, isEligible() else { return }
+            apply()
+        }
+        task = request
+        return request
+    }
+
+    func cancel() {
+        generation = nil
+        task?.cancel()
+        task = nil
+    }
+
+    private func finish(_ ticket: UUID) {
+        guard generation == ticket else { return }
+        generation = nil
+        task = nil
+    }
+
+    deinit { task?.cancel() }
+}
+
 /// The live billboard title, updated as focus moves across cards. Kept separate
 /// from HomeViewModel and owned by HomeView WITHOUT observation, so its frequent
 /// animated changes re-render only the billboard subviews — not the poster rows.
@@ -985,6 +1040,9 @@ final class HeroFocus: ObservableObject {
     /// Last time the user drove the hero (focused a card / touched the hero),
     /// so rotation pauses while browsing and resumes once idle.
     private var lastInteraction = Date.distantPast
+    /// Unpublished: invalidates a pending initial landing without redrawing Home.
+    /// A move away and back must still supersede the original request.
+    private(set) var interactionRevision: UInt64 = 0
     /// When the spotlight last advanced, so each title stays up for a readable
     /// dwell instead of flipping on every timer tick.
     private var lastRotation = Date.distantPast
@@ -1077,13 +1135,16 @@ final class HeroFocus: ObservableObject {
     }
 
     /// Record a user interaction so the timer holds off for a beat.
-    func markInteraction() { lastInteraction = Date() }
+    func markInteraction() {
+        lastInteraction = Date()
+        interactionRevision &+= 1
+    }
 
     /// Manual prev/next through the spotlight (Left/Right on the hero). Wraps,
     /// pauses auto-rotation, and shows the chosen title immediately.
     func stepSpotlight(by delta: Int) {
         guard spotlight.count > 1 else { return }
-        lastInteraction = Date()
+        markInteraction()
         lastRotation = Date()
         spotlightIndex = (spotlightIndex + delta + spotlight.count) % spotlight.count
         let next = spotlight[spotlightIndex]
@@ -1155,7 +1216,7 @@ final class HeroFocus: ObservableObject {
         AppProbe.focus("home card focus \(newItem.id) \"\(newItem.name)\""
                        + " layout=\(layout) browsed=\(browsedIntoContent)")
         // Browsing cards counts as interaction — pause spotlight rotation.
-        lastInteraction = Date()
+        markInteraction()
         // THE HYBRID HAND-OFF, and it happens BEFORE the gate below so the very
         // first content focus both ends the roll and commits its own title.
         // Ordered the other way the hero would keep the rolling title until the
@@ -1345,6 +1406,8 @@ struct HomeView: View {
     /// in the background), and re-seeding there yanked focus out of whatever
     /// row you were browsing back up to the hero.
     @State private var didSeedHeroFocus = false
+    @State private var initialHeroFocusRequest = NTVInitialHeroFocusRequest()
+    @Environment(\.scenePhase) private var scenePhase
     /// Set when the hero source changes, so `seedHero` replaces the billboard
     /// once even though `hero.item` is already populated (see `seedHero`).
     @State private var forceHeroReseed = false
@@ -1420,6 +1483,7 @@ struct HomeView: View {
         }
         .onDisappear {
             isVisible = false
+            initialHeroFocusRequest.cancel()
             reloadDebounce?.cancel()
             contentReadyTask?.cancel()
             ContentFocusRouter.shared.unregister(Self.heroRouterID)
@@ -1430,9 +1494,16 @@ struct HomeView: View {
         // clears the handoff, so arriving in Hybrid from Pinned Focus starts
         // on the roll instead of inheriting a browse that already happened.
         .onChange(of: homeCatalogSettings.heroLayout) { _, mode in
+            initialHeroFocusRequest.cancel()
             AppProbe.focus("home heroLayout=\(mode)")
             hero.layout = usesNTVLayout ? .pinnedFocus : mode
             hero.resetBrowseHandoff()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { initialHeroFocusRequest.cancel() }
+        }
+        .onChange(of: perf.settings.heroBackdrop) { _, enabled in
+            if !enabled { initialHeroFocusRequest.cancel() }
         }
         // HYBRID, going back UP. The pinned hero's return strip binds the same
         // `heroPlayFocused` as the rolling banner's Play button, so reaching it
@@ -1550,6 +1621,7 @@ struct HomeView: View {
         }
         // Paint the hero from the cached rows without waiting for the network.
         .onChange(of: viewModel.initialHero) { _, item in
+            if item == nil { initialHeroFocusRequest.cancel() }
             if item == nil, usesNTVLayout {
                 hero.item = nil
                 didSeedHeroFocus = false
@@ -1658,8 +1730,10 @@ struct HomeView: View {
         guard !didSeedHeroFocus, perf.settings.heroBackdrop,
               (usesNTVLayout || !heroIsPinned) else { return }
         didSeedHeroFocus = true
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 100_000_000)
+        initialHeroFocusRequest.schedule(router: .shared, hero: hero, isEligible: {
+            isVisible && scenePhase == .active && perf.settings.heroBackdrop &&
+                (usesNTVLayout || !heroIsPinned) && hero.item != nil && !heroPlayFocused
+        }) {
             heroPlayFocused = true
         }
     }

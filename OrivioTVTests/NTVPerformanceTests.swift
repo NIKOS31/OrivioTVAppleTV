@@ -6,6 +6,110 @@ import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    @MainActor
+    func testInitialHomeFocusAppliesOnceWhenItsContextIsStillCurrent() async throws {
+        let gate = Gate(), router = ContentFocusRouter(), hero = HeroFocus()
+        let request = NTVInitialHeroFocusRequest(wait: { _ = try await gate.run("seed") })
+        var applied = 0
+        let pending = request.schedule(router: router, hero: hero, isEligible: { true }) { applied += 1 }
+        try await until { await gate.started.count == 1 }
+        XCTAssertEqual(applied, 0, "Initial focus waits for the view to settle.")
+        await gate.release("seed")
+        await pending.value
+        XCTAssertEqual(applied, 1)
+    }
+
+    @MainActor
+    func testInitialHomeFocusCannotOverrideNewerNavigation() async throws {
+        let gate = Gate(), router = ContentFocusRouter(), hero = HeroFocus()
+        let request = NTVInitialHeroFocusRequest(wait: { _ = try await gate.run("seed") })
+        var applied = false
+        let pending = request.schedule(router: router, hero: hero, isEligible: { true }) { applied = true }
+        try await until { await gate.started.count == 1 }
+        router.noteUserMovement()
+        await gate.release("seed")
+        await pending.value
+        XCTAssertFalse(applied, "An older initial landing must not reclaim focus after opening a menu or changing tabs.")
+    }
+
+    @MainActor
+    func testInitialHomeFocusCannotOverrideAChangedRowWithoutAMoveCommand() async throws {
+        let gate = Gate(), router = ContentFocusRouter(), hero = HeroFocus()
+        router.noteFocused(row: "home.heroPlay")
+        let request = NTVInitialHeroFocusRequest(wait: { _ = try await gate.run("seed") })
+        var applied = false
+        let pending = request.schedule(router: router, hero: hero, isEligible: { true }) { applied = true }
+        try await until { await gate.started.count == 1 }
+        router.noteFocused(row: "home.poster.row")
+        await gate.release("seed")
+        await pending.value
+        XCTAssertFalse(applied, "A native row entry can supersede the request without a bubbled remote command.")
+    }
+
+    @MainActor
+    func testInitialHomeFocusRejectsAnInteractionEvenAfterReturningToTheSameRow() async throws {
+        let gate = Gate(), router = ContentFocusRouter(), hero = HeroFocus()
+        hero.layout = .rolling
+        router.noteFocused(row: "home.heroPlay")
+        let request = NTVInitialHeroFocusRequest(wait: { _ = try await gate.run("seed") })
+        var applied = false
+        let pending = request.schedule(router: router, hero: hero, isEligible: { true }) { applied = true }
+        try await until { await gate.started.count == 1 }
+        hero.focus(MetaItem(id: "another-title", type: "movie", name: "Another title"))
+        router.noteFocused(row: "home.poster.row")
+        router.noteFocused(row: "home.heroPlay")
+        await gate.release("seed")
+        await pending.value
+        XCTAssertFalse(applied, "Returning to the same row must not make an obsolete request current again.")
+    }
+
+    @MainActor
+    func testInitialHomeFocusCancellationWinsEvenWhenItsWaitIgnoresCancellation() async throws {
+        let gate = Gate(), router = ContentFocusRouter(), hero = HeroFocus()
+        let request = NTVInitialHeroFocusRequest(wait: { _ = try await gate.run("seed") })
+        var applied = false
+        let pending = request.schedule(router: router, hero: hero, isEligible: { true }) { applied = true }
+        try await until { await gate.started.count == 1 }
+        request.cancel()
+        // The gate deliberately resumes successfully after cancellation.
+        await gate.release("seed")
+        await pending.value
+        XCTAssertFalse(applied, "Disappearance, backgrounding or a profile reset must invalidate the pending landing.")
+    }
+
+    @MainActor
+    func testObsoleteInitialHomeFocusCompletionCannotClearItsReplacement() async throws {
+        let gate = Gate(), router = ContentFocusRouter(), hero = HeroFocus()
+        let request = NTVInitialHeroFocusRequest(wait: {
+            let count = await gate.started.count
+            _ = try await gate.run("seed-\(count)")
+        })
+        var applied: [String] = []
+        let old = request.schedule(router: router, hero: hero, isEligible: { true }) { applied.append("old") }
+        try await until { await gate.started.count == 1 }
+        let current = request.schedule(router: router, hero: hero, isEligible: { true }) { applied.append("current") }
+        try await until { await gate.started.count == 2 }
+        await gate.release("seed-0")
+        await old.value
+        XCTAssertTrue(applied.isEmpty)
+        await gate.release("seed-1")
+        await current.value
+        XCTAssertEqual(applied, ["current"], "A cancelled task's cleanup must not discard its newer replacement.")
+    }
+
+    @MainActor
+    func testInitialHomeFocusRechecksVisibilityBeforeApplying() async throws {
+        let gate = Gate(), router = ContentFocusRouter(), hero = HeroFocus()
+        let request = NTVInitialHeroFocusRequest(wait: { _ = try await gate.run("seed") })
+        var eligible = true, applied = false
+        let pending = request.schedule(router: router, hero: hero, isEligible: { eligible }) { applied = true }
+        try await until { await gate.started.count == 1 }
+        eligible = false
+        await gate.release("seed")
+        await pending.value
+        XCTAssertFalse(applied, "A hidden or ineligible hero must not receive focus.")
+    }
+
     func testFastFocusSweepCoalescesHeroWorkWithoutSlowingAnIsolatedStep() {
         var policy = NTVFocusSettlePolicy()
         XCTAssertEqual(policy.delay(at: 10, minimumNanoseconds: 60_000_000), 60_000_000)

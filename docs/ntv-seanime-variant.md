@@ -8,6 +8,7 @@ Première étape de présentation native sur la branche `ci/ntv-seanime`. La ré
 - Fonds charbon, surfaces sobres et accent lavande discret ; logo nTV conservé.
 - Accueil avec affiche portrait, titre, métadonnées, résumé et action existante. Les recommandations restent exclusivement issues de XPERIENCE ; aucun catalogue d’addon n’est ajouté par la variante.
 - Films et séries : même modèle de catalogues, résumé avec affiche et panneau de catégories borné en hauteur.
+- Dans la disposition avec rail gauche, un bouton Catégories explicite en haut du catalogue évite de donner deux destinations au même geste. Haut depuis la première rangée rejoint ce bouton ; gauche au bord rejoint le menu principal. La disposition avec menu supérieur garde son accès latéral aux catégories.
 - Fiche de contenu : affiche à gauche, informations et actions existantes à droite. L’affiche d’ouverture reste fixe lorsque les métadonnées sont enrichies.
 - Planning Animés : deux colonnes lisibles, heures locales et disponibilité distincte de la diffusion. L’API et la sélection des sources restent identiques.
 
@@ -32,3 +33,5 @@ Les contrôles de syntaxe et de secrets sur Windows ne prouvent ni la compilatio
 Le changement de matière du rail et des catégories suit la direction graphique demandée. Aucun mode de performance n’est imposé ; les options existantes de lecture et d’effets restent disponibles.
 
 Les nouvelles affiches du résumé et de la fiche transmettent leur hauteur en points au cache d’images existant. Celui-ci calcule déjà la densité de l’écran et une marge de qualité : la variante évite un double suréchantillonnage inutile, sans réduire la définition demandée à l’affichage.
+
+L’animation d’élargissement reste portée par le rail lui-même. La transaction d’animation de focus à la racine n’est plus propagée à toutes les affiches et au résumé pour cette disposition. Ce changement de portée ne constitue pas une mesure de gain FPS.

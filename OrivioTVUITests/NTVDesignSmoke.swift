@@ -4,6 +4,48 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testSeanimeCategoriesAndMainRailHaveDistinctRemotePaths() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvCatalogCategoriesDemo", "-ntvRowLayoutFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 20))
+        let movies = app.buttons["ntv.navigation.5"]
+        let remote = XCUIRemote.shared
+        for _ in 0..<3 {
+            if movies.hasFocus { break }
+            remote.press(.menu)
+            if focused(movies, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(movies, timeout: 5))
+        remote.press(.right)
+        XCTAssertTrue(focused(first, timeout: 8))
+        remote.press(.up)
+        let trigger = app.buttons["ntv.catalog.movie.openCategories"]
+        XCTAssertTrue(focused(trigger, timeout: 8), "Up from the first shelf must reach Categories in the left-menu layout.")
+        remote.press(.down)
+        XCTAssertTrue(focused(first, timeout: 8), "Down from Categories returns to the first poster, not a later column.")
+        remote.press(.up)
+        XCTAssertTrue(focused(trigger, timeout: 8))
+        remote.press(.select)
+        let panel = app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch
+        XCTAssertTrue(panel.waitForExistence(timeout: 8))
+        let category = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.category.movie.")).firstMatch
+        XCTAssertTrue(focused(category, timeout: 8))
+        capture("ntv-seanime-categories-from-header")
+        remote.press(.right)
+        XCTAssertTrue(focused(first, timeout: 8))
+        XCTAssertFalse(panel.exists)
+        remote.press(.left)
+        XCTAssertTrue(focused(movies, timeout: 8), "The left boundary belongs to the main rail, without opening a second drawer.")
+        XCTAssertFalse(panel.exists)
+        capture("ntv-seanime-catalog-main-rail")
+    }
+
     func testSeanimeRailFitsAndKeepsHomeGeometryStableWhenExpanded() {
         continueAfterFailure = false
         let app = XCUIApplication()

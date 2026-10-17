@@ -604,7 +604,8 @@ struct RootView: View {
                     let demoMode = demoArgs.contains { args.contains($0) }
                     #if DEBUG
                     if demoMode {
-                        homeCatalogSettings.displayNavigationPosition = (args.contains("-ntvTopMenuDemo") || args.contains("-ntvCatalogCategoriesDemo")) ? .top : .left
+                        homeCatalogSettings.displayNavigationPosition = args.contains("-ntvSeanimeDemo") ? .left
+                            : (args.contains("-ntvTopMenuDemo") || args.contains("-ntvCatalogCategoriesDemo")) ? .top : .left
                         if args.contains("-ntvSeanimeDemo") { homeCatalogSettings.autoHideSidebar = false }
                         homeCatalogSettings.hideUnreleasedContent = args.contains("-ntvUpcomingCatalogFixture")
                         homeCatalogSettings.hideUnavailableSources = false
@@ -1478,7 +1479,9 @@ struct RootView: View {
         }
         .animation(perf.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: showSidebar)
-        .animation(perf.sidebarAnimationEffective && !(navIsTop && theme.palette.id == NTVDesign.palette.id)
+        // The Seanime rail owns its width animation. Do not propagate a
+        // second focus animation through every poster and hero in the page.
+        .animation(perf.sidebarAnimationEffective && !(theme.palette.id == NTVDesign.palette.id && (navIsTop || NTVInterfaceVariant.isSeanime))
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: sidebarFocus != nil)
         // Focus ARRIVING in the rail counts as engaging it, however it got
         // there. `focusSidebar` and `revealSidebar` stamp their own way in, but

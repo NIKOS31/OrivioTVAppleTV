@@ -34,6 +34,13 @@ struct NTVCatalogSource: Identifiable {
     init(source: NTVCatalogSource, scope: String,
          fetch: @escaping @Sendable (NTVCatalogSource) async throws -> [MetaItem] = {
              #if DEBUG
+             if ProcessInfo.processInfo.arguments.contains("-ntvRowLayoutFixture") {
+                 let source = $0
+                 return (0..<24).map { index in
+                     MetaItem(id: "fixture.catalog.\(source.catalog.id).\(index)", type: source.catalog.type,
+                              name: "Titre de catalogue \(index + 1)", releaseInfo: "2025")
+                 }
+             }
              if ProcessInfo.processInfo.arguments.contains("-ntvUpcomingCatalogFixture") {
                  return [MetaItem(id: "fixture.future.\($0.catalog.id)", type: $0.catalog.type,
                                   name: "Sortie à venir", releaseInfo: "2999", released: "2999-01-01")]
@@ -121,6 +128,7 @@ struct NTVCatalogSource: Identifiable {
 
 struct NTVCatalogView: View {
     @EnvironmentObject private var theme: ThemeManager
+    @Environment(\.navigationIsTop) private var navigationIsTop
     @EnvironmentObject private var addons: AddonManager
     @EnvironmentObject private var profiles: ProfileStore
     @ObservedObject var viewModel: NTVCatalogBrowserModel
@@ -143,6 +151,7 @@ struct NTVCatalogView: View {
     @State private var menuVisible = false
     @State private var menuSourceID: String?
     @FocusState private var categoryFocus: String?
+    @FocusState private var categoryTriggerFocused: Bool
     private var routerID: String { "ntv.catalog.\(mediaType).entry" }
     private var loadKey: String {
         String(profiles.activeProfileID) + "#" + addons.catalogAddons.map { "\($0.id)#\($0.manifest.catalogs?.hashValue ?? 0)" }.joined(separator: "#")
@@ -154,10 +163,29 @@ struct NTVCatalogView: View {
                 ZStack(alignment: .leading) {
                     ScrollView(.vertical) {
                         LazyVStack(alignment: .leading, spacing: 22) {
-                            Text(title).font(.system(size: 38, weight: .semibold))
-                                .ntvHalloweenDecor(.heading)
-                                .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            HStack {
+                                Text(title).font(.system(size: 38, weight: .semibold))
+                                    .ntvHalloweenDecor(.heading)
+                                    .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
+                                Spacer()
+                                if !viewModel.sources.isEmpty {
+                                    Button {
+                                        if let source = viewModel.lastSelection?.sourceID ?? viewModel.firstNavigableSourceID {
+                                            openCategory(source)
+                                        }
+                                    } label: {
+                                        Label("Catégories", systemImage: "line.3.horizontal.decrease")
+                                    }
+                                    .buttonStyle(NTVActionButtonStyle())
+                                    .focused($categoryTriggerFocused)
+                                    .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
+                                    .onMoveCommand { direction in
+                                        guard categoryTriggerFocused, direction == .down,
+                                              let first = viewModel.firstNavigableSourceID else { return }
+                                        requestRow(first, proxy: proxy)
+                                    }
+                                }
+                            }
                                 .padding(.horizontal, NTVViewport.horizontalInset)
                                 .id("catalogTop")
                             NTVCatalogSpotlight(hero: hero)
@@ -177,7 +205,7 @@ struct NTVCatalogView: View {
                                     }, onPlayManually: onPlayManually,
                                     onSeeAll: onSeeAll,
                                     onBackAtRoot: onBackAtRoot,
-                                    onLeftAtStart: { openCategory(source.id) },
+                                    onLeftAtStart: { openCategory(source.id) }, interceptLeftEdge: navigationIsTop,
                                     onVerticalMove: { move in moveFromRow(source.id, direction: move, proxy: proxy) },
                                     focusRequestID: requestedCategory?.sourceID == source.id ? requestedCategory?.token : nil,
                                     focusScrollToStart: requestedCategory?.scrollToStart ?? true,
@@ -308,6 +336,7 @@ struct NTVCatalogView: View {
         .onExitCommand { closeCategory(proxy) }
     }
     private func openCategory(_ sourceID: String) {
+        categoryTriggerFocused = false
         requestedCategory = nil; restoreSelection = nil
         menuSourceID = sourceID
         withAnimation(PerformanceSettingsStore.shared.buttonMotion(.easeOut(duration: 0.15))) {
@@ -335,7 +364,11 @@ struct NTVCatalogView: View {
         if let target = viewModel.adjacentNavigableSourceID(to: sourceID, forward: direction == .down) {
             requestRow(target, proxy: proxy)
         } else if direction == .up {
-            onBackAtRoot()
+            if navigationIsTop { onBackAtRoot() }
+            else {
+                proxy.scrollTo("catalogTop", anchor: .top)
+                categoryTriggerFocused = true
+            }
         }
     }
 }
@@ -368,6 +401,7 @@ private struct NTVCatalogShelf: View {
     let onSeeAll: (InstalledAddon, ManifestCatalog, String) -> Void
     let onBackAtRoot: () -> Void
     let onLeftAtStart: () -> Void
+    var interceptLeftEdge = true
     let onVerticalMove: (MoveCommandDirection) -> Void
     let focusRequestID: UUID?
     var focusScrollToStart = true
@@ -385,7 +419,8 @@ private struct NTVCatalogShelf: View {
                     onPlayManually: onPlayManually, onSeeAll: onSeeAll,
                     onBackAtStart: onBackAtRoot, accessibilityPrefix: "ntv.poster",
                     restoreItemID: restoreItemID, onVerticalMove: onVerticalMove,
-                    focusFirstRequestID: focusRequestID, onLeftAtStart: onLeftAtStart,
+                    focusFirstRequestID: focusRequestID,
+                    onLeftAtStart: interceptLeftEdge ? onLeftAtStart : nil,
                     onFirstVisibleChange: firstVisibleChanged,
                     focusFirstScroll: focusScrollToStart)
             } else {

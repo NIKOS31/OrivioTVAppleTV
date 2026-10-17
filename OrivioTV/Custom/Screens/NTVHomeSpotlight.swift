@@ -35,23 +35,31 @@ struct NTVCatalogSpotlight: View {
 
     var body: some View {
         if let item = hero.item {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(item.name)
+            HStack(alignment: .center, spacing: 30) {
+                NTVSpotlightCover(item: item, width: 132, height: 198)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("EN SÉLECTION")
+                    .font(.system(size: metadataSize, weight: .medium))
+                    .foregroundStyle(NTVDesign.textSecondary)
+                    Text(item.name)
                     .font(.system(size: titleSize, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
-                Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
+                    Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.system(size: metadataSize, weight: .medium))
                     .foregroundStyle(NTVDesign.textSecondary)
                     .lineLimit(1, reservesSpace: true)
-                Text(item.description ?? "")
+                    Text(item.description ?? "")
                     .font(.system(size: synopsisSize))
                     .foregroundStyle(NTVDesign.textSecondary)
                     .lineLimit(2, reservesSpace: true)
+                }
+                .frame(maxWidth: 920, alignment: .leading)
+                Spacer(minLength: 0)
             }
             .foregroundStyle(NTVDesign.textPrimary)
-            .frame(maxWidth: 820, minHeight: 160, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 224, alignment: .leading)
         }
     }
 }
@@ -69,15 +77,16 @@ struct NTVHomeSpotlight: View {
 
     var body: some View {
         if let item = hero.item {
-            ZStack(alignment: .leading) {
+            HStack(alignment: .center, spacing: 36) {
+                NTVSpotlightCover(item: item, width: 192, height: 288)
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("À découvrir")
+                    Text("À L’AFFICHE")
                         .font(.system(size: 25, weight: .medium))
                         .tracking(1.5)
                         .foregroundStyle(NTVDesign.textSecondary)
                     Text(item.name)
                         .font(.system(size: titleSize, weight: .semibold))
-                        .lineLimit(1)
+                        .lineLimit(2, reservesSpace: true)
                         .minimumScaleFactor(0.75)
                     Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
                         .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
@@ -93,7 +102,7 @@ struct NTVHomeSpotlight: View {
                     Button { onSelect(item) } label: {
                         Label("Voir la fiche", systemImage: "info.circle")
                     }
-                    .buttonStyle(NTVActionButtonStyle(glass: true))
+                    .buttonStyle(NTVActionButtonStyle(prominent: true))
                     .focused(playFocus)
                     .accessibilityIdentifier("ntv.home.spotlight")
                     .onExitCommand(perform: onBack)
@@ -102,10 +111,40 @@ struct NTVHomeSpotlight: View {
                     }
                 }
                 .foregroundStyle(NTVDesign.textPrimary)
-                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: 880, alignment: .leading)
+                Spacer(minLength: 0)
             }
-            .frame(minHeight: 310)
+            .frame(minHeight: 350)
+            .accessibilityIdentifier("ntv.seanime.home.feature")
         }
+    }
+}
+
+/// A non-focusable cover anchors the editorial block. Loading metadata or
+/// artwork never changes its reserved geometry or adds another remote target.
+private struct NTVSpotlightCover: View {
+    let item: MetaItem
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        ZStack {
+            NTVDesign.raised
+            if let poster = item.poster, !poster.isEmpty {
+                // RemoteImage converts points to display pixels itself.
+                // Passing twice the height would decode redundant pixels.
+                RemoteImage(url: poster, maxDimension: height)
+            } else {
+                Image(systemName: "film")
+                    .font(.system(size: 38, weight: .medium))
+                    .foregroundStyle(NTVDesign.textSecondary)
+            }
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: NTVDesign.cardRadius))
+        .overlay { RoundedRectangle(cornerRadius: NTVDesign.cardRadius)
+            .strokeBorder(.white.opacity(0.1), lineWidth: 1) }
+        .accessibilityHidden(true)
     }
 }
 

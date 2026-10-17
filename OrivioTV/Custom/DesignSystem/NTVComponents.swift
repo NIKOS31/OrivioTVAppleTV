@@ -124,35 +124,43 @@ struct NTVNavigationLabel: View {
 /// A compact rail expands its labels only while the remote is in the menu.
 struct NTVSidebarLabel: View {
     @Environment(\.isFocused) private var focused
+    @ScaledMetric(relativeTo: .body) private var labelSize: CGFloat = 29
     let tab: AppTab
     let selected: Bool
     let expanded: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             Image(systemName: tab.icon)
-                .font(.system(size: 26, weight: .medium))
-                .frame(width: expanded ? 36 : 60)
+                .font(.system(size: 25, weight: .medium))
+                .frame(width: expanded ? 32 : 56)
             if expanded {
                 Text(NTVBrand.navigationTitle(for: tab))
-                    .font(.system(size: 24, weight: .medium))
+                    .font(.system(size: labelSize, weight: .medium))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                     .transition(.opacity)
                 Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, expanded ? 14 : 0)
-        .frame(height: 64)
+        .frame(minHeight: 56)
         .frame(maxWidth: expanded ? .infinity : nil, alignment: .leading)
         .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .background {
             RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                .fill(focused ? NTVDesign.textPrimary.opacity(0.22)
+                .fill(focused ? NTVDesign.textPrimary.opacity(0.16)
                       : selected ? NTVDesign.accentMuted : .clear)
         }
         .overlay {
             RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
                 .strokeBorder(focused ? NTVDesign.accent : .clear, lineWidth: 2)
+        }
+        .overlay(alignment: .leading) {
+            if selected {
+                Capsule().fill(NTVDesign.accent)
+                    .frame(width: 3, height: 22).padding(.leading, 3)
+            }
         }
         .accessibilityLabel(NTVBrand.navigationTitle(for: tab))
     }
@@ -181,18 +189,22 @@ struct NTVActionButtonStyle: ButtonStyle {
                 .frame(minHeight: 70)
                 .background {
                     if focused || prominent {
-                        Capsule().fill(NTVDesign.textPrimary.opacity(focused ? 1 : 0.92))
+                        RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
+                            .fill(NTVDesign.textPrimary.opacity(focused ? 1 : 0.92))
                     } else if glass {
-                        NTVGlassSurface(shape: Capsule(), clear: true)
+                        NTVGlassSurface(shape: RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous), clear: true)
                     } else {
-                        Capsule().fill(.black.opacity(0.28))
+                        RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
+                            .fill(NTVDesign.raised.opacity(0.92))
                     }
                 }
                 .overlay {
-                    Capsule().strokeBorder(.white.opacity(focused ? 0 : 0.16), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
+                        .strokeBorder(.white.opacity(focused ? 0 : 0.12), lineWidth: 1)
                 }
                 .overlay {
-                    Capsule().inset(by: -5).stroke(.white, lineWidth: 2)
+                    RoundedRectangle(cornerRadius: NTVDesign.controlRadius + 4, style: .continuous)
+                        .inset(by: -4).stroke(.white, lineWidth: 2)
                         .opacity(focused ? 1 : 0)
                 }
                 // Glass is opt-in for the few principal actions. Scrolling

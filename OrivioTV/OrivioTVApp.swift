@@ -600,18 +600,19 @@ struct RootView: View {
                     AppProbe.life("root appeared — tab=\(Self.tabName(selectedTab))")
                     // Skipped in the demo modes so the screen isn't covered.
                     let args = ProcessInfo.processInfo.arguments
-                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvProfileDemo", "-ntvPlayerDemo", "-ntvTwitchDemo", "-ntvCatalogCategoriesDemo"]
+                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvSeanimeDemo", "-ntvProfileDemo", "-ntvPlayerDemo", "-ntvTwitchDemo", "-ntvCatalogCategoriesDemo"]
                     let demoMode = demoArgs.contains { args.contains($0) }
                     #if DEBUG
                     if demoMode {
-                        homeCatalogSettings.navigationPosition = (args.contains("-ntvTopMenuDemo") || args.contains("-ntvCatalogCategoriesDemo")) ? .top : .left
+                        homeCatalogSettings.displayNavigationPosition = (args.contains("-ntvTopMenuDemo") || args.contains("-ntvCatalogCategoriesDemo")) ? .top : .left
+                        if args.contains("-ntvSeanimeDemo") { homeCatalogSettings.autoHideSidebar = false }
                         homeCatalogSettings.hideUnreleasedContent = args.contains("-ntvUpcomingCatalogFixture")
                         homeCatalogSettings.hideUnavailableSources = false
                     }
                     #endif
                     // The selected design is applied once; subsequent layout
                     // choices remain the viewer's own preference.
-                    if !demoMode, theme.palette.id == NTVDesign.palette.id,
+                    if !NTVInterfaceVariant.isSeanime, !demoMode, theme.palette.id == NTVDesign.palette.id,
                        !UserDefaults.standard.bool(forKey: "ntv.navigation.top.v1") {
                         homeCatalogSettings.navigationPosition = .top
                         UserDefaults.standard.set(true, forKey: "ntv.navigation.top.v1")
@@ -1161,7 +1162,7 @@ struct RootView: View {
     /// hiding it there leaves no way back out of a settings detail.
     /// Where the rail lives. Read once here so every axis-dependent site below
     /// agrees, and so the whole feature is one value to follow.
-    private var navPosition: NavigationPosition { homeCatalogSettings.navigationPosition }
+    private var navPosition: NavigationPosition { homeCatalogSettings.displayNavigationPosition }
     private var navIsTop: Bool { navPosition.isHorizontal }
 
     private var sidebarAutoHides: Bool {

@@ -7,6 +7,7 @@ final class DetailViewModel: ObservableObject {
     /// can return a different crop a second later; it must not replace this one.
     let openingBackground: String?
     let openingLogo: String?
+    let openingPoster: String?
     @Published var meta: MetaItem {
         didSet {
             episodeCache.removeAll()
@@ -62,6 +63,7 @@ final class DetailViewModel: ObservableObject {
         meta = item
         openingBackground = item.background ?? item.poster
         openingLogo = item.logo
+        openingPoster = item.poster
     }
 
     /// The `.task` that calls this re-runs on every return from Sources or
@@ -462,6 +464,7 @@ struct DetailView: View {
     }
 
     private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
+    @ScaledMetric(relativeTo: .title) private var seanimeTitleSize: CGFloat = 48
 
     var body: some View {
         ZStack {
@@ -883,12 +886,40 @@ struct DetailView: View {
         showBackdropTrailer = false
     }
 
+    @ViewBuilder
     private var header: some View {
+        if isNTV {
+            HStack(alignment: .top, spacing: 40) {
+                ZStack {
+                    NTVDesign.raised
+                    if let poster = viewModel.openingPoster {
+                        RemoteImage(url: poster, maxDimension: 354)
+                    } else {
+                        Image(systemName: "film")
+                            .font(.system(size: 42, weight: .medium))
+                            .foregroundStyle(NTVDesign.textSecondary)
+                    }
+                }
+                .frame(width: 236, height: 354)
+                .clipShape(RoundedRectangle(cornerRadius: NTVDesign.cardRadius))
+                .accessibilityHidden(true)
+                headerInformation
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, OrivioSpacing.huge)
+            .padding(.top, 80)
+            .accessibilityIdentifier("ntv.seanime.detail.header")
+        } else {
+            headerInformation.padding(.leading, OrivioSpacing.huge)
+        }
+    }
+
+    private var headerInformation: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
             // Push the logo down so it sits lower on the backdrop (APK layout).
-            Spacer().frame(height: isNTV ? 160 : 260)
+            Spacer().frame(height: isNTV ? 0 : 260)
 
-            // Both title treatments occupy the SAME 180pt slot, bottom-aligned.
+            // Both title treatments occupy the same reserved slot, bottom-aligned.
             // They did not before: a logo got a fixed 180pt box while the text
             // fallback was sized by its own content, so a one-line title sat
             // about a hundred points higher than a logo and dragged the meta
@@ -904,14 +935,15 @@ struct DetailView: View {
                         .frame(width: 520)
                 } else {
                     Text(viewModel.meta.name)
-                        .font(FusionType.heroTitle(theme.font))
+                        .font(isNTV ? .system(size: seanimeTitleSize, weight: .semibold)
+                              : FusionType.heroTitle(theme.font))
                         .foregroundStyle(theme.palette.textPrimary)
                         .lineLimit(2)
                         .frame(maxWidth: 900, alignment: .leading)
                         .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
                 }
             }
-            .frame(height: 180, alignment: .bottomLeading)
+            .frame(height: isNTV ? seanimeTitleSize * 2.4 : 180, alignment: .bottomLeading)
 
             // Meta line 1: Genres • Full release date • IMDb.
             MetaLine(segments: primaryMetaSegments, imdbRating: viewModel.meta.imdbRating)
@@ -963,7 +995,6 @@ struct DetailView: View {
                 ParentalGuideRow(entries: viewModel.parentalGuide)
             }
         }
-        .padding(.leading, OrivioSpacing.huge)
     }
 
     /// Play/Resume (+ Start Over) + circular add / watched / rate / trailer.

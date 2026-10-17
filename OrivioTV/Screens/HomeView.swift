@@ -1703,7 +1703,7 @@ struct HomeView: View {
                         rowsContent
                     }
                 }
-                .modifier(RailClearingLeading(withRail: 120, withoutRail: 0))
+                .modifier(RailClearingLeading(withRail: NTVDesign.sidebarClearance, withoutRail: 0))
                 .padding(.top, OrivioSpacing.lg)
                 .padding(.bottom, 120)
             }

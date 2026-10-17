@@ -94,13 +94,13 @@ struct LayoutSettingsDetail: View {
 
                 OrivioDropdown(
                     title: "Position du menu",
-                    subtitle: settings.navigationPosition.summary,
+                    subtitle: settings.displayNavigationPosition.summary,
                     icon: "sidebar.leading",
-                    selection: settings.navigationPosition.rawValue,
+                    selection: settings.displayNavigationPosition.rawValue,
                     options: NavigationPosition.allCases.map {
                         OrivioDropdownOption($0.rawValue, $0.displayName)
                     }
-                ) { settings.navigationPosition = NavigationPosition(rawValue: $0) ?? .left }
+                ) { settings.displayNavigationPosition = NavigationPosition(rawValue: $0) ?? .left }
 
                 SettingsToggleCard(
                     title: "Masquer le menu",

@@ -185,7 +185,9 @@ struct NTVAnimeView: View {
                     }
                     .padding(.bottom, 22)
                 }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: section == .calendar ? 470 : 238), spacing: 28)], spacing: 28) {
+                LazyVGrid(columns: section == .calendar
+                          ? [GridItem(.flexible(), spacing: 28), GridItem(.flexible(), spacing: 28)]
+                          : [GridItem(.adaptive(minimum: 238), spacing: 28)], spacing: 28) {
                     ForEach(model.feed.entries) { entry in
                         Button { open(entry, focusID: entry.id) } label: {
                             if section == .calendar { NTVAnimeCard(entry: entry) }

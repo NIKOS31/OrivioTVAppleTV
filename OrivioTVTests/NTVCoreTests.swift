@@ -3,6 +3,31 @@ import UIKit
 @testable import OrivioTV
 
 final class NTVCoreTests: XCTestCase {
+    func testSeanimeNavigationStartsOnTheLeftWithoutReplacingReferencePreferences() throws {
+        let suite = "ntv.seanime.navigation.tests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let reference = Data("reference-layout-with-top-menu".utf8)
+        defaults.set(reference, forKey: "orivio.homecatalog.v1")
+        XCTAssertEqual(NTVInterfaceVariant.navigation(profileID: 1, defaults: defaults), .left)
+        NTVInterfaceVariant.saveNavigation(.top, profileID: 1, defaults: defaults)
+        XCTAssertEqual(NTVInterfaceVariant.navigation(profileID: 1, defaults: defaults), .top)
+        XCTAssertEqual(defaults.data(forKey: "orivio.homecatalog.v1"), reference,
+                       "Trying the new interface must preserve the old layout for rollback.")
+    }
+
+    func testSeanimeNavigationChoiceDoesNotLeakAcrossProfiles() throws {
+        let suite = "ntv.seanime.profiles.tests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        NTVInterfaceVariant.saveNavigation(.top, profileID: 1, defaults: defaults)
+        XCTAssertEqual(NTVInterfaceVariant.navigation(profileID: 2, defaults: defaults), .left)
+        NTVInterfaceVariant.saveNavigation(.left, profileID: 2, defaults: defaults)
+        XCTAssertEqual(NTVInterfaceVariant.navigation(profileID: 1, defaults: defaults), .top)
+        defaults.set("unknown-future-value", forKey: NTVInterfaceVariant.navigationKey(profileID: 2))
+        XCTAssertEqual(NTVInterfaceVariant.navigation(profileID: 2, defaults: defaults), .left)
+    }
+
     func testSourceStatusDoesNotConfuseHealthyEmptyPartialAndTotalOutages() {
         XCTAssertEqual(NTVSourceStatus.resolve(unreleased: false, requests: 2, failures: 0), .empty)
         XCTAssertEqual(NTVSourceStatus.resolve(unreleased: false, requests: 2, failures: 1), .incomplete)
@@ -407,6 +432,8 @@ final class NTVCoreTests: XCTestCase {
         model.meta = MetaItem(id: "fixture", type: "movie", name: "Enriched", poster: "https://example.invalid/new-poster.jpg", background: "https://example.invalid/alternate-crop.jpg", logo: "https://example.invalid/second-logo.png")
         XCTAssertEqual(model.openingBackground, "https://example.invalid/catalog.jpg")
         XCTAssertEqual(model.openingLogo, "https://example.invalid/first-logo.png")
+        XCTAssertEqual(model.openingPoster, "https://example.invalid/poster.jpg",
+                       "The Seanime detail cover must not swap crop after enrichment.")
         XCTAssertEqual(model.meta.name, "Enriched", "Metadata enrichment remains available.")
     }
 
@@ -416,6 +443,7 @@ final class NTVCoreTests: XCTestCase {
         model.meta = MetaItem(id: "fixture", type: "movie", name: "Enriched", background: "https://example.invalid/late.jpg", logo: "https://example.invalid/late-logo.png")
         XCTAssertEqual(model.openingBackground, "https://example.invalid/poster.jpg")
         XCTAssertNil(model.openingLogo)
+        XCTAssertEqual(model.openingPoster, "https://example.invalid/poster.jpg")
     }
     @MainActor
     func testBlockedTouchCannotBeAdoptedWhenAnOverlayCloses() {

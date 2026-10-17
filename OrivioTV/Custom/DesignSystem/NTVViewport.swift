@@ -31,7 +31,7 @@ struct NTVPageTopClearance: ViewModifier {
         content.padding(.top, navigationIsTop && theme.palette.id == NTVDesign.palette.id
                          ? topClearance : 0)
             .padding(.leading, !navigationIsTop && !isHome && theme.palette.id == NTVDesign.palette.id
-                     ? GlassSidebar.collapsedWidth : 0)
+                     ? NTVDesign.sidebarClearance : 0)
     }
 }
 
@@ -82,9 +82,9 @@ struct NTVCanvasBackdrop: View {
                     RemoteImage(url: url, maxDimension: geometry.size.width,
                                 maxPixels: PerformanceProfile.backdropPixelCap)
                         .frame(width: geometry.size.width, height: geometry.size.height).clipped()
-                    LinearGradient(colors: [NTVDesign.background.opacity(0.82), NTVDesign.background.opacity(0.25)],
+                    LinearGradient(colors: [NTVDesign.background.opacity(0.94), NTVDesign.background.opacity(0.52)],
                                    startPoint: .leading, endPoint: .trailing)
-                    LinearGradient(colors: [.clear, NTVDesign.background.opacity(0.94)],
+                    LinearGradient(colors: [NTVDesign.background.opacity(0.12), NTVDesign.background.opacity(0.98)],
                                    startPoint: .top, endPoint: .bottom)
                 }
             }

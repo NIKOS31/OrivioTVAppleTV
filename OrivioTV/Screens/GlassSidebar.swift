@@ -84,6 +84,9 @@ struct GlassSidebar: View {
     /// grows. Up/Down are unaffected: the gutter is part of each item, not a
     /// separate item the engine can land on.
     private static let focusGuard: CGFloat = 40
+    /// The narrower library rail starts 12pt from the edge. Its transparent
+    /// focus extension must reach x=0 without extending outside the screen.
+    private static let ntvFocusGuard: CGFloat = 22
     /// Clearance a tab gives the TOP bar, applied as SAFE-AREA padding rather
     /// than plain padding.
     ///
@@ -250,7 +253,7 @@ struct GlassSidebar: View {
         }
     }
 
-    /// One glass surface carries the rail; item highlights use lightweight fills.
+    /// One quiet surface carries the rail; item highlights use lightweight fills.
     /// The root's existing focus routing, Back and Right hand-off remain in charge.
     private var ntvVerticalBody: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -259,9 +262,9 @@ struct GlassSidebar: View {
                 .padding(.horizontal, expanded ? OrivioSpacing.md : 0)
                 .frame(height: 64)
 
-            Spacer(minLength: 24)
+            Spacer(minLength: 20)
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 ForEach(AppTab.sidebarOrder.filter { $0 != .liveTV || liveTV.enabled }) { tab in
                     Button {
                         onTabSelected(tab.rawValue)
@@ -269,7 +272,7 @@ struct GlassSidebar: View {
                     } label: {
                         NTVSidebarLabel(tab: tab, selected: selected == tab.rawValue,
                                         expanded: expanded)
-                            .padding(.leading, Self.focusGuard)
+                            .padding(.leading, Self.ntvFocusGuard)
                     }
                     .buttonStyle(PlainCardButtonStyle())
                     .focused(focusBinding, equals: tab.rawValue)
@@ -277,37 +280,44 @@ struct GlassSidebar: View {
                     .disabled(!expanded && tab.rawValue != selected)
                 }
             }
-            .padding(.leading, (expanded ? OrivioSpacing.sm : 12) - Self.focusGuard)
+            .padding(.leading, (expanded ? OrivioSpacing.sm : 12) - Self.ntvFocusGuard)
             .padding(.trailing, expanded ? OrivioSpacing.sm : 12)
             .defaultFocus(focusBinding, selected)
 
-            Spacer(minLength: 24)
+            Spacer(minLength: 20)
 
             if expanded {
                 Button(action: onProfileTap) {
                     GlassProfileHeader(profile: profiles.active)
-                        .padding(.leading, Self.focusGuard)
+                        .padding(.leading, Self.ntvFocusGuard)
                 }
                 .buttonStyle(PlainCardButtonStyle())
                 .focused(focusBinding, equals: -1)
-                .padding(.leading, OrivioSpacing.sm - Self.focusGuard)
+                .padding(.leading, OrivioSpacing.sm - Self.ntvFocusGuard)
                 .padding(.trailing, OrivioSpacing.sm)
+                .accessibilityLabel("Profil : \(profiles.active.name)")
+                .accessibilityIdentifier("ntv.navigation.profile")
             } else {
                 Color.clear.frame(height: 64)
             }
         }
-        .padding(.vertical, 24)
-        .frame(width: expanded ? NTVDesign.sidebarExpandedWidth : 84, alignment: .leading)
+        .padding(.vertical, 20)
+        .frame(width: expanded ? NTVDesign.sidebarExpandedWidth : 80, alignment: .leading)
         .clipped()
         .frame(maxHeight: .infinity)
         .background {
-            NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 32, style: .continuous))
+            // A single quiet panel, rather than a live full-height material
+            // sampling the moving poster rows. Focused items are plain fills.
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(NTVDesign.surface.opacity(0.98))
+                .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(.white.opacity(0.08), lineWidth: 1) }
         }
-        .padding(.leading, 18)
-        .padding(.vertical, 24)
+        .padding(.leading, 12)
+        .padding(.vertical, 20)
         .ignoresSafeArea()
         .animation(PerformanceSettingsStore.shared.sidebarAnimationEffective
-                   ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: expanded)
+                   ? .easeOut(duration: 0.18) : nil, value: expanded)
         .onChange(of: expanded) { _, isExpanded in
             if isExpanded && focusBinding.wrappedValue != selected {
                 focusBinding.wrappedValue = selected

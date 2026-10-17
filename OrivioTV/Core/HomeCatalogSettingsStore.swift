@@ -197,7 +197,7 @@ struct HomePresentationSnapshot: Codable, Equatable {
     var pinnedHero = false
     var heroLayout: HeroLayout = .hybrid
     var autoHideSidebar = false
-    /// nTV starts with a top bar; stored per-profile choices still take priority.
+    /// Reference layout; Seanime uses a separate local preference.
     var navigationPosition: NavigationPosition = .left
     var fullStreamTitles = false
     var heroTrailersEnabled = true
@@ -391,6 +391,21 @@ final class HomeCatalogSettingsStore: ObservableObject {
     /// Settings → Layout → Navigation Position.
     @Published var navigationPosition: NavigationPosition = .left {
         didSet { guard navigationPosition != oldValue else { return }; save(); notifyPresentationChange() }
+    }
+    /// Seanime starts on the left without rewriting the original presentation
+    /// blob. Changing this setting remains available and is local per profile.
+    @Published private var seanimeNavigationPosition: NavigationPosition = .left {
+        didSet {
+            guard seanimeNavigationPosition != oldValue else { return }
+            NTVInterfaceVariant.saveNavigation(seanimeNavigationPosition, profileID: profileID)
+        }
+    }
+    var displayNavigationPosition: NavigationPosition {
+        get { NTVInterfaceVariant.isSeanime ? seanimeNavigationPosition : navigationPosition }
+        set {
+            if NTVInterfaceVariant.isSeanime { seanimeNavigationPosition = newValue }
+            else { navigationPosition = newValue }
+        }
     }
     /// Sources page: let every link's release name wrap in full instead of
     /// truncating — the whole point of a remux hunt is reading the whole name.
@@ -920,6 +935,7 @@ final class HomeCatalogSettingsStore: ObservableObject {
     }
 
     private func load() {
+        seanimeNavigationPosition = NTVInterfaceVariant.navigation(profileID: profileID)
         let raw = UserDefaults.standard.data(forKey: storageKey)
         let decodedBlob = raw.flatMap { try? JSONDecoder().decode(Persisted.self, from: $0) }
         // A blob that exists but no longer decodes (a newer build's enum case,

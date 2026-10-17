@@ -274,10 +274,11 @@ struct NTVCatalogView: View {
             }
             .ntvHalloweenDecor(.panel)
         }
-        .padding(20).frame(maxHeight: .infinity)
+        .padding(20).frame(maxHeight: 760)
         .background {
-            RoundedRectangle(cornerRadius: 24).fill(NTVDesign.background.opacity(0.82))
-            NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24))
+            RoundedRectangle(cornerRadius: 20).fill(NTVDesign.surface.opacity(0.98))
+                .overlay { RoundedRectangle(cornerRadius: 20)
+                    .strokeBorder(.white.opacity(0.12), lineWidth: 1) }
         }
         .focusSection()
         .accessibilityElement(children: .contain)

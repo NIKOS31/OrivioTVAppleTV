@@ -22,18 +22,19 @@ enum NTVBrand {
 
 enum NTVDesign {
     static let topChromeClearance: CGFloat = 74
-    static let background = Color(hex: 0x101218)
-    static let surface = Color(hex: 0x1A1F27)
-    static let raised = Color(hex: 0x252D37)
+    static let background = Color(hex: 0x111114)
+    static let surface = Color(hex: 0x1B1B21)
+    static let raised = Color(hex: 0x272730)
     // Keep the supplied blue logo distinct from neutral application controls.
-    static let accent = Color(hex: 0xD7E2E7)
-    static let accentMuted = Color(hex: 0x303D49)
+    static let accent = Color(hex: 0xDDD6F4)
+    static let accentMuted = Color(hex: 0x393448)
     static let textPrimary = Color(hex: 0xF3F4F6)
-    static let textSecondary = Color(hex: 0xADB7C2)
-    static let cardRadius: CGFloat = 18
-    static let controlRadius: CGFloat = 14
+    static let textSecondary = Color(hex: 0xB4B2BF)
+    static let cardRadius: CGFloat = 12
+    static let controlRadius: CGFloat = 12
     static let controlFocusScale: CGFloat = 1.025
-    static let sidebarExpandedWidth: CGFloat = 280
+    static let sidebarExpandedWidth: CGFloat = 320
+    static let sidebarClearance: CGFloat = 88
 
     static let palette = ThemePalette(
         id: "ntv-night", displayName: "nTV — Nuit",

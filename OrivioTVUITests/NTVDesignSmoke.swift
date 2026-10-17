@@ -4,6 +4,44 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testSeanimeRailFitsAndKeepsHomeGeometryStableWhenExpanded() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvRowLayoutFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let spotlight = app.buttons["ntv.home.spotlight"]
+        let home = app.buttons["ntv.navigation.0"]
+        XCTAssertTrue(spotlight.waitForExistence(timeout: 20))
+        let screen = app.windows.firstMatch.frame
+        let heading = app.staticTexts["ntv.home.heading"]
+        XCTAssertGreaterThan(heading.frame.minX, home.frame.maxX + 8)
+        let headingBefore = heading.frame
+        let featureBefore = spotlight.frame
+        capture("ntv-seanime-home-cover-and-summary")
+        let remote = XCUIRemote.shared
+        for _ in 0..<4 {
+            if home.hasFocus { break }
+            remote.press(.menu)
+            if focused(home, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(home, timeout: 5))
+        for id in [0, 5, 6, 8, 1, 2, 4, 7, 3] {
+            let item = app.buttons["ntv.navigation.\(id)"]
+            if item.exists { XCTAssertTrue(screen.contains(item.frame), "Every available rail item must fit the screen.") }
+        }
+        XCTAssertEqual(heading.frame.minX, headingBefore.minX, accuracy: 1)
+        XCTAssertEqual(spotlight.frame.width, featureBefore.width, accuracy: 1,
+                       "Opening the rail must overlay content rather than squeeze its feature.")
+        capture("ntv-seanime-expanded-navigation")
+        remote.press(.menu)
+        XCTAssertTrue(focused(spotlight, timeout: 8), "Back closes the rail into Home's existing content route.")
+        XCTAssertEqual(heading.frame.minX, headingBefore.minX, accuracy: 1)
+        capture("ntv-seanime-home-after-menu")
+    }
+
     func testRecentSearchesLeaveSpaceForPostersAndClearBackToTheField() {
         continueAfterFailure = false
         let app = XCUIApplication()

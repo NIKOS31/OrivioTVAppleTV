@@ -214,6 +214,7 @@ final class OrivioSyncManager: ObservableObject {
     }
 
     private func ensureProfile(_ expected: Int) throws {
+        try Task.checkCancellation()
         guard pid == expected else {
             throw ProfileChangedMidSync(from: expected, to: pid)
         }
@@ -475,6 +476,8 @@ final class OrivioSyncManager: ObservableObject {
         // First account on this device: nothing to retire, and clearing the
         // owner's locally-entered debrid keys here would be a regression.
         guard let previous, previous != current else { return }
+        fullSyncTask?.cancel()
+        fullSyncTask = nil
         NSLog("[OrivioSync] a different account signed in — retiring the previous account's sync state")
         OrivioSyncDiagnostics.record(
             .info, area: "Orivio",
@@ -527,11 +530,7 @@ final class OrivioSyncManager: ObservableObject {
         return id
     }()
 
-    private let urlSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 25
-        return URLSession(configuration: config)
-    }()
+    private let urlSession = NTVAuthenticatedSession.make(timeout: 25)
 
     private enum RPC {
         static func url(_ name: String) -> String { "/rest/v1/rpc/\(name)" }
@@ -723,8 +722,8 @@ final class OrivioSyncManager: ObservableObject {
     }
 
     private func handleAuthChange(_ state: OrivioAuthState) {
-        NSLog("[OrivioSync] authChange -> %@ (wasSignedIn=%@)",
-              String(describing: state), wasSignedIn ? "true" : "false")
+        NSLog("[OrivioSync] authentication state changed (signedIn=%@)",
+              state.isSignedIn ? "true" : "false")
         switch state {
         // The id comes from the STATE BEING PUBLISHED, never from
         // `account.currentUserID`. `@Published` fires its subscribers from
@@ -777,6 +776,8 @@ final class OrivioSyncManager: ObservableObject {
             fullSyncTask?.cancel()
             fullSyncTask = Task { [weak self] in await self?.syncNow() }
         case .signedOut:
+            fullSyncTask?.cancel()
+            fullSyncTask = nil
             // Only a REAL sign-out, not the launch-time "no stored session" or a
             // failed session restore — both of those also publish `.signedOut`,
             // and wiping the bookkeeping there would drop pending deletes the
@@ -3977,11 +3978,17 @@ final class OrivioSyncManager: ObservableObject {
         try await send(endpoint: endpoint, method: "GET", body: nil)
     }
 
-    private func send(endpoint: String, method: String, body: Data?, isRetry: Bool = false) async throws -> Data {
+    private func send(endpoint: String, method: String, body: Data?, isRetry: Bool = false,
+                      expectedGeneration: Int? = nil) async throws -> Data {
+        try Task.checkCancellation()
+        let generation = expectedGeneration ?? account.sessionGeneration
+        guard generation == account.sessionGeneration else { throw CancellationError() }
         guard let token = account.accessToken else { throw OrivioAuthError.message("Not signed in.") }
         let base = OrivioConfig.supabaseURL.hasSuffix("/")
             ? String(OrivioConfig.supabaseURL.dropLast()) : OrivioConfig.supabaseURL
-        guard let url = URL(string: base + endpoint) else { throw OrivioAuthError.message("Bad sync URL.") }
+        guard let url = URL(string: base + endpoint), NTVAuthenticatedSession.permits(url) else {
+            throw OrivioAuthError.message("Bad sync URL.")
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -3994,17 +4001,21 @@ final class OrivioSyncManager: ObservableObject {
         }
 
         let (data, response) = try await urlSession.data(for: request)
+        try Task.checkCancellation()
+        guard generation == account.sessionGeneration else { throw CancellationError() }
         guard let http = response as? HTTPURLResponse else {
             throw OrivioAuthError.message("No response from sync server.")
         }
         if http.statusCode == 401 && !isRetry {
             // Access token likely expired — refresh once and retry.
             if await account.refreshSession() {
-                return try await send(endpoint: endpoint, method: method, body: body, isRetry: true)
+                guard generation == account.sessionGeneration else { throw CancellationError() }
+                return try await send(endpoint: endpoint, method: method, body: body,
+                                      isRetry: true, expectedGeneration: generation)
             }
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw OrivioAuthError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            throw OrivioAuthError.http(http.statusCode, "")
         }
         return data
     }

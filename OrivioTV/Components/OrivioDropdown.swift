@@ -73,7 +73,7 @@ private struct DropdownTrigger: View {
                     Text(title)
                         .font(.system(size: 17))
                         .foregroundStyle(theme.palette.textTertiary)
-                    Text(value)
+                    Text(NTVFrench.label(NTVFrench.catalogTitle(NTVFrench.genre(value))))
                         .font(.system(size: 25, weight: .semibold))
                         .foregroundStyle(theme.palette.textPrimary)
                 } else {
@@ -92,7 +92,7 @@ private struct DropdownTrigger: View {
             }
             Spacer(minLength: OrivioSpacing.sm)
             if !compact {
-                Text(value)
+                Text(NTVFrench.label(NTVFrench.catalogTitle(NTVFrench.genre(value))))
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(theme.palette.secondary)
                     .padding(.top, 2)
@@ -229,7 +229,7 @@ private struct DropdownOptionRow: View {
 
     var body: some View {
         HStack {
-            Text(label)
+            Text(NTVFrench.label(NTVFrench.catalogTitle(NTVFrench.genre(label))))
                 .font(.system(size: 26, weight: .medium))
                 .foregroundStyle(theme.palette.textPrimary)
             Spacer()

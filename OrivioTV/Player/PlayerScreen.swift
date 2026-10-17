@@ -20,11 +20,13 @@ struct PlayerScreen: View {
     /// Opaque cover held over the last frame while the display-mode handshake
     /// settles on exit. See exitPlayer().
     @State private var exitCoverVisible = false
+    @State private var ntvReturnControlID: String?
 
     let dismiss: () -> Void
     /// Kept so a Picture in Picture handoff can park this exact session and
     /// the root view can re-present the same request when it ends.
     private let request: PlaybackRequest
+    private var usesNTVControls: Bool { theme.palette.id == NTVDesign.palette.id }
 
     /// The playing item changed WITHIN this session — auto-advance, or a pick
     /// from the in-player episode list. The host needs this because the player
@@ -204,7 +206,13 @@ struct PlayerScreen: View {
             // keeps the bar up while paused — and the audio / subtitle
             // popovers are this screen with a panel over one glyph.
             if controlsVisible {
-                FusionPlayerControlsOverlay(viewModel: viewModel).transition(.opacity)
+                if usesNTVControls {
+                    NTVPlayerControls(viewModel: viewModel, initialControlID: ntvReturnControlID,
+                                      onOpenPicker: { ntvReturnControlID = $0 },
+                                      onRestoreFocus: { ntvReturnControlID = nil }).transition(.opacity)
+                } else {
+                    FusionPlayerControlsOverlay(viewModel: viewModel).transition(.opacity)
+                }
             }
 
             // Sources / episodes / engine / speed reached from elsewhere
@@ -218,16 +226,16 @@ struct PlayerScreen: View {
                 // sheet straight out of the hierarchy let the focus system
                 // commit the change before the removal transition ran, so
                 // the close never animated.
-                Color.black.opacity(viewModel.sheetClosing ? 0 : 0.55)
+                Color.black.opacity(viewModel.sheetClosing ? 0 : (usesNTVControls ? 0.25 : 0.55))
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .transition(.opacity)
-                InfuseInfoPanel(viewModel: viewModel)
-                    .offset(y: viewModel.sheetClosing ? -1000 : 0)
+                InfuseInfoPanel(viewModel: viewModel, anchoredToTransport: usesNTVControls)
+                    .offset(y: viewModel.sheetClosing ? (usesNTVControls ? 1000 : -1000) : 0)
                     .opacity(viewModel.sheetClosing ? 0 : 1)
                     .disabled(viewModel.sheetClosing)
                     .animation(PlayerViewModel.sheetMotion, value: viewModel.sheetClosing)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.move(edge: usesNTVControls ? .bottom : .top).combined(with: .opacity))
             }
 
             // ABOVE the transport, BELOW every modal. It is a near-opaque
@@ -273,7 +281,10 @@ struct PlayerScreen: View {
             // `!controlsVisible`, not `!= .controls`: pauseInfo (and the track
             // popovers) already draw the full transport, and a nudge there
             // stacked a second bottom block on top of it.
-            if viewModel.pendingSeekDelta != 0, !controlsVisible, !viewModel.isScrubbing {
+            // A quick skip over bare video stays discreet in nTV. The full
+            // timeline belongs to an explicit transport/scrub interaction;
+            // mounting it for the short seek debounce caused the visible flash.
+            if !usesNTVControls, viewModel.pendingSeekDelta != 0, !controlsVisible, !viewModel.isScrubbing {
                 FusionInertOverlay(viewModel: viewModel).transition(.opacity)
             }
 
@@ -313,6 +324,8 @@ struct PlayerScreen: View {
         .animation(FusionMotion.controlsAppear, value: viewModel.pendingSeekDelta != 0)
         // The first frame appearing is a page-scale moment, not a control one.
         .animation(FusionMotion.pageEnter, value: viewModel.hasStartedPlayback)
+        .onAppear { viewModel.usesNTVControls = usesNTVControls }
+        .onChange(of: usesNTVControls) { _, enabled in viewModel.usesNTVControls = enabled }
         .onPlayPauseCommand {
             if viewModel.isScrubbing {
                 viewModel.commitScrub()
@@ -561,8 +574,9 @@ struct PlayerScreen: View {
             if viewModel.wheelEngaged { return }
             if viewModel.isScrubbing {
                 switch direction {
-                case .left: viewModel.scrubJump(-Double(viewModel.settings.scrubJumpSeconds))
-                case .right: viewModel.scrubJump(Double(viewModel.settings.scrubJumpSeconds))
+                case .left, .right:
+                    if usesNTVControls { viewModel.stepNTVScrub(forward: direction == .right) }
+                    else { viewModel.scrubJump((direction == .right ? 1 : -1) * Double(viewModel.settings.scrubJumpSeconds)) }
                 default: viewModel.cancelScrub()
                 }
                 return
@@ -668,7 +682,7 @@ struct PlayerScreen: View {
     private var bottomBlockVisible: Bool {
         if controlsVisible { return true }
         if viewModel.isScrubbing { return true }
-        if viewModel.pendingSeekDelta != 0, viewModel.overlay != .controls { return true }
+        if !usesNTVControls, viewModel.pendingSeekDelta != 0, viewModel.overlay != .controls { return true }
         return false
     }
 
@@ -703,10 +717,11 @@ struct PlayerScreen: View {
     @ViewBuilder
     private var scrubHUD: some View {
         if viewModel.isScrubbing {
-            // Fusion draws the scrub view itself, using the SAME bottom block
-            // as its controls — that is what keeps the title from dropping when
-            // you enter a preview.
-            FusionInertOverlay(viewModel: viewModel, forcedScrub: true).transition(.opacity)
+            if usesNTVControls {
+                NTVPlayerSeekOverlay(viewModel: viewModel, scrubbing: true).transition(.opacity)
+            } else {
+                FusionInertOverlay(viewModel: viewModel, forcedScrub: true).transition(.opacity)
+            }
         }
     }
 
@@ -715,15 +730,21 @@ struct PlayerScreen: View {
         switch viewModel.overlay {
         case .sources:
             InfusePickerScreen(viewModel: viewModel,
-                               spec: InfusePickerSpec(title: "Sources", content: .sources)) {}
+                               spec: InfusePickerSpec(title: "Sources", content: .sources),
+                               anchoredToTransport: usesNTVControls) {
+                if usesNTVControls, viewModel.overlay == .sources { viewModel.overlay = .controls }
+            }
                 .transition(.opacity)
         case .episodes:
             InfusePickerScreen(viewModel: viewModel,
-                               spec: InfusePickerSpec(title: "Episodes", content: .episodes)) {}
+                               spec: InfusePickerSpec(title: "Épisodes", content: .episodes),
+                               anchoredToTransport: usesNTVControls) {
+                if usesNTVControls, viewModel.overlay == .episodes { viewModel.overlay = .controls }
+            }
                 .transition(.opacity)
         case .speed:
             InfusePickerScreen(viewModel: viewModel, spec: InfusePickerSpec(
-                title: "Playback Speed",
+                title: "Vitesse de lecture",
                 content: .items([0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map { (speed: Float) in
                     InfusePickerItem(id: "\(speed)",
                                      title: speed == 1 ? "Normal" : String(format: "%gx", speed),
@@ -731,7 +752,7 @@ struct PlayerScreen: View {
                         viewModel.setSpeed(speed)
                     }
                 })
-            )) {
+            ), anchoredToTransport: usesNTVControls) {
                 viewModel.overlay = .controls
             }
             .transition(.opacity)
@@ -1161,15 +1182,15 @@ struct PlayerErrorOverlay: View {
                     // that expired — transient things where one more attempt
                     // genuinely works, and where the alternative was asking the
                     // viewer to leave the film and start over from the browser.
-                    Button("Try Again") { viewModel.retryPlayback() }
+                    Button("Réessayer") { viewModel.retryPlayback() }
                         .focused($retryFocused)
                     if viewModel.allEntries.count > 1 {
-                        Button("Other Sources") {
+                        Button("Autres sources") {
                             viewModel.showSourcesFromError()
                         }
                         .focused($sourcesFocused)
                     }
-                    Button("Close Player", action: dismiss)
+                    Button("Fermer le lecteur", action: dismiss)
                         .focused($closeFocused)
                 }
                 // Land focus explicitly. Left to the engine, the first pass on

@@ -53,6 +53,9 @@ struct OrivioTVApp: App {
         // appear, so the tail covers launch itself — a cold start that hangs
         // before any view exists is exactly the session with no other witness.
         AppProbe.installLevels()
+        // One public dependency value per launch, including Release. No URL,
+        // credential or media title; keep av_version_info in the device binary.
+        NSLog("[nTV] linked FFmpeg=%@", NTVMediaDependencyAudit.ffmpegVersion)
     }
 
     @StateObject private var theme = ThemeManager()
@@ -78,6 +81,8 @@ struct OrivioTVApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .modifier(NTVLaunchPresentation())
+                .environment(\.locale, Locale(identifier: "fr_FR"))
                 .fontDesign(theme.rootFontDesign)   // app-wide font family (Fusion routes serif to headings only)
                 .environmentObject(theme)
                 .environmentObject(stores.addonManager)
@@ -104,6 +109,11 @@ struct OrivioTVApp: App {
                 // honors its Appearance setting — light, dark, or nil to
                 // follow the TV's own system appearance.
                 .preferredColorScheme(theme.preferredColorScheme)
+                .task {
+                    _ = await Task.detached(priority: .utility) {
+                        NTVSecurePreferences.standard.migrateLegacyPrivateValues()
+                    }.value
+                }
         }
     }
 }
@@ -239,18 +249,20 @@ struct RootView: View {
     // NavigationStack makes the tab bar hard to reach and focus feel stuck).
     @State private var homePath = NavigationPath()
     @State private var searchPath = NavigationPath()
+    @State private var animePath = NavigationPath()
     @State private var libraryPath = NavigationPath()
     @State private var liveTVPath = NavigationPath()
     @State private var moviesPath = NavigationPath()
     @State private var seriesPath = NavigationPath()
-    @StateObject private var moviesViewModel = DiscoverViewModel()
-    @StateObject private var seriesViewModel = DiscoverViewModel()
+    @StateObject private var moviesViewModel = NTVCatalogBrowserModel()
+    @StateObject private var seriesViewModel = NTVCatalogBrowserModel()
     // Persisted here (not inside HomeView) so switching tabs and coming back
     // doesn't rebuild it and re-trigger the catalog load / loading spinner.
     @StateObject private var homeViewModel = HomeViewModel()
     // Persisted here (not inside SearchView) so leaving the Search tab and
     // coming back keeps the query and results instead of clearing them.
     @StateObject private var searchViewModel = SearchViewModel()
+    @StateObject private var animeSearchViewModel = SearchViewModel(includesAnime: true)
     @State private var playback: PlaybackRequest?
     /// An Auto Link Selector auto-play is on screen; pop its source page once the
     /// player closes so Back returns to the title page, not the source list.
@@ -294,10 +306,13 @@ struct RootView: View {
     /// First launch, nobody signed in — the welcome screen sits in front of
     /// everything, including the profile gate.
     @State private var showWelcome = false
+    @State private var launchSetupComplete = false
+    @State private var pendingShelfResume: URL?
     /// True when the gate was opened from the rail / Settings (Back closes
     /// it); false for the cold-launch gate, where Back stays a no-op.
     @State private var profileGateCancellable = false
     @State private var selectedTab = 0
+    @State private var ntvCanvas = NTVBackdropCanvas()
     /// Polls the account every 30s while Home is up so Continue Watching stays
     /// live — removals and additions made on another device (or that failed to
     /// reconcile on foreground) appear without a relaunch. Fires continuously;
@@ -353,6 +368,8 @@ struct RootView: View {
             // Refresh a QR-linked Real-Debrid token at launch (its device-flow
             // access token is short-lived).
             .task { await debrid.refreshRealDebridIfNeeded() }
+            .task { await NTVSystemIconUpdater.shared.applyIfNeeded() }
+            .ntvSystemIconRegistrationProbe()
             .onAppear {
                 NSLog("[OrivioPlayer] RootView content onAppear")
                 FocusTrace.installIfRequested()
@@ -459,7 +476,17 @@ struct RootView: View {
                     profiles.onProfileDeleted = { [weak trakt, weak simkl, weak addonManager,
                                                    weak plugins, weak debrid, weak playerSettings,
                                                    weak tmdbSettings, weak theme, weak streamBadges,
-                                                   weak orivioSync] id in
+                                                   weak orivioSync, weak account] id in
+                        let credentials = NTVTwitchCredentials(clientID: NTVTwitchConfiguration.clientID,
+                            profileID: id, ownerScope: account?.currentUserID ?? "local")
+                        let twitchTokens = try? credentials.load()
+                        try? credentials.remove()
+                        if let twitchTokens {
+                            Task {
+                                let api = try? NTVTwitchAPI(clientID: NTVTwitchConfiguration.clientID)
+                                try? await api?.revoke(twitchTokens.accessToken)
+                            }
+                        }
                         trakt?.forgetProfile(id)
                         simkl?.forgetProfile(id)
                         addonManager?.forgetProfile(id)
@@ -573,8 +600,22 @@ struct RootView: View {
                     AppProbe.life("root appeared — tab=\(Self.tabName(selectedTab))")
                     // Skipped in the demo modes so the screen isn't covered.
                     let args = ProcessInfo.processInfo.arguments
-                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo"]
+                    let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvProfileDemo", "-ntvPlayerDemo", "-ntvTwitchDemo", "-ntvCatalogCategoriesDemo"]
                     let demoMode = demoArgs.contains { args.contains($0) }
+                    #if DEBUG
+                    if demoMode {
+                        homeCatalogSettings.navigationPosition = (args.contains("-ntvTopMenuDemo") || args.contains("-ntvCatalogCategoriesDemo")) ? .top : .left
+                        homeCatalogSettings.hideUnreleasedContent = args.contains("-ntvUpcomingCatalogFixture")
+                        homeCatalogSettings.hideUnavailableSources = false
+                    }
+                    #endif
+                    // The selected design is applied once; subsequent layout
+                    // choices remain the viewer's own preference.
+                    if !demoMode, theme.palette.id == NTVDesign.palette.id,
+                       !UserDefaults.standard.bool(forKey: "ntv.navigation.top.v1") {
+                        homeCatalogSettings.navigationPosition = .top
+                        UserDefaults.standard.set(true, forKey: "ntv.navigation.top.v1")
+                    }
                     // -welcomeDemo forces it regardless of the completed flag
                     // or an already-restored session, which is the only way to
                     // look at this screen twice on one install.
@@ -587,6 +628,11 @@ struct RootView: View {
                     // Settings TAB (in-place, not the full-screen pane demo) —
                     // used to drive the ATV theme's settings in the sim.
                     if args.contains("-settingsTabDemo") { selectedTab = 3 }
+                    #if DEBUG
+                    if args.contains("-ntvTopMenuDemo") { selectedTab = 3 }
+                    if args.contains("-ntvCatalogCategoriesDemo") { selectedTab = 5 }
+                    if args.contains("-ntvProfileDemo") { showProfileGate = true }
+                    #endif
                     if args.contains("-liveTVDemo") { selectedTab = 4 }
                     if args.contains("-searchDemo") { selectedTab = 1 }
                     if args.contains("-libraryDemo") { selectedTab = 2 }
@@ -604,7 +650,7 @@ struct RootView: View {
                             do {
                                 try await addonManager.install(manifestURL: url)
                                 let m = addonManager.addons.first { $0.manifestURL == url }?.manifest
-                                return .success(.init(manifestURL: url, name: m?.name ?? url,
+                                return .success(.init(manifestURL: url, name: m?.name ?? "Addon ajouté",
                                                       logo: m?.logo, description: m?.description))
                             } catch { return .failure(error) }
                         }
@@ -612,8 +658,8 @@ struct RootView: View {
                         devAddonServer = server
                         Task { @MainActor in
                             for _ in 0..<20 {
-                                if let a = server.address {
-                                    NSLog("[OrivioAddonServer] listening at %@", a); return
+                                if server.address != nil {
+                                    NSLog("[OrivioAddonServer] local import ready; code displayed on TV"); return
                                 }
                                 try? await Task.sleep(nanoseconds: 250_000_000)
                             }
@@ -793,18 +839,27 @@ struct RootView: View {
                         }
                     }
                 }
+                launchSetupComplete = true
+                consumePendingShelfResume()
             }
             // Presented AFTER the profile gate's modifier so it layers on
             // top: on a fresh install both would otherwise want the screen,
             // and "who's watching" makes no sense before "who are you".
-            .fullScreenCover(isPresented: $showWelcome) {
+            .fullScreenCover(isPresented: $showWelcome, onDismiss: consumePendingShelfResume) {
                 WelcomeView(account: account, addonManager: addonManager) {
                     OnboardingState.completed = true
                     showWelcome = false
                 }
                 .environmentObject(theme)
             }
-            .fullScreenCover(isPresented: $showProfileGate) {
+            .fullScreenCover(isPresented: $showProfileGate, onDismiss: consumePendingShelfResume) {
+                if ProcessInfo.processInfo.arguments.contains("-ntvProfileDemo") {
+                    ProfileEditView(profile: profiles.active) { showProfileGate = false }
+                        .environmentObject(theme)
+                        .environmentObject(profiles)
+                        .environmentObject(addonManager)
+                        .environmentObject(collections)
+                } else {
                 // The gate now only SELECTS a profile; account + Manage Profiles
                 // live in Settings → Account. The design is an independent look
                 // axis (Settings → Themes → Profile Screen).
@@ -817,6 +872,7 @@ struct RootView: View {
                 .environmentObject(theme)
                 .environmentObject(profiles)
                 .environmentObject(account)
+                }
             }
             // Returning to the app pulls the latest Continue Watching so changes
             // made on another device show up without a relaunch (local edits
@@ -824,7 +880,9 @@ struct RootView: View {
             .onChange(of: scenePhase) { _, phase in
                 AppProbe.scene = "\(phase)"
                 AppProbe.life("scene → \(phase)")
+                if phase == .background { progressStore.refreshTopShelf(force: true) }
                 if phase == .active {
+                    Task { await NTVSystemIconUpdater.shared.applyIfNeeded() }
                     // First foreground after an external handoff is the return
                     // from that app. Players that don't call back (VLC, nPlayer,
                     // VidHub, SenPlayer) have no deep link, so this marker is
@@ -896,20 +954,23 @@ struct RootView: View {
     private func startPlayerDemoIfRequested() {
         let args = ProcessInfo.processInfo.arguments
         let wantsMKV = args.contains("-playerDemoMKV")
-        guard wantsMKV || args.contains("-playerDemo") else { return }
+        let wantsNTV = args.contains("-ntvPlayerDemo")
+        guard wantsMKV || wantsNTV || args.contains("-playerDemo") else { return }
+        let fixtureURL = Bundle.main.url(forResource: "ntv-player-fixture", withExtension: "mp4")
+        if wantsNTV && fixtureURL == nil { return }
         // Once per process: the root content re-appears whenever the player
         // cover dismisses — including the Picture in Picture handoff — and a
         // second demo session would tear the parked one down.
         guard !Self.playerDemoStarted else { return }
         Self.playerDemoStarted = true
         let meta = MetaItem(
-            id: "tt0111161", type: "movie", name: wantsMKV ? "Demo Stream (MKV)" : "Demo Stream (HLS)"
+            id: "ntv-player-test", type: "movie", name: wantsNTV ? "Validation nTV" : wantsMKV ? "Demo Stream (MKV)" : "Demo Stream (HLS)"
         )
         let stream = Stream(
             name: wantsMKV ? "MKV Sample\n1080p" : "Apple HLS\n1080p",
             title: wantsMKV ? "Big Buck Bunny MKV sample" : "BipBop advanced fMP4 example",
             description: nil,
-            url: wantsMKV
+            url: wantsNTV ? fixtureURL!.absoluteString : wantsMKV
                 ? "https://test-videos.co.uk/vids/bigbuckbunny/mkv/1080/Big_Buck_Bunny_1080_10s_5MB.mkv"
                 : "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8",
             infoHash: nil, behaviorHints: nil
@@ -1084,6 +1145,7 @@ struct RootView: View {
         switch selectedTab {
         case 0: return homePath.isEmpty
         case 1: return searchPath.isEmpty
+        case 8: return animePath.isEmpty
         case 2: return libraryPath.isEmpty
         case 4: return liveTVPath.isEmpty
         case 5: return moviesPath.isEmpty
@@ -1199,9 +1261,22 @@ struct RootView: View {
     /// the left edge over full-bleed content. OVERLAY layout (not an HStack)
     /// so the expanding panel just draws over the content — the content
     /// column never re-lays-out during the spring.
+    private var ntvBackdropID: String? {
+        guard theme.palette.id == NTVDesign.palette.id else { return nil }
+        switch selectedTab {
+        case 0 where homePath.isEmpty: return "ntv.home.backdrop"
+        case 5 where moviesPath.isEmpty: return "ntv.catalog.movie.backdrop"
+        case 6 where seriesPath.isEmpty: return "ntv.catalog.series.backdrop"
+        default: return nil
+        }
+    }
+
     private var tabLayout: some View {
         ZStack(alignment: navIsTop ? .top : .leading) {
+            if theme.palette.id == NTVDesign.palette.id { NTVCanvasBackdrop(canvas: ntvCanvas) }
             selectedContent
+                .environmentObject(ntvCanvas)
+                .modifier(NTVFullWidthViewport(enabled: theme.palette.id == NTVDesign.palette.id))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Tab changes CUT. No fade, in either direction.
                 //
@@ -1236,15 +1311,12 @@ struct RootView: View {
                 // exempt there: the left rail floats beside the hero's art,
                 // but a top bar sits across the hero's own title block, which
                 // is text rather than bleed.
-                .padding(.leading, !navIsTop && showSidebar && selectedTab != 0
+                .padding(.leading, !navIsTop && showSidebar && selectedTab != 0 && theme.palette.id != NTVDesign.palette.id
                          ? GlassSidebar.collapsedWidth : 0)
-                // Same rule on the other axis, Home included: the bar FLOATS
-                // over Home the way the pill floats beside it, so the hero is
-                // never pushed down. The other tabs get a SAFE-AREA inset
-                // rather than a plain one — see `topBarClearance`: plain
-                // padding cut the page off under the bar, so scrolled rows hit
-                // a black band instead of sliding under the glass.
+                // nTV root pages reserve menu space inside their stack. The
+                // stack viewport stays constant while a detail is pushed.
                 .safeAreaPadding(.top, navIsTop && showSidebar && selectedTab != 0
+                                 && theme.palette.id != NTVDesign.palette.id
                                  ? GlassSidebar.topBarClearance : 0)
                 // The expanded panel draws OVER the page and the page does
                 // not move. There was an `.offset` here (plus an animation
@@ -1327,6 +1399,13 @@ struct RootView: View {
                         // Out of the rail and into the content: Right off the
                         // edge rail, Down off the top bar.
                         guard direction == (navIsTop ? .down : .right) else { return }
+                        if navIsTop, ntvCatalogMenuRouterID != nil {
+                            // The nTV bar never expands. A deliberate Down
+                            // enters its own first poster immediately; the
+                            // old side-panel echo guard need not swallow it.
+                            collapseSidebarFromExit()
+                            return
+                        }
                         // …unless this is the tail of the swipe that just
                         // OPENED the rail.
                         //
@@ -1360,7 +1439,7 @@ struct RootView: View {
                         // rows without a hand-off (and other tabs) keep the
                         // engine's pick as before. The row is read NOW, before
                         // the engine's landing can re-note a different one.
-                        let rowAtExit = ContentFocusRouter.shared.lastRowID
+                        let rowAtExit = ntvCatalogMenuRouterID ?? ContentFocusRouter.shared.lastRowID
                         DispatchQueue.main.async {
                             if sidebarFocus != nil {
                                 collapseSidebarFromExit()
@@ -1386,9 +1465,19 @@ struct RootView: View {
                     }
             }
         }
+        .onAppear { ntvCanvas.activate(ntvBackdropID) }
+        .onChange(of: ntvBackdropID) { _, id in ntvCanvas.activate(id) }
+        .onChange(of: profiles.activeProfileID) { _, _ in
+            ntvCanvas.clear()
+            clearPrivateSearchState()
+        }
+        .onChange(of: account.currentUserID) { _, _ in
+            ntvCanvas.clear()
+            clearPrivateSearchState()
+        }
         .animation(perf.sidebarAnimationEffective
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: showSidebar)
-        .animation(perf.sidebarAnimationEffective
+        .animation(perf.sidebarAnimationEffective && !(navIsTop && theme.palette.id == NTVDesign.palette.id)
                    ? .spring(response: 0.34, dampingFraction: 0.86) : nil, value: sidebarFocus != nil)
         // Focus ARRIVING in the rail counts as engaging it, however it got
         // there. `focusSidebar` and `revealSidebar` stamp their own way in, but
@@ -1396,6 +1485,7 @@ struct RootView: View {
         // moves into from the first card of a row — goes through neither, and
         // that is exactly the case a swipe hits.
         .onChange(of: sidebarFocus) { old, new in
+            if new != nil { ContentFocusRouter.shared.noteUserMovement() }
             if old == nil, new != nil { sidebarEngagedAt = Date() }
             // Focus left a revealed auto-hiding rail by some route other than
             // Back / Right (which hide it themselves): it goes away again.
@@ -1414,55 +1504,85 @@ struct RootView: View {
         case 1:
             NavigationStack(path: $searchPath) {
                 searchRoot
+                    .modifier(NTVPageTopClearance())
                     .onExitCommand { focusSidebar(1) }
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $searchPath) }
             }
         case 2:
             NavigationStack(path: $libraryPath) {
                 libraryRoot
+                    .modifier(NTVPageTopClearance())
                     .onExitCommand { focusSidebar(2) }
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $libraryPath) }
             }
         case 3:
             NavigationStack {
                 ATVSettingsView(onOpenProfiles: { profileGateCancellable = true; showProfileGate = true })
+                    .modifier(NTVPageTopClearance())
                     .onExitCommand { focusSidebar(3) }
                     .probeScreen("Settings")
             }
         case 4:
             NavigationStack(path: $liveTVPath) {
                 liveTVRoot
-                    .onExitCommand { focusSidebar(4) }
+                    .modifier(NTVPageTopClearance())
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $liveTVPath) }
             }
         case 5:
             NavigationStack(path: $moviesPath) {
-                NTVCatalogView(viewModel: moviesViewModel, mediaType: "movie", title: "Films",
+                NTVCatalogView(viewModel: moviesViewModel, mediaType: "movie", title: "Films", isAtRoot: moviesPath.isEmpty,
                     onSelect: { moviesPath.append(Route.detail($0)) },
                     onPlayManually: { moviesPath.append(Route.streamsManual($0, $1)) },
+                    onSeeAll: { moviesPath.append(Route.catalogSeeAll(addon: $0, catalog: $1, title: $2)) },
                     onBackAtRoot: { focusSidebar(5) },
                     onOpenSettings: { selectTab(7) })
+                    .modifier(NTVPageTopClearance())
                     .probeScreen("Movies")
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $moviesPath) }
             }
         case 6:
             NavigationStack(path: $seriesPath) {
-                NTVCatalogView(viewModel: seriesViewModel, mediaType: "series", title: "Séries",
+                NTVCatalogView(viewModel: seriesViewModel, mediaType: "series", title: "Séries", isAtRoot: seriesPath.isEmpty,
                     onSelect: { seriesPath.append(Route.detail($0)) },
                     onPlayManually: { seriesPath.append(Route.streamsManual($0, $1)) },
+                    onSeeAll: { seriesPath.append(Route.catalogSeeAll(addon: $0, catalog: $1, title: $2)) },
                     onBackAtRoot: { focusSidebar(6) },
                     onOpenSettings: { selectTab(7) })
+                    .modifier(NTVPageTopClearance())
                     .probeScreen("Series")
                     .navigationDestination(for: Route.self) { destination(for: $0, path: $seriesPath) }
+            }
+        case 8:
+            NavigationStack(path: $animePath) {
+                NTVAnimeView(onSearch: { title in
+                    animePath.append(title)
+                }, onOpenItem: { animePath.append(Route.detail($0)) }, onBackAtRoot: { focusSidebar(8) })
+                .id(profiles.activeProfileID)
+                .modifier(NTVPageTopClearance())
+                .probeScreen("Anime")
+                .navigationDestination(for: String.self) { title in
+                    SearchView(viewModel: animeSearchViewModel, onSelect: { item in
+                        NTVAnimeLibrary.shared.remember(item)
+                        animePath.append(Route.detail(item))
+                    }, animeContext: true)
+                    .modifier(NTVPageTopClearance())
+                    .task(id: title) {
+                        animeSearchViewModel.query = title
+                        animeSearchViewModel.search(addonManager: addonManager)
+                    }
+                }
+                .navigationDestination(for: Route.self) { destination(for: $0, path: $animePath) }
             }
         case 7:
             NavigationStack {
                 NTVAddonsView(onBackAtRoot: { focusSidebar(7) })
+                    .modifier(NTVPageTopClearance())
                     .probeScreen("Addons")
             }
         default:
             NavigationStack(path: $homePath) {
                 homeRoot
+                    .modifier(NTVPageTopClearance(isHome: true))
                     .onExitCommand {
                         // Ignore a Menu that lands right after popping back from
                         // a pushed screen — tvOS sometimes delivers a lingering
@@ -1495,6 +1615,7 @@ struct RootView: View {
         case 5: return "Movies"
         case 6: return "Series"
         case 7: return "Addons"
+        case 8: return "Anime"
         default: return "Home"
         }
     }
@@ -1536,6 +1657,7 @@ struct RootView: View {
     /// Handles tapping a rail tab: collapse the panel and force focus into the
     /// fresh tab's content by making the rail momentarily unfocusable.
     private func selectTab(_ newTab: Int) {
+        ContentFocusRouter.shared.noteUserMovement()
         let enteringHomeFresh = selectedTab != 0 && newTab == 0
         AppProbe.nav("tab \(Self.tabName(selectedTab)) → \(Self.tabName(newTab))"
                      + (enteringHomeFresh ? "  (Home rebuilds; rail waits on content)" : ""))
@@ -1563,6 +1685,7 @@ struct RootView: View {
     /// dropped — a Menu press in one of those windows did nothing. A deliberate
     /// Back always wins: enable now, focus on the next tick.
     private func focusSidebar(_ tab: Int) {
+        ContentFocusRouter.shared.noteUserMovement()
         AppProbe.focus("focusSidebar(\(Self.tabName(tab)))"
                        + "  revealed=\(sidebarRevealed.probe) enabled=\(sidebarEnabled.probe)")
         // Menu at a tab root is the other way back to a hidden rail.
@@ -1584,7 +1707,8 @@ struct RootView: View {
         // rail's centre — the fourth along, with the first two under the
         // panel. The rail stays enabled for the turn the hand-off needs; a
         // request into a `.disabled` view is silently dropped.
-        if ContentFocusRouter.shared.focusLastRowStart() {
+        let destination = ntvCatalogMenuRouterID ?? ContentFocusRouter.shared.lastRowID
+        if ContentFocusRouter.shared.focusRowStart(destination) {
             DispatchQueue.main.async {
                 sidebarFocus = nil   // a no-op once the tile holds focus
                 setSidebarEnabled(false, reenableAfter: 0.4)
@@ -1593,6 +1717,15 @@ struct RootView: View {
         }
         sidebarFocus = nil
         setSidebarEnabled(false, reenableAfter: 0.4)
+    }
+
+    /// The top menu enters the current catalog's first row, never a row saved
+    /// by Home or the other tab. A pushed detail keeps its existing routing.
+    private var ntvCatalogMenuRouterID: String? {
+        guard theme.palette.id == NTVDesign.palette.id else { return nil }
+        if selectedTab == 5, moviesPath.isEmpty { return "ntv.catalog.movie.entry" }
+        if selectedTab == 6, seriesPath.isEmpty { return "ntv.catalog.series.entry" }
+        return nil
     }
 
     /// The ONE owner of every timed rail re-enable. Five independent timers
@@ -1694,6 +1827,14 @@ struct RootView: View {
         .probeScreen("Search")
     }
 
+    private func clearPrivateSearchState() {
+        ContentFocusRouter.shared.noteUserMovement()
+        searchViewModel.resetForProfile()
+        animeSearchViewModel.resetForProfile()
+        if !searchPath.isEmpty { searchPath.removeLast(searchPath.count) }
+        if !animePath.isEmpty { animePath.removeLast(animePath.count) }
+    }
+
     private var libraryRoot: some View {
         LibraryView(
             onSelect: { libraryPath.append(Route.detail($0)) },
@@ -1705,12 +1846,23 @@ struct RootView: View {
         .probeScreen("Library")
     }
 
+    @ViewBuilder
     private var liveTVRoot: some View {
-        LiveTVView(
-            onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
-            onPlayDirect: { channel in playLiveChannel(channel) }
-        )
-        .probeScreen("Live TV")
+        if theme.palette.id == NTVDesign.palette.id {
+            NTVLiveHub(
+                onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
+                onPlayDirect: { channel in playLiveChannel(channel) },
+                onBackAtRoot: { focusSidebar(4) }
+            )
+            .probeScreen("Live TV")
+        } else {
+            LiveTVView(
+                onSelectChannel: { channel in liveTVPath.append(Route.streams(channel, nil)) },
+                onPlayDirect: { channel in playLiveChannel(channel) }
+            )
+            .onExitCommand { focusSidebar(4) }
+            .probeScreen("Live TV")
+        }
     }
 
     /// Shared navigation destinations. `path` is the binding for whichever
@@ -1738,6 +1890,9 @@ struct RootView: View {
                     onSelectPerson: { id, name in path.wrappedValue.append(Route.person(id: id, name: name)) },
                     onSelectCompany: { id, name in path.wrappedValue.append(Route.tmdbCompany(id: id, name: name)) }
             )
+            // Contain preserves the backdrop's own accessibility identifier;
+            // an identifier on a transparent parent otherwise replaces it.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ntv.detail.screen")
         case .collection(let collection):
             CollectionView(collection: collection) { path.wrappedValue.append(Route.detail($0)) }
@@ -1764,7 +1919,8 @@ struct RootView: View {
                 // Auto Link Selector auto-played: flag a deferred pop; the real
                 // pop happens when the player closes (see the player cover),
                 // never while this view's resolve Task is still running.
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 let key = ProgressStore.key(metaID: meta.id, video: video)
                 startPlayback(PlaybackRequest(
@@ -1781,7 +1937,8 @@ struct RootView: View {
             // but the finished link is handed off rather than played here.
             StreamsView(
                 meta: meta, video: video,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, _ in
                 guard let url = entry.stream.url else { return }
                 // Like the external branch of `startPlayback`: no in-app cover
@@ -1791,7 +1948,8 @@ struct RootView: View {
                 ExternalPlayers.openInInfuse(urlString: url)
             }
         case .streamsManual(let meta, let video):
-            StreamsView(meta: meta, video: video, forceManual: true) { entry, all in
+            StreamsView(meta: meta, video: video, forceManual: true,
+                        onOpenAddons: { selectTab(7) }) { entry, all in
                 let key = ProgressStore.key(metaID: meta.id, video: video)
                 startPlayback(PlaybackRequest(
                     meta: meta,
@@ -1808,7 +1966,8 @@ struct RootView: View {
             // list uncovered itself behind the player and Back landed on it.
             StreamsView(
                 meta: meta, video: video,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 startPlayback(PlaybackRequest(
                     meta: meta,
@@ -1824,7 +1983,8 @@ struct RootView: View {
             StreamsView(
                 meta: meta, video: video,
                 forceAutoPick: true,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 let key = ProgressStore.key(metaID: meta.id, video: video)
                 startPlayback(PlaybackRequest(
@@ -1846,7 +2006,8 @@ struct RootView: View {
                 meta: meta, video: video,
                 resumeAutoPlay: true,
                 resumeSignature: progress?.streamSignature,
-                onAutoDismiss: { pendingAutoPlayPop = true }
+                onAutoDismiss: { pendingAutoPlayPop = true },
+                onOpenAddons: { selectTab(7) }
             ) { entry, all in
                 startPlayback(PlaybackRequest(
                     meta: meta,
@@ -2094,6 +2255,7 @@ struct RootView: View {
         switch selectedTab {
         case 0: if !homePath.isEmpty { homePath.removeLast() }
         case 1: if !searchPath.isEmpty { searchPath.removeLast() }
+        case 8: if !animePath.isEmpty { animePath.removeLast() }
         case 2: if !libraryPath.isEmpty { libraryPath.removeLast() }
         case 4: if !liveTVPath.isEmpty { liveTVPath.removeLast() }
         case 5: if !moviesPath.isEmpty { moviesPath.removeLast() }
@@ -2409,6 +2571,7 @@ struct RootView: View {
             // leaves the pushed screen behind as a grey ghost.
             switch selectedTab {
             case 1: if !searchPath.isEmpty { searchPath.removeLast(searchPath.count) }
+            case 8: if !animePath.isEmpty { animePath.removeLast(animePath.count) }
             case 2: if !libraryPath.isEmpty { libraryPath.removeLast(libraryPath.count) }
             case 4: if !liveTVPath.isEmpty { liveTVPath.removeLast(liveTVPath.count) }
             case 5: if !moviesPath.isEmpty { moviesPath.removeLast(moviesPath.count) }
@@ -2428,6 +2591,20 @@ struct RootView: View {
     private func handleDeepLink(_ url: URL) {
         guard let link = DeepLinkService.parse(url) else { return }
         switch link {
+        case .resume(let type, let id):
+            // Only the current profile's authoritative progress can supply a
+            // playable source or position. A stale shelf never supplies either.
+            guard launchSetupComplete, !showWelcome, !showProfileGate else {
+                pendingShelfResume = url
+                return
+            }
+            selectedTab = 0
+            if let progress = progressStore.continueWatching.first(where: { $0.metaID == id && $0.type == type }) {
+                DispatchQueue.main.async { resume(progress) }
+            } else {
+                let meta = MetaItem(id: id, type: type, name: "")
+                DispatchQueue.main.async { homePath.append(Route.detail(meta)) }
+            }
         case .meta(let type, let id):
             // Open the title on the Home tab. DetailView fetches full meta +
             // canonicalizes tmdb→tt from this id.
@@ -2459,6 +2636,13 @@ struct RootView: View {
             returnToHomeFromExternalPlayback()
             NSLog("[OrivioPlayer] external player error: %@", message ?? "(none)")
         }
+    }
+
+    private func consumePendingShelfResume() {
+        guard launchSetupComplete, !showWelcome, !showProfileGate,
+              let url = pendingShelfResume else { return }
+        pendingShelfResume = nil
+        handleDeepLink(url)
     }
 
     /// Step 1 of a deep-link add-on install: read the manifest so the prompt

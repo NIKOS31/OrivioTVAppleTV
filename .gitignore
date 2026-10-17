@@ -2,6 +2,7 @@
 build/
 DerivedData/
 .build/
+__pycache__/
 .swiftpm/
 *.xcuserstate
 **/xcuserdata/
@@ -30,6 +31,8 @@ NuvioTV/Secrets.swift
 **/.DS_Store
 nodeserver/node_modules/
 Vendor/NodeMobile.xcframework/
+Vendor/TVVLCKit.xcframework/
+OrivioTV/Resources/FFmpegLicenses/
 build-sim/
 build/
 
@@ -57,3 +60,20 @@ THEME_SYSTEM.md
 # that have no business in a public repo. The graph is rebuildable from source
 # in one command, so nothing here is worth tracking.
 graphify-out/
+
+# Local credentials and signing material. Examples must contain placeholders only.
+.env
+.env.*
+!.env.example
+!.env.sample
+**/Secrets.swift
+*-private.json
+*.p8
+*.p12
+*.pfx
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+id_rsa
+id_ed25519

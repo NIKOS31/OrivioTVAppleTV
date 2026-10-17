@@ -59,7 +59,7 @@ final class TorrentSettingsStore: ObservableObject {
     private static let key = "orivio.torrent.settings.v1"
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: Self.key),
+        if let data = NTVSecurePreferences.standard.data(forKey: Self.key),
            let decoded = try? JSONDecoder().decode(TorrentSettings.self, from: data) {
             settings = decoded
         } else {
@@ -76,6 +76,6 @@ final class TorrentSettingsStore: ObservableObject {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(settings) else { return }
-        UserDefaults.standard.set(data, forKey: Self.key)
+        NTVSecurePreferences.standard.set(data, forKey: Self.key)
     }
 }

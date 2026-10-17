@@ -33,6 +33,7 @@ struct RemoteTouchCatcher: UIViewRepresentable {
 final class TouchHostView: UIView, UIGestureRecognizerDelegate {
     private var pan: UIPanGestureRecognizer?
     private weak var attachedWindow: UIWindow?
+    private var acceptedPan = false
 
     private var isActive: () -> Bool = { false }
     private var onBegan: () -> Void = {}
@@ -65,20 +66,27 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
         if let attachedWindow, let pan {
             attachedWindow.removeGestureRecognizer(pan)
         }
-        pan = nil; attachedWindow = nil
+        pan = nil; attachedWindow = nil; acceptedPan = false
     }
 
     @objc private func handlePan(_ g: UIPanGestureRecognizer) {
         let t = g.translation(in: g.view)
-        switch g.state {
+        receivePan(state: g.state, translation: t)
+    }
+
+    /// The acceptance decision belongs to this contact. A blocked gesture
+    /// cannot become a scrub halfway through when an overlay closes.
+    func receivePan(state: UIGestureRecognizer.State, translation t: CGPoint) {
+        switch state {
         case .began:
             // Probe the GATE, not just the delivery. "I swiped and nothing
             // happened" has two completely different causes — the recognizer
             // never fired, or it fired and `isActive` refused it because some
             // overlay was up — and they are indistinguishable downstream.
-            PlayerProbe.event("remote", "pad DOWN (active=\(isActive().probe))")
-            if isActive() { onBegan() } else { PlayerProbe.count("input.pan-rejected") }
-        case .changed: if isActive() { onMoved(t.x, t.y) }
+            acceptedPan = isActive()
+            PlayerProbe.event("remote", "pad DOWN (active=\(acceptedPan.probe))")
+            if acceptedPan { onBegan() } else { PlayerProbe.count("input.pan-rejected") }
+        case .changed: if acceptedPan && isActive() { onMoved(t.x, t.y) }
         // The END is delivered UNCONDITIONALLY. `isActive` reads the live
         // overlay, so a gesture that began over active UI and ended after an
         // overlay opened mid-swipe (Up Next arriving, a glyph popover) had its
@@ -87,8 +95,9 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
         // scrub commit-click, gesture adoption) misread every later press.
         case .ended, .cancelled, .failed:
             PlayerProbe.event("remote", String(format: "pad UP %@ (%+.0f,%+.0f)",
-                                               g.state == .ended ? "ended" : "cancelled",
+                                               state == .ended ? "ended" : "cancelled",
                                                t.x, t.y))
+            acceptedPan = false
             onEnded(t.x, t.y)
         default: break
         }

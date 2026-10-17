@@ -97,7 +97,7 @@ final class MediaServerStore: ObservableObject {
     private struct Blob: Codable { var plex: MediaServerAccount?; var jellyfin: MediaServerAccount? }
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: Self.key),
+        if let data = NTVSecurePreferences.standard.data(forKey: Self.key),
            let blob = try? JSONDecoder().decode(Blob.self, from: data) {
             plex = blob.plex
             jellyfin = blob.jellyfin
@@ -107,7 +107,7 @@ final class MediaServerStore: ObservableObject {
     private func save() {
         let blob = Blob(plex: plex, jellyfin: jellyfin)
         if let data = try? JSONEncoder().encode(blob) {
-            UserDefaults.standard.set(data, forKey: Self.key)
+            NTVSecurePreferences.standard.set(data, forKey: Self.key)
         }
     }
 

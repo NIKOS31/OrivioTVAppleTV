@@ -31,10 +31,13 @@ enum OrivioLocalBackupService {
         let backup = OrivioLocalBackup(
             version: currentVersion,
             createdAt: Date(),
-            addons: addonManager.addons.map {
+            addons: addonManager.addons.filter { NTVExportPolicy.permitsPublicManifest($0.manifestURL) }.map {
                 OrivioLocalBackup.AddonState(manifestURL: $0.manifestURL, enabled: $0.enabled)
             },
-            pluginRepositoryURLs: plugins.repositories.map(\.url),
+            // Repository URLs can carry private configuration. A portable
+            // encrypted export requires its own key exchange; do not publish
+            // these URLs in the existing plain JSON format.
+            pluginRepositoryURLs: [],
             library: library.allForSync(),
             // streamURL is stripped: a resume link is routinely a debrid
             // "unrestricted" URL or otherwise carries the user's token, and the
@@ -52,8 +55,9 @@ enum OrivioLocalBackupService {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(backup) else { return nil }
-        return String(data: data, encoding: .utf8)
+        guard let data = try? encoder.encode(backup),
+              let sanitized = try? NTVExportPolicy.sanitizedJSON(data) else { return nil }
+        return String(data: sanitized, encoding: .utf8)
     }
 
     @MainActor

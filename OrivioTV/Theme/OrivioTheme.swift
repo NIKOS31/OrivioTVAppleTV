@@ -100,7 +100,7 @@ struct ThemePalette: Identifiable, Equatable {
 
 enum OrivioThemes {
     static let crimson = ThemePalette(
-        id: "crimson", displayName: "Crimson",
+        id: "crimson", displayName: "Carmin",
         secondary: OrivioPrimitives.red500,
         secondaryVariant: OrivioPrimitives.red600,
         focusRing: OrivioPrimitives.red300,
@@ -108,7 +108,7 @@ enum OrivioThemes {
         backgroundCard: Color(hex: 0x241A1A)
     )
     static let ocean = ThemePalette(
-        id: "ocean", displayName: "Ocean",
+        id: "ocean", displayName: "Océan",
         secondary: OrivioPrimitives.blue500,
         secondaryVariant: OrivioPrimitives.blue700,
         focusRing: OrivioPrimitives.blue300,
@@ -128,7 +128,7 @@ enum OrivioThemes {
         backgroundCard: Color(hex: 0x1F1A24)
     )
     static let emerald = ThemePalette(
-        id: "emerald", displayName: "Emerald",
+        id: "emerald", displayName: "Émeraude",
         secondary: OrivioPrimitives.green500,
         secondaryVariant: OrivioPrimitives.green700,
         focusRing: OrivioPrimitives.green300,
@@ -136,7 +136,7 @@ enum OrivioThemes {
         backgroundCard: Color(hex: 0x1A241A)
     )
     static let amber = ThemePalette(
-        id: "amber", displayName: "Amber",
+        id: "amber", displayName: "Ambre",
         secondary: OrivioPrimitives.amber500,
         secondaryVariant: OrivioPrimitives.amber700,
         focusRing: OrivioPrimitives.amber300,
@@ -154,7 +154,7 @@ enum OrivioThemes {
         backgroundCard: Color(hex: 0x241A1F)
     )
     static let white = ThemePalette(
-        id: "white", displayName: "White",
+        id: "white", displayName: "Blanc",
         secondary: OrivioPrimitives.neutral100,
         secondaryVariant: OrivioPrimitives.neutral200,
         onSecondary: OrivioPrimitives.neutral925,
@@ -166,7 +166,7 @@ enum OrivioThemes {
     /// Orivio Purple — a deep, electric purple accent (deeper than the softer
     /// "Violet"), available to every theme like any accent.
     static let orivioPurple = ThemePalette(
-        id: "purple", displayName: "Orivio Purple",
+        id: "purple", displayName: "Pourpre",
         secondary: Color(hex: 0x6D27E8),
         secondaryVariant: Color(hex: 0x3C137F),
         focusRing: Color(hex: 0x925DFF),
@@ -179,7 +179,7 @@ enum OrivioThemes {
     /// Lavender — a soft light-purple accent; needs dark text on its fill
     /// like White.
     static let lavender = ThemePalette(
-        id: "lavender", displayName: "Lavender",
+        id: "lavender", displayName: "Lavande",
         secondary: Color(hex: 0xB99AFF),
         secondaryVariant: Color(hex: 0x6D5AA8),
         onSecondary: Color(hex: 0x15121E),
@@ -191,7 +191,7 @@ enum OrivioThemes {
     /// Mint — the bright Hulu-style neon green accent; needs dark text on its
     /// fill (like White/Lavender). Pairs especially well with the Streamline theme.
     static let mint = ThemePalette(
-        id: "mint", displayName: "Mint",
+        id: "mint", displayName: "Menthe",
         secondary: Color(hex: 0x1CE783),
         secondaryVariant: Color(hex: 0x0FB968),
         onSecondary: Color(hex: 0x04241A),
@@ -214,9 +214,9 @@ enum ATVAppearance: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .system: return "Automatic"
+        case .system: return "Automatique"
         case .light: return "Light"
-        case .dark: return "Dark"
+        case .dark: return "Sombre"
         }
     }
     /// Value handed to `.preferredColorScheme` (nil = follow the system).
@@ -235,10 +235,10 @@ enum AppFont: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .system: return "System"
-        case .rounded: return "Rounded"
-        case .serif: return "Serif"
-        case .monospaced: return "Monospaced"
+        case .system: return "Système"
+        case .rounded: return "Arrondie"
+        case .serif: return "Avec empattements"
+        case .monospaced: return "Chasse fixe"
         }
     }
     var design: Font.Design {
@@ -258,14 +258,14 @@ enum ExperienceMode: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .essential: return "Essential"
-        case .advanced: return "Advanced"
+        case .essential: return "Essentiel"
+        case .advanced: return "Avancé"
         }
     }
     var summary: String {
         switch self {
-        case .essential: return "A simpler settings screen with just the everyday options"
-        case .advanced: return "Every option, including engine, OSD and tuning controls"
+        case .essential: return "Les réglages utiles au quotidien"
+        case .advanced: return "Tous les réglages, y compris les options avancées du lecteur"
         }
     }
     var isAdvanced: Bool { self == .advanced }
@@ -278,16 +278,16 @@ enum SettingsUiStyle: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .classic: return "Classic"
+        case .classic: return "Classique"
         case .zen: return "Zen"
         case .horizon: return "Horizon"
         }
     }
     var summary: String {
         switch self {
-        case .classic: return "Soft rounded cards"
-        case .zen: return "Pill-shaped rows"
-        case .horizon: return "Sharp, squared edges"
+        case .classic: return "Cartes aux angles arrondis"
+        case .zen: return "Lignes en forme de capsule"
+        case .horizon: return "Angles droits"
         }
     }
     /// Corner radius for settings rows in this style.
@@ -338,7 +338,7 @@ enum PlayerLayout: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .classic: return "Classic"
+        case .classic: return "Classique"
         case .fusion: return "Fusion"
         }
     }

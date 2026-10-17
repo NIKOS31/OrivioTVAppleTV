@@ -13,23 +13,23 @@ final class TraktStore: ObservableObject {
     @Published private(set) var refreshToken: String?
     @Published private(set) var username: String?
     @Published var scrobbleEnabled: Bool {
-        didSet { UserDefaults.standard.set(scrobbleEnabled, forKey: Self.scrobbleKey) }
+        didSet { NTVSecurePreferences.standard.set(scrobbleEnabled, forKey: Self.scrobbleKey) }
     }
     /// Two-way watch-history / watched-badge sync with Trakt.
     @Published var syncWatchHistory: Bool {
-        didSet { UserDefaults.standard.set(syncWatchHistory, forKey: Self.histKey) }
+        didSet { NTVSecurePreferences.standard.set(syncWatchHistory, forKey: Self.histKey) }
     }
     /// Pull Trakt playback progress into Continue Watching.
     @Published var syncPlayback: Bool {
-        didSet { UserDefaults.standard.set(syncPlayback, forKey: Self.playbackKey) }
+        didSet { NTVSecurePreferences.standard.set(syncPlayback, forKey: Self.playbackKey) }
     }
     /// Two-way sync of the Library with the Trakt watchlist.
     @Published var syncWatchlist: Bool {
-        didSet { UserDefaults.standard.set(syncWatchlist, forKey: Self.watchlistKey) }
+        didSet { NTVSecurePreferences.standard.set(syncWatchlist, forKey: Self.watchlistKey) }
     }
     /// Two-way sync of personal star ratings with Trakt.
     @Published var syncRatings: Bool {
-        didSet { UserDefaults.standard.set(syncRatings, forKey: Self.ratingsKey) }
+        didSet { NTVSecurePreferences.standard.set(syncRatings, forKey: Self.ratingsKey) }
     }
     /// Last full-sync outcome, shown in Settings → Trakt.
     @Published private(set) var lastSyncStatus: String?
@@ -49,7 +49,7 @@ final class TraktStore: ObservableObject {
     func setSyncStatus(_ s: String?) { lastSyncStatus = s }
     /// User-supplied client secret (empty until recovered).
     @Published var clientSecret: String {
-        didSet { UserDefaults.standard.set(clientSecret, forKey: Self.secretKey) }
+        didSet { NTVSecurePreferences.standard.set(clientSecret, forKey: Self.secretKey) }
     }
 
     /// Recovered + validated public client id (header `trakt-api-key`).
@@ -77,17 +77,17 @@ final class TraktStore: ObservableObject {
     private struct Tokens: Codable { let access: String; let refresh: String }
 
     init() {
-        scrobbleEnabled = UserDefaults.standard.object(forKey: Self.scrobbleKey) as? Bool ?? true
-        syncWatchHistory = UserDefaults.standard.object(forKey: Self.histKey) as? Bool ?? true
-        syncPlayback = UserDefaults.standard.object(forKey: Self.playbackKey) as? Bool ?? true
-        syncWatchlist = UserDefaults.standard.object(forKey: Self.watchlistKey) as? Bool ?? true
-        syncRatings = UserDefaults.standard.object(forKey: Self.ratingsKey) as? Bool ?? true
-        clientSecret = UserDefaults.standard.string(forKey: Self.secretKey) ?? ""
-        perProfileAccounts = UserDefaults.standard.bool(forKey: Self.perProfileKey)
-        profileID = UserDefaults.standard.object(forKey: Self.activeProfileKey) as? Int ?? 1
+        scrobbleEnabled = NTVSecurePreferences.standard.object(forKey: Self.scrobbleKey) as? Bool ?? true
+        syncWatchHistory = NTVSecurePreferences.standard.object(forKey: Self.histKey) as? Bool ?? true
+        syncPlayback = NTVSecurePreferences.standard.object(forKey: Self.playbackKey) as? Bool ?? true
+        syncWatchlist = NTVSecurePreferences.standard.object(forKey: Self.watchlistKey) as? Bool ?? true
+        syncRatings = NTVSecurePreferences.standard.object(forKey: Self.ratingsKey) as? Bool ?? true
+        clientSecret = NTVSecurePreferences.standard.string(forKey: Self.secretKey) ?? ""
+        perProfileAccounts = NTVSecurePreferences.standard.bool(forKey: Self.perProfileKey)
+        profileID = NTVSecurePreferences.standard.object(forKey: Self.activeProfileKey) as? Int ?? 1
         let suffix = perProfileAccounts ? ".p\(profileID)" : ""
-        username = UserDefaults.standard.string(forKey: Self.userKey + suffix)
-        if let data = UserDefaults.standard.data(forKey: Self.tokenKey + suffix),
+        username = NTVSecurePreferences.standard.string(forKey: Self.userKey + suffix)
+        if let data = NTVSecurePreferences.standard.data(forKey: Self.tokenKey + suffix),
            let tokens = try? JSONDecoder().decode(Tokens.self, from: data) {
             accessToken = tokens.access
             refreshToken = tokens.refresh
@@ -108,7 +108,7 @@ final class TraktStore: ObservableObject {
     @Published var perProfileAccounts: Bool {
         didSet {
             guard perProfileAccounts != oldValue else { return }
-            UserDefaults.standard.set(perProfileAccounts, forKey: Self.perProfileKey)
+            NTVSecurePreferences.standard.set(perProfileAccounts, forKey: Self.perProfileKey)
             if perProfileAccounts { adoptSharedLoginIntoPrimaryProfile() }
             reloadAccount()
         }
@@ -132,8 +132,8 @@ final class TraktStore: ObservableObject {
     /// row. A profile with no explicit login here ignores what the account
     /// offers and shows the connect screen, which is the point of the setting.
     private var signedInHere: Bool {
-        get { UserDefaults.standard.bool(forKey: scopedExplicitKey) }
-        set { UserDefaults.standard.set(newValue, forKey: scopedExplicitKey) }
+        get { NTVSecurePreferences.standard.bool(forKey: scopedExplicitKey) }
+        set { NTVSecurePreferences.standard.set(newValue, forKey: scopedExplicitKey) }
     }
 
     /// Called by the device-code flow when a login completes on this profile.
@@ -162,13 +162,13 @@ final class TraktStore: ObservableObject {
     /// screen. The device-wide copy is never touched, so turning the setting
     /// off always falls back to the main account.
     private func adoptSharedLoginIntoPrimaryProfile() {
-        let shared = UserDefaults.standard.data(forKey: Self.tokenKey)
+        let shared = NTVSecurePreferences.standard.data(forKey: Self.tokenKey)
         let primaryToken = Self.tokenKey + ".p1"
-        if UserDefaults.standard.data(forKey: primaryToken) == nil, let shared {
-            UserDefaults.standard.set(shared, forKey: primaryToken)
-            UserDefaults.standard.set(UserDefaults.standard.string(forKey: Self.userKey),
+        if NTVSecurePreferences.standard.data(forKey: primaryToken) == nil, let shared {
+            NTVSecurePreferences.standard.set(shared, forKey: primaryToken)
+            NTVSecurePreferences.standard.set(NTVSecurePreferences.standard.string(forKey: Self.userKey),
                                       forKey: Self.userKey + ".p1")
-            UserDefaults.standard.set(true, forKey: Self.explicitLoginKey + ".p1")
+            NTVSecurePreferences.standard.set(true, forKey: Self.explicitLoginKey + ".p1")
         }
         // Clear COPIES of the main account sitting in other profiles' slots.
         //
@@ -182,10 +182,10 @@ final class TraktStore: ObservableObject {
         guard let shared else { return }
         for id in 2...Self.maxProfileID {
             let tokenKey = Self.tokenKey + ".p\(id)"
-            guard UserDefaults.standard.data(forKey: tokenKey) == shared else { continue }
-            UserDefaults.standard.removeObject(forKey: tokenKey)
-            UserDefaults.standard.removeObject(forKey: Self.userKey + ".p\(id)")
-            UserDefaults.standard.removeObject(forKey: Self.explicitLoginKey + ".p\(id)")
+            guard NTVSecurePreferences.standard.data(forKey: tokenKey) == shared else { continue }
+            NTVSecurePreferences.standard.removeObject(forKey: tokenKey)
+            NTVSecurePreferences.standard.removeObject(forKey: Self.userKey + ".p\(id)")
+            NTVSecurePreferences.standard.removeObject(forKey: Self.explicitLoginKey + ".p\(id)")
         }
     }
 
@@ -196,7 +196,7 @@ final class TraktStore: ObservableObject {
     /// inherits it.
     func forgetProfile(_ id: Int) {
         for key in [Self.tokenKey, Self.userKey, Self.explicitLoginKey] {
-            UserDefaults.standard.removeObject(forKey: key + ".p\(id)")
+            NTVSecurePreferences.standard.removeObject(forKey: key + ".p\(id)")
         }
         // Drop the live session too when it belongs to the profile being
         // forgotten. Clearing only storage left the tokens in memory, and the
@@ -212,9 +212,9 @@ final class TraktStore: ObservableObject {
         applyingRemote = true
         defer { applyingRemote = false }
         for key in [Self.tokenKey, Self.userKey, Self.explicitLoginKey] {
-            UserDefaults.standard.removeObject(forKey: key)
+            NTVSecurePreferences.standard.removeObject(forKey: key)
             for id in 1...Self.maxProfileID {
-                UserDefaults.standard.removeObject(forKey: key + ".p\(id)")
+                NTVSecurePreferences.standard.removeObject(forKey: key + ".p\(id)")
             }
         }
         reloadAccount()
@@ -234,8 +234,8 @@ final class TraktStore: ObservableObject {
     private func reloadAccount() {
         applyingRemote = true
         defer { applyingRemote = false }
-        username = UserDefaults.standard.string(forKey: scopedUserKey)
-        if let data = UserDefaults.standard.data(forKey: scopedTokenKey),
+        username = NTVSecurePreferences.standard.string(forKey: scopedUserKey)
+        if let data = NTVSecurePreferences.standard.data(forKey: scopedTokenKey),
            let tokens = try? JSONDecoder().decode(Tokens.self, from: data) {
             accessToken = tokens.access
             refreshToken = tokens.refresh
@@ -260,14 +260,14 @@ final class TraktStore: ObservableObject {
         accessToken = access
         refreshToken = refresh
         if let data = try? JSONEncoder().encode(Tokens(access: access, refresh: refresh)) {
-            UserDefaults.standard.set(data, forKey: scopedTokenKey)
+            NTVSecurePreferences.standard.set(data, forKey: scopedTokenKey)
         }
         if !applyingRemote { onLocalChange?() }
     }
 
     func setUsername(_ name: String?) {
         username = name
-        UserDefaults.standard.set(name, forKey: scopedUserKey)
+        NTVSecurePreferences.standard.set(name, forKey: scopedUserKey)
         if !applyingRemote { onLocalChange?() }
     }
 
@@ -276,8 +276,8 @@ final class TraktStore: ObservableObject {
         accessToken = nil
         refreshToken = nil
         username = nil
-        UserDefaults.standard.removeObject(forKey: scopedTokenKey)
-        UserDefaults.standard.removeObject(forKey: scopedUserKey)
+        NTVSecurePreferences.standard.removeObject(forKey: scopedTokenKey)
+        NTVSecurePreferences.standard.removeObject(forKey: scopedUserKey)
         signedInHere = false
         droppedShowIDs = []
         if !applyingRemote { onLocalChange?() }
@@ -327,11 +327,7 @@ enum TraktPollResult {
 enum TraktService {
     private static let base = "https://api.trakt.tv"
 
-    private static let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 25
-        return URLSession(configuration: config)
-    }()
+    private static let session = NTVAuthenticatedSession.make(timeout: 25)
 
     /// Returns nil for a path that can't form a URL — it used to force-unwrap.
     /// Paths are interpolated from user-supplied text (a pasted trakt.tv list

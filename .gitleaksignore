@@ -1,0 +1,22 @@
+# Immutable findings reviewed on 2026-10-15.
+# Seven YouTube client keys match the pinned upstream YouTubeKit source;
+# two KSPlayer demo credentials match upstream and are outside the app target.
+# Eight remaining fingerprints are local preference key names, not credentials.
+# Exact commit/path/rule/line fingerprints only: no directory or rule exclusions.
+057809e4d39b0c9b3d326f64ee3fae6b038f92b3:Vendor/YouTubeKit/Sources/YouTubeKit/InnerTube.swift:gcp-api-key:65
+057809e4d39b0c9b3d326f64ee3fae6b038f92b3:Vendor/YouTubeKit/Sources/YouTubeKit/InnerTube.swift:gcp-api-key:66
+057809e4d39b0c9b3d326f64ee3fae6b038f92b3:Vendor/YouTubeKit/Sources/YouTubeKit/InnerTube.swift:gcp-api-key:67
+057809e4d39b0c9b3d326f64ee3fae6b038f92b3:Vendor/YouTubeKit/Sources/YouTubeKit/InnerTube.swift:gcp-api-key:69
+057809e4d39b0c9b3d326f64ee3fae6b038f92b3:Vendor/YouTubeKit/Sources/YouTubeKit/InnerTube.swift:gcp-api-key:75
+057809e4d39b0c9b3d326f64ee3fae6b038f92b3:Vendor/YouTubeKit/Sources/YouTubeKit/InnerTube.swift:gcp-api-key:77
+057809e4d39b0c9b3d326f64ee3fae6b038f92b3:Vendor/YouTubeKit/Sources/YouTubeKit/InnerTube.swift:gcp-api-key:79
+8115dfdf2b1df97c2a487c1173ba2caa23d36109:OrivioTV/Core/CollectionsStore.swift:generic-api-key:386
+8115dfdf2b1df97c2a487c1173ba2caa23d36109:OrivioTV/Core/StreamBadges.swift:generic-api-key:37
+8115dfdf2b1df97c2a487c1173ba2caa23d36109:OrivioTV/Core/TraktService.swift:generic-api-key:62
+9290499f3afe2f0514fcb9e9348c1efa297f56cc:Vendor/KSPlayer/Demo/SwiftUI/Shared/TracyApp.swift:generic-api-key:199
+9290499f3afe2f0514fcb9e9348c1efa297f56cc:Vendor/KSPlayer/Demo/SwiftUI/Shared/TracyApp.swift:generic-api-key:199
+477f45d6a167f9da41e39637e3bdbe15eec0cc57:NuvioTV/Core/CollectionsStore.swift:generic-api-key:332
+d4c6461232884ecee0dbdf92cb75a8277bee7ffe:NuvioTV/Core/StreamBadges.swift:generic-api-key:37
+ede92a45c420f65310b70eba856020e3a5c951aa:NuvioTV/Core/DebridService.swift:generic-api-key:52
+ede92a45c420f65310b70eba856020e3a5c951aa:NuvioTV/Core/TraktService.swift:generic-api-key:32
+ede92a45c420f65310b70eba856020e3a5c951aa:NuvioTV/Core/TraktService.swift:generic-api-key:33

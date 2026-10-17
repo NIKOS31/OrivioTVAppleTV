@@ -390,64 +390,7 @@ final class ColorProbeServer {
     private var listener: NWListener?
 
     func start() {
-        guard ProbeGate.isEnabled else { return }
-        guard listener == nil, let port = NWEndpoint.Port(rawValue: Self.port) else { return }
-        let params = NWParameters.tcp
-        params.allowLocalEndpointReuse = true
-        guard let listener = try? NWListener(using: params, on: port) else { return }
-        listener.newConnectionHandler = { connection in
-            connection.start(queue: .main)
-            // One read is enough to see the request line, which is all that
-            // picks the route.
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { chunk, _, _, _ in
-                let head = chunk.map { String(decoding: $0, as: UTF8.self) } ?? ""
-                let path = head.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-                Task { @MainActor in
-                    switch path {
-                    case let p where p.hasPrefix("/live"):
-                        Self.stream(on: connection, eventsOnly: false)
-                    case let p where p.hasPrefix("/events"):
-                        Self.stream(on: connection, eventsOnly: true)
-                    // `/mark?<anything>` drops a labelled line into the event
-                    // stream. During a live session the observer and the
-                    // person watching are not the same person: "it just
-                    // froze" arrives seconds after the fact, over a tail that
-                    // has scrolled on. A mark is an anchor in the ONE clock
-                    // both sides share, so the complaint can be lined up with
-                    // the events around it afterwards instead of estimated.
-                    case let p where p.hasPrefix("/mark"):
-                        let note = p.split(separator: "?", maxSplits: 1).dropFirst().first
-                            .map { $0.replacingOccurrences(of: "+", with: " ")
-                                     .removingPercentEncoding ?? String($0) } ?? "mark"
-                        PlayerProbe.event("MARK", "──────── \(note) ────────")
-                        Self.sendText(on: connection, "marked: \(note)\n")
-                    // `/cachecheck` runs the cache listener check a new playback
-                    // session would run and reports the listener's state — the
-                    // way to prove, from outside, that a listener killed by a
-                    // suspension is rebuilt rather than handed out dead.
-                    case let p where p.hasPrefix("/cachecheck"):
-                        #if DEBUG
-                        MediaCacheServer.shared.debugCheckListener { line in
-                            Task { @MainActor in Self.sendText(on: connection, line + "\n") }
-                        }
-                        #else
-                        Self.sendText(on: connection, "cachecheck: debug builds only\n")
-                        #endif
-                    case let p where p.hasPrefix("/health"):
-                        Self.sendText(on: connection,
-                                      PlayerProbe.healthLines().joined(separator: "\n") + "\n")
-                    case let p where p.hasPrefix("/probe"):
-                        Self.sendText(on: connection, PlayerProbe.levels()
-                            .joined(separator: "\n") + "\n\n"
-                            + PlayerProbe.events(since: 0, limit: 120).lines.joined(separator: "\n") + "\n")
-                    default:
-                        Self.send(on: connection)
-                    }
-                }
-            }
-        }
-        listener.start(queue: .main)
-        self.listener = listener
+        // nTV diagnostics stay on this device. No unauthenticated LAN reader.
     }
 
     /// Tear the listener down when the Diagnostics toggle is switched off.
@@ -893,23 +836,9 @@ enum AppProbe {
         }
     }
 
-    /// A URL boiled down to what identifies it in a log: host plus the part of
-    /// the path that says what was asked for, with the token query an add-on
-    /// carries dropped. Full URLs are 200 characters of noise, and several of
-    /// them contain credentials.
+    /// A request category, never an addon host/configuration or media ID.
     nonisolated static func requestName(_ urlString: String) -> String {
-        guard let url = URL(string: urlString) else { return urlString }
-        let host = url.host ?? "?"
-        var path = url.path
-        if path.hasSuffix(".json") { path.removeLast(5) }
-        // Add-on paths are `/…config…/resource/type/id`; the resource is what
-        // matters and the config in front of it can be enormous.
-        for resource in ["/catalog/", "/meta/", "/stream/", "/subtitles/"] where path.contains(resource) {
-            if let r = path.range(of: resource) { path = String(path[r.lowerBound...]) }
-            break
-        }
-        if path.count > 80 { path = String(path.prefix(80)) + "…" }
-        return host + path
+        NTVAddonDiagnostics.requestName(urlString)
     }
 
     // MARK: The [app] block

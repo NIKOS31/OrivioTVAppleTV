@@ -208,6 +208,11 @@ struct ManifestCatalog: Codable, Identifiable, Hashable {
     let extraRequired: [String]?
     let extraSupported: [String]?
 
+    var appearsOnHome: Bool { (type == "movie" || type == "series") && !requiresExtra }
+    var supportsSkip: Bool {
+        extraSupported?.contains("skip") == true || extra?.contains { $0.name == "skip" } == true
+    }
+
     /// Catalogs that require an extra argument (search, genre...) cannot be
     /// shown as plain home rows.
     var requiresExtra: Bool {
@@ -356,6 +361,8 @@ struct MetaItem: Codable, Identifiable, Hashable {
     let logo: String?
     let description: String?
     let releaseInfo: String?
+    /// Precise addon date, separate from the display year/range.
+    let released: String?
     let imdbRating: String?
     let runtime: String?
     let genres: [String]?
@@ -367,7 +374,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case id, type, name, poster, background, logo, description
-        case releaseInfo, imdbRating, runtime, genres, cast, videos, year
+        case releaseInfo, released, imdbRating, runtime, genres, cast, videos, year
         case posterFallback
     }
 
@@ -380,6 +387,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         background = try? c.decode(String.self, forKey: .background)
         logo = try? c.decode(String.self, forKey: .logo)
         description = try? c.decode(String.self, forKey: .description)
+        released = try? c.decode(String.self, forKey: .released)
         if let info = try? c.decode(String.self, forKey: .releaseInfo) {
             releaseInfo = info
         } else if let year = try? c.decode(Int.self, forKey: .year) {
@@ -415,6 +423,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(logo, forKey: .logo)
         try c.encodeIfPresent(description, forKey: .description)
         try c.encodeIfPresent(releaseInfo, forKey: .releaseInfo)
+        try c.encodeIfPresent(released, forKey: .released)
         try c.encodeIfPresent(imdbRating, forKey: .imdbRating)
         try c.encodeIfPresent(runtime, forKey: .runtime)
         try c.encodeIfPresent(genres, forKey: .genres)
@@ -428,7 +437,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         poster: String? = nil, background: String? = nil, logo: String? = nil,
         description: String? = nil, releaseInfo: String? = nil, imdbRating: String? = nil,
         runtime: String? = nil, genres: [String]? = nil, cast: [String]? = nil,
-        videos: [MetaVideo]? = nil, posterFallback: String? = nil
+        videos: [MetaVideo]? = nil, posterFallback: String? = nil, released: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -438,6 +447,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         self.logo = logo
         self.description = description
         self.releaseInfo = releaseInfo
+        self.released = released
         self.imdbRating = imdbRating
         self.runtime = runtime
         self.genres = genres
@@ -463,7 +473,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         MetaItem(id: newID, type: type, name: name, poster: poster, background: background,
                  logo: logo, description: description, releaseInfo: releaseInfo,
                  imdbRating: imdbRating, runtime: runtime, genres: genres, cast: cast,
-                 videos: videos, posterFallback: posterFallback)
+                 videos: videos, posterFallback: posterFallback, released: released)
     }
 
     /// The show behind an add-on's synthesised "Up Next" id, or nil when `id`
@@ -515,6 +525,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
     /// leave the field off constantly, and hiding undated items would quietly
     /// empty half of most catalogs.
     var isUnreleased: Bool {
+        if let released, let date = ReleaseDateParser.parse(released) { return date > Date() }
         guard let releaseInfo, !releaseInfo.isEmpty else { return false }
         // Full date: compare properly, so something due later THIS year is
         // still correctly hidden.
@@ -528,7 +539,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         return year > Calendar.current.component(.year, from: Date())
     }
 
-    var isSeries: Bool { type == "series" || type == "tv" }
+    var isSeries: Bool { type == "series" || type == "tv" || type == "anime" }
 
     /// Capitalized content type for meta lines ("Movie" / "Series"), matching the APK.
     var typeLabel: String {
@@ -632,6 +643,18 @@ extension Array where Element == MetaVideo {
 /// target on focus moves) — on an A8 the ICU formatter construction dwarfs the
 /// parse itself. Both formatter classes are documented thread-safe.
 enum ReleaseDateParser {
+    private final class ParsedDate: NSObject {
+        let value: Date?
+        init(_ value: Date?) { self.value = value }
+    }
+    // A date string is immutable, while "is this already released?" is not.
+    // Cache only parsing, never the time-dependent released/unreleased result.
+    private static let parsedDates: NSCache<NSString, ParsedDate> = {
+        let cache = NSCache<NSString, ParsedDate>()
+        cache.countLimit = 1024
+        cache.totalCostLimit = 128 * 1024
+        return cache
+    }()
     static let isoFractional: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -664,9 +687,17 @@ enum ReleaseDateParser {
     }()
     /// Full ISO 8601 (with or without fractional seconds), else bare date.
     static func parse(_ released: String) -> Date? {
-        if let d = isoFractional.date(from: released) { return d }
-        if let d = iso.date(from: released) { return d }
-        return ymdGMT.date(from: String(released.prefix(10)))
+        let key = released as NSString
+        if let saved = parsedDates.object(forKey: key) { return saved.value }
+        let date = isoFractional.date(from: released)
+            ?? iso.date(from: released)
+            ?? ymdGMT.date(from: String(released.prefix(10)))
+        // Do not retain arbitrary long metadata as cache keys. Unknown dates
+        // are also cached, avoiding repeated failed ICU parses while browsing.
+        if released.utf8.count <= 128 {
+            parsedDates.setObject(ParsedDate(date), forKey: key, cost: released.utf8.count + 64)
+        }
+        return date
     }
 }
 

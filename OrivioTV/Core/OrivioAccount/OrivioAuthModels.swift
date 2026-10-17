@@ -64,8 +64,7 @@ struct QRLoginState: Equatable {
 // MARK: - Persisted session
 
 /// The tokens we keep so the login survives app relaunches. Stored in
-/// UserDefaults for parity with the rest of this app's local storage; the
-/// access token is short-lived and the refresh token is rotated on use.
+/// the device-local Keychain, with migration of the legacy preferences.
 struct OrivioSession: Codable, Equatable {
     var accessToken: String
     var refreshToken: String
@@ -74,17 +73,17 @@ struct OrivioSession: Codable, Equatable {
 
     func save() {
         if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: Self.key)
+            NTVSecurePreferences.standard.set(data, forKey: Self.key)
         }
     }
 
     static func load() -> OrivioSession? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        guard let data = NTVSecurePreferences.standard.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(OrivioSession.self, from: data)
     }
 
     static func clear() {
-        UserDefaults.standard.removeObject(forKey: key)
+        NTVSecurePreferences.standard.removeObject(forKey: key)
     }
 }
 

@@ -1,4 +1,6 @@
 import Foundation
+import TVServices
+import CryptoKit
 
 /// Writes the Continue Watching list into the shared app-group container so
 /// the Top Shelf extension can render it on the tvOS home screen. Called from
@@ -7,10 +9,10 @@ import Foundation
 ///
 /// Sideload caveat: if the signing tool strips the app-group entitlement,
 /// `containerURL` is nil and this is a silent no-op — the app works, the
-/// shelf just stays empty.
+/// shelf falls back to the independent nTV brand image.
 enum TopShelfExporter {
-    /// Mirrored by TopShelfProvider.Entry in the extension target — keep the
-    /// fields/keys in sync.
+    /// App-only input. Private artwork origins are removed when exporting the
+    /// shared NTVTopShelfSnapshot; the extension never receives these URLs.
     struct Entry: Codable {
         let id: String
         let type: String
@@ -37,9 +39,8 @@ enum TopShelfExporter {
                 type: p.type,
                 title: p.name,
                 subtitle: subtitle,
-                // Wide art to match the .hdtv shape: episode still, then
-                // backdrop, then poster as a last resort.
-                imageURL: p.episodeThumbnail ?? p.background ?? p.poster,
+                // The system continuation section uses portrait posters.
+                imageURL: p.poster ?? p.background ?? p.episodeThumbnail,
                 // `fraction` is already position/duration guarded against a
                 // zero duration; clamp anyway because playbackProgress is
                 // documented as 0...1 and a row restored from another device
@@ -58,14 +59,15 @@ enum TopShelfExporter {
     /// no PIN asked for. Read straight from the profile blob rather than
     /// taking a ProfileStore dependency: this runs on the persist path, off
     /// the main actor, where the store isn't reachable.
-    private static var activeProfileIsLocked: Bool {
+    fileprivate static var profileScope: (id: Int, locked: Bool) {
         struct Row: Decodable { let id: Int; let pinEnabled: Bool? }
         let defaults = UserDefaults.standard
         let active = defaults.object(forKey: "orivio.profiles.active") as? Int ?? 1
         guard let data = defaults.data(forKey: "orivio.profiles.v1"),
               let rows = try? JSONDecoder().decode([Row].self, from: data)
-        else { return false }
-        return rows.first { $0.id == active }?.pinEnabled ?? false
+        else { return (active, true) }
+        guard let row = rows.first(where: { $0.id == active }) else { return (active, true) }
+        return (active, row.pinEnabled ?? false)
     }
 
     /// Monotonic ticket for shelf writes, taken on the main actor at each
@@ -81,50 +83,63 @@ enum TopShelfExporter {
     }
 
     /// Ordered write: a ticket older than the last one written is dropped.
-    static func writeOrdered(_ entries: [Entry], sequence: UInt64) async {
-        await TopShelfWriter.shared.write(entries, sequence: sequence)
+    static func writeOrdered(_ entries: [Entry], sequence: UInt64, force: Bool = false) async {
+        await TopShelfWriter.shared.write(entries, sequence: sequence, force: force)
     }
 
-    /// Persist to the shared container. Safe to call from any thread.
-    static func write(_ entries: [Entry]) {
-        guard let file = AppGroupResolver.sharedFile("topshelf.json") else {
-            NSLog("[TopShelf] no shared container — app group unavailable")
-            return
-        }
-        // A locked profile writes an EMPTY shelf rather than skipping the
-        // write. Skipping would leave whatever the previous profile exported
-        // sitting on the home screen, which is the leak being closed.
-        let payload = activeProfileIsLocked ? [] : entries
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        // Reported, not swallowed: a `try?` here is what let the unwritable
-        // container root go unnoticed for as long as it did.
-        do {
-            try data.write(to: file, options: .atomic)
-        } catch {
-            NSLog("[TopShelf] snapshot write failed at %@: %@",
-                  file.path, String(describing: error))
-        }
-        // The scheme the extension must deep-link on, published by the ONE
-        // side that knows it for certain: `orivio` is claimed by every other
-        // sideload of this app on the box, so a card opened on the shelf could
-        // land in one of those instead of here (the same collision that sent
-        // Infuse's callback to NuvioTVOS). The extension cannot derive it —
-        // its own bundle id is not what the app registered — so it is written
-        // next to the snapshot.
-        if let schemeFile = AppGroupResolver.sharedFile("topshelf-scheme.txt") {
-            try? Data(AppCallbackScheme.value.utf8).write(to: schemeFile, options: .atomic)
-        }
-    }
 }
 
 /// Serialises Top Shelf snapshot writes and enforces their ticket order.
 private actor TopShelfWriter {
     static let shared = TopShelfWriter()
     private var lastSequence: UInt64 = 0
+    private var fingerprint: String?
+    private var lastPublish = Date.distantPast
 
-    func write(_ entries: [TopShelfExporter.Entry], sequence: UInt64) {
+    func write(_ entries: [TopShelfExporter.Entry], sequence: UInt64, force: Bool) async {
         guard sequence > lastSequence else { return }
         lastSequence = sequence
-        TopShelfExporter.write(entries)
+        // No authorized shared container: retain the independent brand shelf.
+        // No extra request or signing/account operation is attempted here.
+        guard let file = AppGroupResolver.sharedFile("topshelf.json") else { return }
+        let scope = TopShelfExporter.profileScope
+        let input = scope.locked ? [] : Array(entries.prefix(10))
+        let identity = String(scope.id) + "#" + input.map { "\($0.type)#\($0.id)#\($0.title)#\($0.subtitle ?? "")#\($0.imageURL ?? "")" }.joined(separator: "|")
+        let nextFingerprint = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+        guard force || fingerprint != nextFingerprint || Date().timeIntervalSince(lastPublish) >= 20 else { return }
+        let directory = file.deletingLastPathComponent()
+        var exported: [NTVTopShelfSnapshot.Entry] = []
+        for entry in input {
+            var imageFileName: String?
+            if let source = entry.imageURL {
+                let hash = SHA256.hash(data: Data((entry.id + "#" + source).utf8)).map { String(format: "%02x", $0) }.joined()
+                let name = "topshelf-artwork-\(hash).jpg"
+                let destination = directory.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: destination.path) { imageFileName = name }
+                else if let image = await ImageCache.shared.diskImage(for: source, budget: 600),
+                        let data = image.jpegData(compressionQuality: 0.82), data.count <= 1024 * 1024 {
+                    try? data.write(to: destination, options: .atomic)
+                    if FileManager.default.fileExists(atPath: destination.path) { imageFileName = name }
+                }
+                // Reuse decoded/disk artwork only. Top Shelf adds no network
+                // requests while the app navigates or plays a film.
+            }
+            exported.append(.init(id: entry.id, type: entry.type, title: String(entry.title.prefix(160)),
+                subtitle: entry.subtitle.map { String($0.prefix(80)) }, imageFileName: imageFileName,
+                progress: entry.progress.flatMap { $0.isFinite ? min(max($0, 0), 1) : nil }))
+        }
+        let current = TopShelfExporter.profileScope
+        guard sequence == lastSequence, current.id == scope.id, current.locked == scope.locked else { return }
+        let snapshot = NTVTopShelfSnapshot(version: 1, writtenAt: Date(), profileID: scope.id, entries: exported)
+        guard let data = try? JSONEncoder().encode(snapshot), data.count <= NTVTopShelfSnapshot.maximumBytes else { return }
+        do { try data.write(to: file, options: .atomic) } catch { return }
+        fingerprint = nextFingerprint; lastPublish = Date()
+        let retained = Set(exported.compactMap(\.imageFileName))
+        if let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+            for old in files where NTVTopShelfSnapshot.safeArtworkName(old.lastPathComponent) && !retained.contains(old.lastPathComponent) {
+                try? FileManager.default.removeItem(at: old)
+            }
+        }
+        TVTopShelfContentProvider.topShelfContentDidChange()
     }
 }

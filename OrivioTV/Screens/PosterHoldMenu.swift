@@ -57,7 +57,7 @@ struct PosterHoldMenu: ViewModifier {
             let _ = HoldProbe.log("MENU BUILT — poster \(item.name)")
             Button { onDetails() } label: { Label("Go to Details", systemImage: "info.circle") }
             Button { library.toggle(item) } label: {
-                Label(inLibrary ? "Remove from Library" : "Add to Library",
+                Label(inLibrary ? "Retirer de la bibliothèque" : "Ajouter à la bibliothèque",
                       systemImage: inLibrary ? "bookmark.slash" : "bookmark")
             }
             // Movies only. `WatchedStore.isWatched(_ meta:)` is hard-false for a
@@ -66,7 +66,7 @@ struct PosterHoldMenu: ViewModifier {
             // reads — a dead toggle. Series watched state lives per episode.
             if !item.isSeries {
                 Button { watched.toggleMovie(item) } label: {
-                    Label(isWatched ? "Mark as Unwatched" : "Mark as Watched",
+                    Label(isWatched ? "Marquer comme non vu" : "Marquer comme vu",
                           systemImage: isWatched ? "eye.slash" : "checkmark.circle")
                 }
             }
@@ -140,14 +140,14 @@ struct ChannelHoldMenu: ViewModifier {
             let _ = HoldProbe.log("MENU BUILT — channel \(channel.name)")
             let isFavorite = favorites.isFavorite(channel.id)
             Button { favorites.toggleFavorite(channel) } label: {
-                Label(isFavorite ? "Remove from Favorites" : "Favorite",
+                Label(isFavorite ? "Retirer des favoris" : "Favorite",
                       systemImage: isFavorite ? "star.slash" : "star")
             }
             // NO `role: .destructive` anywhere in here — tvOS refuses to
             // present a context menu that contains one (see ContinueHoldMenu).
             if isFavorite {
                 Button { favorites.toggleOnHome(channel) } label: {
-                    Label(favorites.isOnHome(channel.id) ? "Remove from Home Page" : "Add to Home Page",
+                    Label(favorites.isOnHome(channel.id) ? "Retirer de l’accueil" : "Ajouter à l’accueil",
                           systemImage: favorites.isOnHome(channel.id) ? "house.slash" : "house")
                 }
             }
@@ -205,11 +205,11 @@ struct ContinueHoldMenu: ViewModifier {
         StableContextMenu(content: content,
                           key: "\(progress.id)|\(progress.metaID)|\(progress.type)|\(isEpisode)") {
             let _ = HoldProbe.log("MENU BUILT — CW \(progress.name)")
-            Button { onPlayManually() } label: { Label("Play Manually", systemImage: "list.and.film") }
+            Button { onPlayManually() } label: { Label("Choisir une source", systemImage: "list.and.film") }
             Button { onDetails() } label: { Label("Go to Details", systemImage: "info.circle") }
             if isEpisode {
                 Button { markEpisodeWatched() } label: {
-                    Label("Mark Episode Watched", systemImage: "checkmark.circle")
+                    Label("Marquer l’épisode comme vu", systemImage: "checkmark.circle")
                 }
             }
             Button { onResumeFromStart() } label: { Label("Start Over", systemImage: "gobackward") }
@@ -221,7 +221,7 @@ struct ContinueHoldMenu: ViewModifier {
                 // Remove the whole show (all episodes), like Netflix/Hulu.
                 progressStore.removeShow(metaID: progress.metaID, notifyTrakt: true)
             } label: {
-                Label("Remove from Continue Watching", systemImage: "xmark")
+                Label("Retirer des titres à reprendre", systemImage: "xmark")
             }
         }
         .equatable()

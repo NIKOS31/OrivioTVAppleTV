@@ -17,12 +17,9 @@ final class OrivioAccountManager: ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var exchangeInFlight = false
 
-    private let urlSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        // Edge functions (token exchange) can cold-start slowly.
-        config.timeoutIntervalForRequest = 40
-        return URLSession(configuration: config)
-    }()
+    private let urlSession: URLSession
+    private let baseURL: String
+    private let fallbackURL: String
 
     // MARK: - Endpoints
 
@@ -33,8 +30,12 @@ final class OrivioAccountManager: ObservableObject {
         static let refresh = "/auth/v1/token?grant_type=refresh_token"
     }
 
-    init() {
-        restoreSession()
+    init(urlSession: URLSession? = nil, baseURL: String = OrivioConfig.supabaseURL,
+         fallbackURL: String = OrivioConfig.supabaseFallbackURL, restore: Bool = true) {
+        self.urlSession = urlSession ?? NTVAuthenticatedSession.make()
+        self.baseURL = baseURL
+        self.fallbackURL = fallbackURL
+        if restore { restoreSession() } else { authState = .signedOut }
     }
 
     /// True when the CURRENT session came from someone actually signing in on
@@ -83,9 +84,12 @@ final class OrivioAccountManager: ObservableObject {
     // MARK: - QR login
 
     func startQRLogin() {
-        cancelPolling()
+        let generation = beginAuthentication()
         errorMessage = nil
         qrLogin = nil
+        // A build with no account server can be used locally. Do not start
+        // a doomed request or surface a configuration error at first launch.
+        guard !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let nonce = Self.generateDeviceNonce()
         let deviceName = Self.deviceLabel
 
@@ -99,6 +103,7 @@ final class OrivioAccountManager: ObservableObject {
                         "p_device_name": deviceName
                     ]
                 )
+                guard generation == authGeneration else { return }
                 guard let start = rows.first, !start.code.isEmpty, !start.webURL.isEmpty else {
                     throw OrivioAuthError.message("The server returned an incomplete login session.")
                 }
@@ -106,12 +111,13 @@ final class OrivioAccountManager: ObservableObject {
                     code: start.code,
                     webURL: start.webURL,
                     nonce: nonce,
-                    statusText: "Scan the code with your phone to sign in",
+                    statusText: "Scannez le code avec votre téléphone pour vous connecter",
                     expiresAt: Self.parseDate(start.expiresAt),
                     pollIntervalSeconds: max(start.pollIntervalSeconds, 2)
                 )
                 startPolling()
             } catch {
+                guard generation == authGeneration else { return }
                 errorMessage = friendlyError(error)
                 qrLogin = nil
             }
@@ -119,7 +125,7 @@ final class OrivioAccountManager: ObservableObject {
     }
 
     func cancelQRLogin() {
-        cancelPolling()
+        _ = beginAuthentication()
         qrLogin = nil
     }
 
@@ -148,11 +154,13 @@ final class OrivioAccountManager: ObservableObject {
 
     private func pollOnce() async {
         guard let state = qrLogin else { return }
+        let generation = authGeneration
         do {
             let rows: [TvLoginPollResult] = try await postArray(
                 endpoint: Endpoint.pollTvLogin,
                 body: ["p_code": state.code, "p_device_nonce": state.nonce]
             )
+            guard generation == authGeneration, qrLogin?.code == state.code else { return }
             pollFailures = 0
             guard let result = rows.first else { return }
             let status = result.status.lowercased()
@@ -178,6 +186,7 @@ final class OrivioAccountManager: ObservableObject {
                 break // pending — keep polling
             }
         } catch {
+            guard generation == authGeneration else { return }
             // ONE transient error (Wi-Fi blip, a 5xx, an RPC cold start) used to
             // cancel polling while leaving the QR code on screen: the user
             // approved it on their phone and the TV — no longer asking — sat
@@ -185,7 +194,7 @@ final class OrivioAccountManager: ObservableObject {
             // only after several consecutive failures.
             pollFailures += 1
             guard pollFailures >= Self.maxPollFailures else {
-                qrLogin?.statusText = "Trouble reaching the server — retrying…"
+                qrLogin?.statusText = "Serveur inaccessible. Nouvelle tentative…"
                 return
             }
             cancelPolling()
@@ -240,18 +249,21 @@ final class OrivioAccountManager: ObservableObject {
     func signIn(email: String, password: String) async {
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !email.isEmpty, !password.isEmpty else {
-            errorMessage = "Enter your email and password."
+            errorMessage = "Saisissez votre adresse e-mail et votre mot de passe."
             return
         }
         errorMessage = nil
+        let generation = beginAuthentication()
         do {
             let data = try await post(endpoint: "/auth/v1/token?grant_type=password",
                                       body: ["email": email, "password": password])
+            guard generation == authGeneration else { return }
             let tokens = try Self.parseTokens(from: data)
             didSignInInteractively = true
             storeTokens(access: tokens.access, refresh: tokens.refresh)
             applySignedIn(from: tokens.access)
         } catch {
+            guard generation == authGeneration else { return }
             errorMessage = friendlyError(error)
         }
     }
@@ -283,6 +295,17 @@ final class OrivioAccountManager: ObservableObject {
     /// — the user signed out while it was in flight, and resurrecting their
     /// session is never the right answer.
     private var authGeneration = 0
+    var sessionGeneration: Int { authGeneration }
+
+    @discardableResult
+    private func beginAuthentication() -> Int {
+        authGeneration &+= 1
+        cancelPolling()
+        refreshTask?.cancel()
+        refreshTask = nil
+        qrLogin = nil
+        return authGeneration
+    }
 
     /// The in-flight refresh, if any. Supabase ROTATES the refresh token on
     /// every use, and every sync call that meets a 401 calls this — so a token
@@ -370,10 +393,10 @@ final class OrivioAccountManager: ObservableObject {
     /// primary edge returns a 5xx or a connection error (matches Android).
     private func post(endpoint: String, body: [String: String]) async throws -> Data {
         do {
-            return try await postAttempt(base: OrivioConfig.supabaseURL, endpoint: endpoint, body: body)
+            return try await postAttempt(base: baseURL, endpoint: endpoint, body: body)
         } catch {
-            guard OrivioConfig.supabaseFallbackURL != OrivioConfig.supabaseURL,
-                  !OrivioConfig.supabaseFallbackURL.isEmpty,
+            guard fallbackURL != baseURL,
+                  !fallbackURL.isEmpty,
                   shouldRetryFallback(error) else {
                 throw error
             }
@@ -394,13 +417,14 @@ final class OrivioAccountManager: ObservableObject {
                     throw error
                 }
             }
-            return try await postAttempt(base: OrivioConfig.supabaseFallbackURL, endpoint: endpoint, body: body)
+            return try await postAttempt(base: fallbackURL, endpoint: endpoint, body: body)
         }
     }
 
     private func postAttempt(base: String, endpoint: String, body: [String: String]) async throws -> Data {
-        guard let url = URL(string: base.trimmedTrailingSlash + endpoint) else {
-            throw OrivioAuthError.message("Bad backend URL.")
+        guard let url = URL(string: base.trimmedTrailingSlash + endpoint),
+              NTVAuthenticatedSession.permits(url) else {
+            throw OrivioAuthError.message("La connexion au compte est indisponible pour le moment.")
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -414,8 +438,7 @@ final class OrivioAccountManager: ObservableObject {
             throw OrivioAuthError.message("No response from the server.")
         }
         guard (200..<300).contains(http.statusCode) else {
-            let bodyText = String(data: data, encoding: .utf8) ?? ""
-            throw OrivioAuthError.http(http.statusCode, bodyText)
+            throw OrivioAuthError.http(http.statusCode, "")
         }
         return data
     }
@@ -432,10 +455,10 @@ final class OrivioAccountManager: ObservableObject {
 
     private func statusText(for status: String, raw: String) -> String {
         switch status {
-        case "approved": return "Approved — signing in…"
-        case "pending": return "Waiting for approval on your phone…"
-        case "expired": return "This code expired. Try again."
-        default: return "Status: \(raw)"
+        case "approved": return "Autorisé. Connexion…"
+        case "pending": return "En attente de validation sur votre téléphone…"
+        case "expired": return "Ce code a expiré. Réessayez."
+        default: return "État : \(raw)"
         }
     }
 
@@ -444,19 +467,19 @@ final class OrivioAccountManager: ObservableObject {
         case OrivioAuthError.http(let code, let body):
             // Prefer the backend's own error message when it sends one.
             if let serverMsg = Self.serverError(in: body) { return serverMsg }
-            if code == 404 { return "Login service unavailable. Please try again later." }
-            if code == 400 { return "The login request was rejected. Try again." }
-            return "The server returned an error (\(code))."
+            if code == 404 { return "Connexion indisponible. Réessayez plus tard." }
+            if code == 400 { return "La connexion a été refusée. Réessayez." }
+            return "Le serveur a renvoyé une erreur (\(code))."
         case OrivioAuthError.message(let message):
             return message
         case let urlError as URLError where urlError.code == .notConnectedToInternet:
-            return "No internet connection."
+            return "Aucune connexion Internet."
         case let urlError as URLError where urlError.code == .timedOut:
-            return "The server took too long to respond. Please try again."
+            return "Le serveur met trop de temps à répondre. Réessayez."
         case let urlError as URLError:
-            return "Network error (\(urlError.code.rawValue)). Please try again."
+            return "Erreur réseau (\(urlError.code.rawValue)). Réessayez."
         default:
-            return "Sign-in failed: \(error.localizedDescription)"
+            return "Connexion impossible : \(error.localizedDescription)"
         }
     }
 
@@ -502,8 +525,7 @@ final class OrivioAccountManager: ObservableObject {
                 }
             }
         }
-        let snippet = String(data: data.prefix(200), encoding: .utf8) ?? ""
-        throw OrivioAuthError.message("Unexpected sign-in response: \(snippet)")
+        throw OrivioAuthError.message("Réponse de connexion inattendue. Réessayez plus tard.")
     }
 
     /// The name this client registers with the Orivio account. `UIDevice.name`

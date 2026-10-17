@@ -1,81 +1,88 @@
 import TVServices
+#if NTV_TOPSHELF_TEST_HOST
+@testable import OrivioTV
+#endif
 
-/// Top Shelf: shows the app's Continue Watching row on the tvOS home screen
-/// when OrivioTV sits in the dock's top row — the tvOS equivalent of Android
-/// TV's "Watch Next" channel.
-///
-/// Data flows one way: the app exports a small JSON snapshot of the Continue
-/// Watching list into the shared app-group container every time progress
-/// changes (see TopShelfExporter); this extension just reads and renders it.
-/// Selecting an item deep-links into the app via orivio://meta?type=…&id=…
-/// (handled by DeepLinkService), which opens the title's detail page.
-///
-/// If the app group isn't available (e.g. a sideload signer that strips the
-/// entitlement), the container URL is nil and the shelf simply stays empty —
-/// the app itself is unaffected.
+/// The Dock offers the active unlocked profile's locally exported continuation
+/// list. Without authorized local sharing, or with no history, branding remains
+/// available. The extension never requests stream/addon URLs or account keys.
 final class TopShelfProvider: TVTopShelfContentProvider {
-
-    /// Mirror of TopShelfExporter.Entry — kept as its own tiny struct so the
-    /// extension target doesn't need to compile any app sources.
-    private struct Entry: Codable {
-        let id: String
-        let type: String
-        let title: String
-        let subtitle: String?
-        let imageURL: String?
-        var progress: Double? = nil
-    }
-
     override func loadTopShelfContent(completionHandler: @escaping (TVTopShelfContent?) -> Void) {
-        completionHandler(Self.content())
+        guard let image = Bundle.main.url(forResource: "topshelf-full", withExtension: "png") else {
+            completionHandler(nil); return
+        }
+        let extensionURL = Bundle.main.bundleURL
+        let parentURL = extensionURL.deletingLastPathComponent().deletingLastPathComponent()
+        let parentInfo = extensionURL.pathExtension == "appex" && parentURL.pathExtension == "app"
+            ? Bundle(url: parentURL)?.infoDictionary : nil
+        if let file = AppGroupResolver.sharedFile("topshelf.json"),
+           let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           size <= NTVTopShelfSnapshot.maximumBytes,
+           let data = try? Data(contentsOf: file),
+           let snapshot = NTVTopShelfSnapshot.decode(data),
+           let content = Self.continuationContent(snapshot, containingAppInfo: parentInfo,
+               artworkDirectory: file.deletingLastPathComponent(), fallbackImage: image) {
+            completionHandler(content)
+        } else {
+            completionHandler(Self.brandedContent(image: image, containingAppInfo: parentInfo))
+        }
     }
 
-    private static func content() -> TVTopShelfContent? {
-        // AppGroupResolver is shared with the app target (see project.yml) so
-        // both sides resolve the SAME signer-assigned group at runtime.
-        guard let file = AppGroupResolver.sharedFile("topshelf.json") else { return nil }
-        guard let data = try? Data(contentsOf: file),
-              let entries = try? JSONDecoder().decode([Entry].self, from: data),
-              !entries.isEmpty
-        else { return nil }
-
-        // Written by the app beside the snapshot — see TopShelfExporter.
-        let scheme = AppGroupResolver.sharedFile("topshelf-scheme.txt")
-            .flatMap { try? String(contentsOf: $0, encoding: .utf8) }?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty ?? "orivio"
-
-        let items = entries.map { entry -> TVTopShelfSectionedItem in
-            let item = TVTopShelfSectionedItem(identifier: entry.id)
-            item.title = entry.subtitle.map { "\(entry.title) — \($0)" } ?? entry.title
-            item.imageShape = .hdtv   // 16:9, matching the in-app CW cards
-            // The bar across the bottom of the card — the whole point of a
-            // Continue Watching shelf is seeing how far in you are.
-            if let progress = entry.progress { item.playbackProgress = progress }
-            if let urlString = entry.imageURL, let url = URL(string: urlString) {
-                item.setImageURL(url, for: [.screenScale1x, .screenScale2x])
+    static func continuationContent(_ snapshot: NTVTopShelfSnapshot,
+                                    containingAppInfo: [String: Any]?, artworkDirectory: URL,
+                                    fallbackImage: URL) -> TVTopShelfSectionedContent? {
+        guard let scheme = callbackScheme(containingAppInfo) else { return nil }
+        var seen = Set<String>()
+        let items = snapshot.entries.prefix(10).compactMap { entry -> TVTopShelfSectionedItem? in
+            guard ["movie", "series"].contains(entry.type), !entry.id.isEmpty,
+                  entry.id.utf8.count <= 256, !entry.title.isEmpty, entry.title.utf8.count <= 512,
+                  seen.insert(entry.type + "#" + entry.id).inserted else { return nil }
+            let item = TVTopShelfSectionedItem(identifier: entry.type + "#" + entry.id)
+            item.title = entry.subtitle.map { entry.title + " · " + String($0.prefix(80)) } ?? entry.title
+            item.imageShape = .poster
+            var artwork = fallbackImage
+            if let name = entry.imageFileName, NTVTopShelfSnapshot.safeArtworkName(name) {
+                let local = artworkDirectory.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: local.path) { artwork = local }
             }
-            var comps = URLComponents()
-            comps.scheme = scheme
-            comps.host = "meta"
-            comps.queryItems = [
-                URLQueryItem(name: "type", value: entry.type),
-                URLQueryItem(name: "id", value: entry.id)
-            ]
-            if let url = comps.url {
-                item.displayAction = TVTopShelfAction(url: url)
-                item.playAction = TVTopShelfAction(url: url)
-            }
+            item.setImageURL(artwork, for: .screenScale1x)
+            item.setImageURL(artwork, for: .screenScale2x)
+            item.playbackProgress = entry.progress.flatMap { $0.isFinite ? min(max($0, 0), 1) : nil } ?? 0
+            var display = URLComponents(); display.scheme = scheme; display.host = "meta"
+            display.queryItems = [URLQueryItem(name: "type", value: entry.type), URLQueryItem(name: "id", value: entry.id)]
+            var play = display; play.host = "resume"
+            guard let displayURL = display.url, let playURL = play.url else { return nil }
+            item.displayAction = TVTopShelfAction(url: displayURL)
+            item.playAction = TVTopShelfAction(url: playURL)
             return item
         }
-
+        guard !items.isEmpty else { return nil }
         let section = TVTopShelfItemCollection(items: items)
-        section.title = "Continue Watching"
+        section.title = "Continuer à regarder"
         return TVTopShelfSectionedContent(sections: [section])
     }
-}
 
+    private static func callbackScheme(_ info: [String: Any]?) -> String? {
+        guard let types = info?["CFBundleURLTypes"] as? [[String: Any]],
+              let callback = types.first(where: { $0["CFBundleURLName"] as? String == "tv.orivio.callback" }),
+              let scheme = (callback["CFBundleURLSchemes"] as? [String])?.first,
+              scheme.range(of: "^[A-Za-z][A-Za-z0-9+.-]*$", options: .regularExpression) != nil else { return nil }
+        return scheme
+    }
 
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
+    static func brandedContent(image: URL, containingAppInfo: [String: Any]?) -> TVTopShelfCarouselContent {
+        let item = TVTopShelfCarouselItem(identifier: "ntv.brand.fullscreen.v2")
+        item.title = "nTV"
+        // These are alternative device scales, not one combined trait.
+        // Register both separately so an exact 1x/2x lookup finds the image.
+        item.setImageURL(image, for: .screenScale1x)
+        item.setImageURL(image, for: .screenScale2x)
+        // A signer can rewrite bundle IDs without rewriting CFBundleURLTypes.
+        // Use the callback actually registered by the containing application.
+        if let scheme = callbackScheme(containingAppInfo),
+           let url = URL(string: scheme + "://home") {
+            item.displayAction = TVTopShelfAction(url: url)
+        }
+        return TVTopShelfCarouselContent(style: .actions, items: [item])
+    }
 }

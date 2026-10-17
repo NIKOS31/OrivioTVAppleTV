@@ -98,21 +98,30 @@ struct DiscoverView: View {
 
     let onSelect: (MetaItem) -> Void
 
-    @State private var type = "Movie"          // Movie / Series
+    @State private var type = "Film"          // Movie / Series
     @State private var catalogIndex = 0
     @State private var genre = ""              // "" = Default (no filter)
     @FocusState private var focusedID: String?
+    @State private var unavailableUntil: [String: Date] = [:]
     @Environment(\.dismiss) private var dismiss
 
     private var columns: [GridItem] { [GridItem(.adaptive(minimum: posterLayout.posterSize.posterWidth, maximum: posterLayout.posterSize.posterWidth), spacing: OrivioSpacing.lg, alignment: .top)] }
 
-    private var stremioType: String { type == "Series" ? "series" : "movie" }
+    private var stremioType: String { type == "Séries" || type == "Series" ? "series" : "movie" }
+    private var displayedItems: [MetaItem] {
+        let profile = ProfileScopedDefaults.activeProfileID
+        return viewModel.items.filter {
+            !NTVAnimeLibrary.shared.contains($0, profile: profile) &&
+            (!posterLayout.hideUnreleasedContent || !$0.isUnreleased) &&
+            (!posterLayout.hideUnavailableSources || (unavailableUntil[$0.id] ?? .distantPast) <= Date() || $0.id == focusedID)
+        }
+    }
 
     /// Catalogs of the selected type, across installed add-ons (no search-only).
     private var catalogs: [(addon: InstalledAddon, catalog: ManifestCatalog)] {
         addonManager.catalogAddons.flatMap { addon in
             (addon.manifest.catalogs ?? [])
-                .filter { $0.type == stremioType && !$0.requiresExtra }
+                .filter { $0.type == stremioType && !$0.requiresExtra && !NTVAnimeDomain.contains($0) }
                 .map { (addon, $0) }
         }
     }
@@ -132,7 +141,7 @@ struct DiscoverView: View {
             ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
-                    Text("Discover")
+                    Text("Découvrir")
                         .font(FusionType.pageTitle(theme.font))
                         .foregroundStyle(theme.palette.textPrimary)
                         .padding(.leading, OrivioSpacing.huge)
@@ -141,12 +150,12 @@ struct DiscoverView: View {
                         OrivioDropdown(
                             title: "Type",
                             selection: type,
-                            options: [OrivioDropdownOption("Movie"), OrivioDropdownOption("Series")],
+                            options: [OrivioDropdownOption("Film"), OrivioDropdownOption("Séries")],
                             triggerWidth: 380
                         ) { type = $0; catalogIndex = 0; genre = "" }
 
                         OrivioDropdown(
-                            title: "Catalog",
+                            title: "Catalogue",
                             selection: String(catalogIndex),
                             options: catalogs.enumerated().map { index, entry in
                                 OrivioDropdownOption(String(index), entry.catalog.name ?? entry.catalog.id.capitalized)
@@ -157,7 +166,7 @@ struct DiscoverView: View {
                         OrivioDropdown(
                             title: "Genre",
                             selection: genre,
-                            options: [OrivioDropdownOption("", "Default")]
+                            options: [OrivioDropdownOption("", "Par défaut")]
                                 + (selected?.catalog.genreOptions ?? []).map { OrivioDropdownOption($0) },
                             triggerWidth: 380
                         ) { genre = $0 }
@@ -165,14 +174,21 @@ struct DiscoverView: View {
                     .padding(.horizontal, OrivioSpacing.huge)
 
                     if viewModel.items.isEmpty && viewModel.isLoading {
-                        OrivioLoadingView(label: "Loading").frame(height: 420)
+                        OrivioLoadingView(label: "Chargement").frame(height: 420)
                     } else if viewModel.items.isEmpty {
-                        OrivioEmptyState(icon: "safari", title: "Nothing here",
-                                        message: "No titles for this catalog. Install more add-ons in Settings.")
+                        OrivioEmptyState(icon: "safari", title: "Aucun titre disponible",
+                                        message: "Ce catalogue est vide. Ajoutez d’autres addons dans les réglages.")
                             .frame(height: 420)
                     } else {
+                        if displayedItems.isEmpty {
+                            Text("Aucun titre correspondant aux filtres.").foregroundStyle(theme.palette.textSecondary)
+                                .padding(.horizontal, OrivioSpacing.huge)
+                            Button("Vérifier la suite du catalogue") { Task { await viewModel.loadMore() } }
+                                .buttonStyle(NTVActionButtonStyle())
+                                .padding(.horizontal, OrivioSpacing.huge)
+                        }
                         LazyVGrid(columns: columns, alignment: .leading, spacing: OrivioSpacing.xl) {
-                            ForEach(viewModel.items) { item in
+                            ForEach(displayedItems) { item in
                                 GridPosterCell(
                                     item: item,
                                     captionWidth: posterLayout.posterSize.posterWidth,
@@ -181,7 +197,7 @@ struct DiscoverView: View {
                                 )
                                 .id(item.id)
                                 .onAppear {
-                                    if item.id == viewModel.items.last?.id {
+                                    if item.id == displayedItems.last?.id {
                                         Task { await viewModel.loadMore() }
                                     }
                                 }
@@ -197,6 +213,12 @@ struct DiscoverView: View {
             .onExitCommand { backToTop(proxy) }
             }
         }
+        .background {
+            if posterLayout.hideUnavailableSources {
+                NTVAvailabilityObserver(items: viewModel.items, focusedID: focusedID,
+                    hideUpcoming: posterLayout.hideUnreleasedContent, unavailableUntil: $unavailableUntil)
+            }
+        }
         .task(id: "\(type)#\(catalogIndex)#\(selected?.catalog.id ?? "")#\(genre)") {
             if let sel = selected {
                 await viewModel.reset(addon: sel.addon, catalog: sel.catalog,
@@ -210,7 +232,7 @@ struct DiscoverView: View {
     private func backToTop(_ proxy: ScrollViewProxy) {
         // `focusedID` is nil while the selector pills hold focus — Back from
         // there pops the screen; it used to yank focus down into the grid.
-        guard let first = viewModel.items.first?.id, let focused = focusedID, focused != first else {
+        guard let first = displayedItems.first?.id, let focused = focusedID, focused != first else {
             dismiss(); return
         }
         withAnimation(FusionMotion.focusMove) { proxy.scrollTo(first, anchor: .top) }

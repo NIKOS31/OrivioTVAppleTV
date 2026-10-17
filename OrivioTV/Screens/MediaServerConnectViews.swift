@@ -15,7 +15,7 @@ struct MediaServerSection: View {
             Button { connecting = true } label: {
                 HStack(spacing: OrivioSpacing.lg) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(account == nil ? "Connect \(kind.displayName)" : (account?.serverName ?? kind.displayName))
+                        Text(account == nil ? "Connecter \(kind.displayName)" : (account?.serverName ?? kind.displayName))
                             .font(.system(size: 25, weight: .medium))
                             .foregroundStyle(theme.palette.textPrimary)
                         Text(statusLine)
@@ -35,7 +35,7 @@ struct MediaServerSection: View {
                 Button(role: .destructive) {
                     mediaServers.set(nil, for: kind)
                 } label: {
-                    SettingsActionRow(title: "Disconnect", subtitle: "Forget this server and its sign-in",
+                    SettingsActionRow(title: "Déconnecter", subtitle: "Retirer ce serveur et sa connexion",
                                       leadingIcon: "xmark.circle")
                 }
                 .buttonStyle(PlainCardButtonStyle())
@@ -59,9 +59,9 @@ struct MediaServerSection: View {
 
     private var statusLine: String {
         guard let account else {
-            return kind == .plex ? "Sign in with a code at plex.tv/link" : "Server address, username and password"
+            return kind == .plex ? "Se connecter avec un code sur plex.tv/link" : "Adresse du serveur et identifiants"
         }
-        var parts = ["Connected"]
+        var parts = ["Connecté"]
         if let user = account.username, !user.isEmpty { parts.append(user) }
         parts.append(account.serverURL.replacingOccurrences(of: "http://", with: "").replacingOccurrences(of: "https://", with: ""))
         return parts.joined(separator: " · ")
@@ -70,9 +70,9 @@ struct MediaServerSection: View {
     private var blurb: String {
         switch kind {
         case .plex:
-            return "Your Plex Media Server's movies and shows appear as a Plex tab in Library and play straight from the server."
+            return "Les films et séries de votre serveur Plex apparaissent dans la bibliothèque."
         case .jellyfin:
-            return "Your Jellyfin server's movies and shows appear as a Jellyfin tab in Library and play straight from the server."
+            return "Les films et séries de votre serveur Jellyfin apparaissent dans la bibliothèque."
         }
     }
 }
@@ -95,19 +95,19 @@ private struct PlexConnectPage: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.xl) {
-                Text("Connect Plex")
+                Text("Connecter Plex")
                     .font(.system(size: 48, weight: .heavy))
                     .foregroundStyle(theme.palette.textPrimary)
 
                 switch phase {
                 case .starting:
                     ProgressView().tint(theme.palette.secondary)
-                    Text("Getting a sign-in code…")
+                    Text("Préparation du code de connexion…")
                         .font(.system(size: 22))
                         .foregroundStyle(theme.palette.textSecondary)
                     FocusAnchor()
                 case .code(let pin):
-                    Text("On your phone or computer, go to plex.tv/link and enter this code.")
+                    Text("Ouvrez plex.tv/link sur votre téléphone ou ordinateur, puis saisissez ce code.")
                         .font(.system(size: 24))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.center)
@@ -119,13 +119,13 @@ private struct PlexConnectPage: View {
                         .foregroundStyle(theme.palette.secondary)
                     HStack(spacing: OrivioSpacing.sm) {
                         ProgressView().tint(theme.palette.secondary)
-                        Text("Waiting for the code to be entered…")
+                        Text("En attente de la saisie du code…")
                             .font(.system(size: 22))
                             .foregroundStyle(theme.palette.textTertiary)
                     }
                     FocusAnchor()
                 case .servers(let servers, let token):
-                    Text("Which server?")
+                    Text("Quel serveur ?")
                         .font(.system(size: 24))
                         .foregroundStyle(theme.palette.textSecondary)
                     VStack(spacing: OrivioSpacing.sm) {
@@ -141,7 +141,7 @@ private struct PlexConnectPage: View {
                     .frame(maxWidth: 900)
                 case .connecting:
                     ProgressView().tint(theme.palette.secondary)
-                    Text("Finding your server…")
+                    Text("Recherche de votre serveur…")
                         .font(.system(size: 22))
                         .foregroundStyle(theme.palette.textSecondary)
                     FocusAnchor()
@@ -151,11 +151,11 @@ private struct PlexConnectPage: View {
                         .foregroundStyle(OrivioPrimitives.error)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 900)
-                    Button("Try Again") { Task { await begin() } }
+                    Button("Réessayer") { Task { await begin() } }
                         .font(.system(size: 24, weight: .semibold))
                 }
 
-                Text("Press Menu to cancel")
+                Text("Retour pour annuler")
                     .font(.system(size: 20))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -176,7 +176,7 @@ private struct PlexConnectPage: View {
         if !renewal { pollTask?.cancel() }
         phase = .starting
         guard let pin = await PlexService.requestPin() else {
-            phase = .failed("Couldn't get a sign-in code from plex.tv. Check the connection and try again.")
+            phase = .failed("Impossible de préparer le code Plex. Vérifiez votre connexion puis réessayez.")
             return
         }
         phase = .code(pin)
@@ -204,7 +204,7 @@ private struct PlexConnectPage: View {
         phase = .connecting
         let servers = await PlexService.servers(token: token)
         guard !servers.isEmpty else {
-            phase = .failed("Signed in, but this Plex account has no servers.")
+            phase = .failed("Ce compte Plex ne possède aucun serveur.")
             return
         }
         if servers.count == 1 {
@@ -218,7 +218,7 @@ private struct PlexConnectPage: View {
         phase = .connecting
         let serverToken = server.accessToken ?? token
         guard let url = await PlexService.reachableURL(server, token: serverToken) else {
-            phase = .failed("\(server.name) didn't answer on any of its addresses. Make sure it's on and reachable from this Apple TV.")
+            phase = .failed("\(server.name) est inaccessible. Vérifiez que le serveur est allumé et joignable depuis cette Apple TV.")
             return
         }
         mediaServers.set(MediaServerAccount(kind: .plex, serverURL: url, token: serverToken,
@@ -244,10 +244,10 @@ private struct JellyfinConnectPage: View {
         ZStack {
             ATVBackground()
             VStack(spacing: OrivioSpacing.xl) {
-                Text("Connect Jellyfin")
+                Text("Connecter Jellyfin")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("The server's address as you'd open it in a browser, then your Jellyfin user.")
+                Text("Saisissez l’adresse du serveur et vos identifiants Jellyfin.")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -256,9 +256,9 @@ private struct JellyfinConnectPage: View {
                 VStack(spacing: OrivioSpacing.md) {
                     TextField("http://192.168.1.10:8096", text: $server)
                         .textContentType(.URL)
-                    TextField("Username", text: $username)
+                    TextField("Nom d’utilisateur", text: $username)
                         .textContentType(.username)
-                    SecureField("Password", text: $password)
+                    SecureField("Mot de passe", text: $password)
                         .textContentType(.password)
                 }
                 .font(.system(size: 24))
@@ -275,9 +275,9 @@ private struct JellyfinConnectPage: View {
                 HStack(spacing: OrivioSpacing.lg) {
                     Button(action: connect) {
                         if working { ProgressView().tint(theme.palette.onSecondary) }
-                        else { Text("Connect") }
+                        else { Text("Connecter") }
                     }
-                    Button("Cancel", role: .cancel, action: onDone)
+                    Button("Annuler", role: .cancel, action: onDone)
                 }
                 .font(.system(size: 24, weight: .semibold))
             }
@@ -295,11 +295,11 @@ private struct JellyfinConnectPage: View {
     private func connect() {
         guard !working else { return }
         guard let url = JellyfinService.normalizedServerURL(server) else {
-            status = "Enter the server's address first."
+            status = "Saisissez d’abord l’adresse du serveur."
             return
         }
         guard !username.trimmingCharacters(in: .whitespaces).isEmpty else {
-            status = "Enter your Jellyfin username."
+            status = "Saisissez votre nom d’utilisateur Jellyfin."
             return
         }
         working = true

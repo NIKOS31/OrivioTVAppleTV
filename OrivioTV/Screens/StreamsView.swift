@@ -36,24 +36,46 @@ final class StreamsViewModel: ObservableObject {
     /// (HTTP code / timeout / …) — rendered as "Not working — <reason>" under
     /// the addon name, distinct from a healthy addon that returned no links.
     @Published var failedAddons: [String: String] = [:]
+    // Count configurations, not display names: two installs may share a name.
+    private var requestOutcomes: [String: (total: Int, finished: Int, failed: Int, reason: String?)] = [:]
+    private var unavailableManifests = 0
+
+    var emptyStatus: NTVSourceStatus {
+        let outcomes = selectedAddon.flatMap { requestOutcomes[$0] }.map { [$0] }
+            ?? Array(requestOutcomes.values)
+        let scoped = selectedAddon.map { name in pool.filter { $0.addonName == name } } ?? pool
+        let unreleased: Bool
+        if let aired = video?.airedDate { unreleased = aired > Date() }
+        else { unreleased = meta.isUnreleased }
+        return .resolve(unreleased: unreleased,
+                        requests: outcomes.reduce(0) { $0 + $1.total },
+                        failures: outcomes.reduce(0) { $0 + $1.failed },
+                        unavailableManifests: unavailableManifests,
+                        filtered: !scoped.isEmpty && streamFilters.isActive)
+    }
 
     /// Compact human reason for a failed addon request.
     nonisolated static func shortReason(for error: Error) -> String {
         switch error {
         case StremioAPIError.badResponse(let code):
-            return code == 403 ? "the add-on refused the request (HTTP 403)" : "the add-on returned HTTP \(code)"
+            return code == 403 ? "accès refusé (HTTP 403)" : "erreur HTTP \(code)"
         case StremioAPIError.emptyBody:
-            return "the add-on sent an empty response"
+            return "réponse vide ou interrompue"
         case StremioAPIError.badURL:
-            return "the add-on's URL is invalid"
+            return "adresse de l’addon invalide"
+        case StremioAPIError.responseTooLarge:
+            return "réponse de l’addon trop volumineuse"
+        case StremioAPIError.invalidResponse:
+            return "format de réponse de l’addon invalide"
         case let urlError as URLError where urlError.code == .timedOut:
-            return "the add-on timed out"
-        case let urlError as URLError:
-            return urlError.localizedDescription
+            return "délai de réponse dépassé"
+        case is URLError:
+            // localizedDescription/userInfo may include a credential-bearing URL.
+            return "connexion à l’addon impossible"
         case is DecodingError:
-            return "the add-on sent an unreadable response"
+            return "réponse de l’addon illisible"
         default:
-            return "the add-on didn't respond"
+            return "l’addon n’a pas pu répondre"
         }
     }
     /// Links kept per resolution×size cell (2160p·10–20 GB …) when filters on.
@@ -591,8 +613,10 @@ final class StreamsViewModel: ObservableObject {
     /// Torrentio alone returns, which is what made scrolling (and selecting
     /// during load) choke.
     func load(addonManager: AddonManager, debridEnabled: Bool, perTier: Int, filtersEnabled: Bool = true, forceRefresh: Bool = false, streamTimeout: TimeInterval = 45) async {
+        isLoading = true
         let fetchID = await effectiveStreamID()
-        stage("stream id ready (\(fetchID))")
+        guard !Task.isCancelled else { isLoading = false; return }
+        stage("stream id ready")
         // Self-heal: an addon installed by account sync while its manifest
         // fetch failed is a silent placeholder (no stream resource → never
         // queried, no error anywhere). Retry those now, when the user actually
@@ -604,6 +628,13 @@ final class StreamsViewModel: ObservableObject {
             Task { [addonManager] in await addonManager.resolvePlaceholders() }
         }
         let addons = addonManager.streamAddons.filter { $0.handles(id: fetchID) }
+        requestOutcomes = [:]
+        for addon in addons {
+            let name = addon.manifest.name
+            let count = requestOutcomes[name]?.total ?? 0
+            requestOutcomes[name] = (count + 1, 0, 0, nil)
+        }
+        unavailableManifests = addonManager.addons.filter { $0.enabled && $0.manifest.isPlaceholder }.count
         var seenNames = Set<String>()
         queriedAddonNames = addons.compactMap {
             seenNames.insert($0.manifest.name).inserted ? $0.manifest.name : nil
@@ -614,25 +645,16 @@ final class StreamsViewModel: ObservableObject {
         for addon in addonManager.addons where addon.enabled {
             let m = addon.manifest
             if m.isPlaceholder {
-                skipped.append((addon.id, m.name, "Not working — couldn't load this add-on. Check its URL or refresh add-ons."))
+                skipped.append((addon.id, m.name, "Addon indisponible. Vérifiez son lien ou actualisez vos addons."))
             } else if m.providesStreams, !addon.handles(id: fetchID) {
-                let prefixes = (m.idPrefixes ?? []).joined(separator: ", ")
-                skipped.append((addon.id, m.name, "Doesn't claim this title (id \(fetchID) vs prefixes [\(prefixes)])"))
+                skipped.append((addon.id, m.name, "Cet addon ne prend pas en charge l’identifiant de ce titre."))
             }
         }
         skippedAddons = skipped
-        NSLog("[OrivioSources] id=%@ querying=%@ skipped=%@",
-              fetchID, queriedAddonNames.joined(separator: "|"),
-              skipped.map { "\($0.name): \($0.reason)" }.joined(separator: "|"))
-        AppProbe.data("sources for \(fetchID): asking \(queriedAddonNames.count)"
-                      + " [\(queriedAddonNames.joined(separator: ", "))]"
-                      + (skipped.isEmpty ? ""
-                         : "  skipped \(skipped.count): "
-                           + skipped.map { "\($0.name) (\($0.reason))" }.joined(separator: "; ")))
+        AppProbe.data("sources: asking \(addons.count), skipped \(skipped.count)")
         totalAddons = addons.count
         self.perTier = perTier
         self.filtersEnabled = filtersEnabled
-        isLoading = true
 
         // Instant path: a fresh cached source list rebuilds the whole page with
         // no addon sweep at all.
@@ -714,10 +736,11 @@ final class StreamsViewModel: ObservableObject {
                         // Request failed (timeout / HTTP error / unreachable) —
                         // record the SPECIFIC reason so the UI can say what's
                         // wrong instead of a generic "didn't respond".
-                        NSLog("[OrivioSources] %@ stream request failed: %@",
-                              addon.manifest.name, String(describing: error))
-                        AppProbe.warn("sources", "\(addon.manifest.name) — \(error)")
-                        return (addon.manifest.name, [], (addon.manifest.name, Self.shortReason(for: error)))
+                        let reason = Self.shortReason(for: error)
+                        if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+                            AppProbe.warn("sources", reason)
+                        }
+                        return (addon.manifest.name, [], (addon.manifest.name, reason))
                     }
                 }
             }
@@ -727,12 +750,21 @@ final class StreamsViewModel: ObservableObject {
             // seconds — exactly while the user starts scrolling it.
             var lastFlush = Date.distantPast
             for await batch in group {
+                guard !Task.isCancelled else { group.cancelAll(); break }
                 startNext()
                 finishedAddons += 1
-                finishedAddonNames.insert(batch.name)
-                stage("addon \(batch.name) answered (\(batch.entries.count) links, \(finishedAddons)/\(totalAddons))")
+                if var outcome = requestOutcomes[batch.name] {
+                    outcome.finished += 1
+                    if let failure = batch.failure {
+                        outcome.failed += 1
+                        outcome.reason = failure.reason
+                    }
+                    requestOutcomes[batch.name] = outcome
+                    if outcome.finished == outcome.total { finishedAddonNames.insert(batch.name) }
+                    if outcome.failed == outcome.total { failedAddons[batch.name] = outcome.reason }
+                }
+                stage("addon answered (\(batch.entries.count) links, \(finishedAddons)/\(totalAddons))")
                 pool.append(contentsOf: batch.entries)
-                if let failure = batch.failure { failedAddons[failure.name] = failure.reason }
                 let now = Date()
                 if !pool.isEmpty, now.timeIntervalSince(lastFlush) > 0.4 {
                     rebuildGroups()
@@ -808,6 +840,7 @@ struct StreamsView: View {
     @EnvironmentObject private var plugins: PluginStore
     @EnvironmentObject private var torrent: TorrentSettingsStore
     @EnvironmentObject private var profiles: ProfileStore
+    @ObservedObject private var perf = PerformanceSettingsStore.shared
     @StateObject private var viewModel: StreamsViewModel
 
     /// Manual mode (hold-Play / "Play Manually"): skip every auto-action so the
@@ -826,6 +859,9 @@ struct StreamsView: View {
     /// page off the stack — backing out of the player returns to the title, not
     /// the source list.
     var onAutoDismiss: () -> Void = {}
+    /// UI navigation only; source querying and selection stay in the original model.
+    var onOpenAddons: (() -> Void)?
+    private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
 
     /// Whether an automatic flow has taken the page over and the source list
     /// should stay hidden behind the loading screen.
@@ -924,6 +960,7 @@ struct StreamsView: View {
          resumeAutoPlay: Bool = false, resumeSignature: StreamSignature? = nil,
          forceAutoPick: Bool = false,
          onAutoDismiss: @escaping () -> Void = {},
+         onOpenAddons: (() -> Void)? = nil,
          onSelect: @escaping (StreamEntry, [StreamEntry]) -> Void) {
         _viewModel = StateObject(wrappedValue: StreamsViewModel(meta: meta, video: video))
         self.forceManual = forceManual
@@ -931,6 +968,7 @@ struct StreamsView: View {
         self.resumeSignature = resumeSignature
         self.forceAutoPick = forceAutoPick
         self.onAutoDismiss = onAutoDismiss
+        self.onOpenAddons = onOpenAddons
         self.onSelect = onSelect
     }
 
@@ -957,7 +995,7 @@ struct StreamsView: View {
                     meta: viewModel.meta,
                     status: resolving
                         ? "Resolving via \(debrid.resolverProvider?.displayName ?? (torrent.settings.isConfigured ? "TorrServer" : "debrid"))"
-                        : "Finding the best source"
+                        : (isNTV ? "Recherche de la meilleure source" : "Recherche de la meilleure source")
                 )
                 .transition(.opacity)
                 // Back during a slow sweep/resolve = "let me pick myself":
@@ -1014,7 +1052,7 @@ struct StreamsView: View {
                             holdsFocus: true
                         )
                         .frame(maxHeight: 220)
-                        Text("Press Back to cancel and pick another source")
+                        Text(isNTV ? "Retour pour annuler et choisir une autre source" : "Retour pour annuler et choisir une autre source")
                             .font(.system(size: 21))
                             .foregroundStyle(theme.palette.textTertiary)
                     }
@@ -1026,7 +1064,7 @@ struct StreamsView: View {
             }
             }
         }
-        .animation(.easeOut(duration: 0.2), value: autoLinkResolving)
+        .animation(perf.buttonMotion(.easeOut(duration: 0.2)), value: autoLinkResolving)
         .task {
             // Waiting on the deferred pop: this task re-runs when the player
             // cover comes down, and a page one runloop turn from being removed
@@ -1263,7 +1301,7 @@ struct StreamsView: View {
             for task in sweepTasks { task.cancel() }
             sweepTasks = []
         }
-        .alert("Couldn't resolve stream", isPresented: Binding(
+        .alert(isNTV ? "Impossible d’ouvrir cette source" : "Impossible d’ouvrir cette source", isPresented: Binding(
             get: { resolveError != nil },
             set: { if !$0 { resolveError = nil; autoLinkResolvingLatch = false } }
         )) {
@@ -1289,7 +1327,7 @@ struct StreamsView: View {
     @ViewBuilder
     private var sourcesPanel: some View {
         if autoLinkResolving {
-            OrivioLoadingView(label: "Finding the best source…", holdsFocus: true)
+            OrivioLoadingView(label: isNTV ? "Recherche de la meilleure source…" : "Recherche de la meilleure source…", holdsFocus: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.groups.isEmpty {
             if viewModel.isLoading {
@@ -1299,9 +1337,10 @@ struct StreamsView: View {
                 VStack(spacing: OrivioSpacing.lg) {
                     OrivioEmptyState(
                         icon: "play.slash",
-                        title: "No sources found",
-                        message: "None of your installed addons returned a playable link for this title. Install a stream addon in Settings."
+                        title: viewModel.emptyStatus.title,
+                        message: viewModel.emptyStatus.message
                     )
+                    .accessibilityIdentifier("ntv.sources.empty")
                     // Explain any addon that wasn't even queried, so an addon
                     // that silently failed to install isn't a mystery here.
                     ForEach(viewModel.skippedAddons, id: \.id) { skip in
@@ -1312,6 +1351,7 @@ struct StreamsView: View {
                             .padding(.horizontal, OrivioSpacing.huge)
                     }
                     retryButton
+                    openAddonsButton
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -1347,9 +1387,29 @@ struct StreamsView: View {
                 )
             }
         } label: {
-            RetryLabel()
+            if isNTV {
+                Label("Réessayer", systemImage: "arrow.clockwise")
+                    .font(.system(size: 24, weight: .semibold))
+                    .padding(.horizontal, 26)
+                    .frame(height: 60)
+                    .foregroundStyle(theme.palette.textPrimary)
+            } else {
+                RetryLabel()
+            }
         }
         .buttonStyle(PlainCardButtonStyle())
+        .accessibilityIdentifier("ntv.sources.retry")
+    }
+
+    @ViewBuilder
+    private var openAddonsButton: some View {
+        if isNTV, let onOpenAddons {
+            Button(action: onOpenAddons) {
+                Label("Ouvrir les addons", systemImage: "puzzlepiece.extension")
+            }
+            .buttonStyle(NTVActionButtonStyle())
+            .accessibilityIdentifier("ntv.sources.addons")
+        }
     }
 
     /// Stremio-style addon filter: "All" plus one chip per addon that returned
@@ -1358,7 +1418,7 @@ struct StreamsView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: OrivioSpacing.sm) {
                 AddonFilterChip(
-                    title: "All",
+                    title: isNTV ? "Tous" : "Tous",
                     selected: viewModel.selectedAddon == nil
                 ) { viewModel.selectAddon(nil) }
 
@@ -1465,7 +1525,7 @@ struct StreamsView: View {
             if torrent.settings.isConfigured {
                 resolveViaP2P(entry, all)
             } else {
-                resolveError = "Add a debrid API key, or turn on P2P (TorrServer) in Settings → Integrations, to play torrent sources."
+                resolveError = "Connectez un service de débridage ou TorrServer dans Réglages → Intégrations pour lire ces sources."
             }
             return
         }
@@ -1504,7 +1564,7 @@ struct StreamsView: View {
                 )
             }
             let (result, resolvedBy) = outcome
-                ?? (.failed("Timed out after \(Int(budget))s"), nil)
+                ?? (.failed("Délai dépassé après \(Int(budget)) s"), nil)
             // The viewer cancelled from the resolve spinner — a late success
             // must not shove the player over the list they went back to.
             guard !Task.isCancelled else { return }
@@ -1529,12 +1589,12 @@ struct StreamsView: View {
                 onSelect(resolvedEntry, all)
             case .missingKey:
                 if autoAdvance(after: entry, all) { return }
-                resolveError = "\(provider.displayName) API key is missing."
+                resolveError = "La clé API de \(provider.displayName) est manquante."
             case .notCached:
                 if autoAdvance(after: entry, all) { return }
                 resolveError = debrid.orderedResolvers.count > 1
-                    ? "This torrent isn't cached on any of your debrid services. Try another source."
-                    : "This torrent isn't cached on \(provider.displayName). Try another source."
+                    ? "Cette source n’est disponible dans aucun de vos services de débridage. Essayez-en une autre."
+                    : "Cette source n’est pas disponible chez \(provider.displayName). Essayez-en une autre."
             case .failed(let message):
                 if autoAdvance(after: entry, all) { return }
                 resolveError = "\(provider.displayName): \(message)"
@@ -1630,17 +1690,23 @@ struct StreamsView: View {
     }
 
     private var streamCountLabel: String {
-        guard viewModel.totalAddons > 0 else { return "Searching addons" }
-        return "Searching addons \(viewModel.finishedAddons)/\(viewModel.totalAddons)"
+        if isNTV {
+            guard viewModel.totalAddons > 0 else { return "Recherche dans les addons" }
+            return "Recherche dans les addons \(viewModel.finishedAddons)/\(viewModel.totalAddons)"
+        }
+        guard viewModel.totalAddons > 0 else { return "Recherche dans les addons" }
+        return "Recherche dans les addons \(viewModel.finishedAddons)/\(viewModel.totalAddons)"
     }
 
     private var backdrop: some View {
         GeometryReader { geo in
             ZStack {
-                RemoteImage(url: viewModel.meta.background ?? viewModel.meta.poster,
+                if !isNTV || perf.settings.heroBackdrop {
+                    RemoteImage(url: viewModel.meta.background ?? viewModel.meta.poster,
                             maxPixels: PerformanceProfile.backdropPixelCap)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .opacity(0.5)
+                }
                 HeroGradient(background: theme.palette.background, fullBleed: true)
             }
         }
@@ -1649,10 +1715,23 @@ struct StreamsView: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.xs) {
+            if isNTV {
+                Text("Sources")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(NTVDesign.accent)
+                    .accessibilityIdentifier("ntv.sources.heading")
+                    .padding(.bottom, 12)
+                NTVPosterArtwork(
+                    imageURL: viewModel.meta.poster, title: viewModel.meta.name,
+                    width: 180, height: 270, focused: false, watched: false,
+                    progress: nil, shadowsEnabled: false
+                )
+                .padding(.bottom, 20)
+            }
             Text(viewModel.meta.name)
                 .font(FusionType.pageTitle(theme.font))
                 .foregroundStyle(theme.palette.textPrimary)
-                .lineLimit(1)
+                .lineLimit(isNTV ? 3 : 1)
             if let video = viewModel.video {
                 Text("\(video.seasonEpisodeCode)\(video.title.map { " • \($0)" } ?? "")")
                     .font(.system(size: 27, weight: .medium))
@@ -1664,12 +1743,26 @@ struct StreamsView: View {
                     .font(.system(size: 21))
                     .foregroundStyle(theme.palette.textTertiary)
             }
+            if isNTV {
+                Text(viewModel.isLoading ? "Choisis un lien proposé par tes addons." : "\(viewModel.allEntries.count) source\(viewModel.allEntries.count > 1 ? "s" : "") proposée\(viewModel.allEntries.count > 1 ? "s" : "") par tes addons.")
+                    .font(.system(size: 23))
+                    .foregroundStyle(NTVDesign.textSecondary)
+                    .padding(.top, 20)
+            }
         }
     }
 
     private var streamList: some View {
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: OrivioSpacing.xl) {
+                if !viewModel.isLoading && !viewModel.hasPlayableEntries {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(viewModel.emptyStatus.title).font(.system(size: 30, weight: .semibold))
+                        Text(viewModel.emptyStatus.message).font(.system(size: 26))
+                            .foregroundStyle(theme.palette.textSecondary)
+                    }
+                    .accessibilityIdentifier("ntv.sources.status")
+                }
                 ForEach(viewModel.groups) { group in
                     VStack(alignment: .leading, spacing: OrivioSpacing.md) {
                         // Level 1: addon.
@@ -1697,13 +1790,18 @@ struct StreamsView: View {
                         // still working, failed, or answered with nothing.
                         if group.entries.isEmpty,
                            !viewModel.finishedAddonNames.contains(group.addonName) {
-                            Text("Searching…")
+                            Text("Recherche…")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(theme.palette.textTertiary)
                                 .padding(.leading, 8)
                         } else if group.entries.isEmpty,
                            let reason = viewModel.failedAddons[group.addonName] {
-                            Text("Not working — \(reason)")
+                            Text("Indisponible : \(reason)")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(theme.palette.textSecondary)
+                                .padding(.leading, 8)
+                        } else if group.entries.isEmpty {
+                            Text("Aucune source trouvée.")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(theme.palette.textSecondary)
                                 .padding(.leading, 8)
@@ -1734,6 +1832,10 @@ struct StreamsView: View {
                     retryButton
                         .frame(maxWidth: .infinity)
                         .padding(.top, OrivioSpacing.md)
+                    if !viewModel.isLoading {
+                        openAddonsButton
+                            .frame(maxWidth: .infinity)
+                    }
                 }
             }
             .padding(.vertical, OrivioSpacing.lg)
@@ -1774,7 +1876,7 @@ struct StreamsView: View {
                 Button {
                     ExternalPlayers.openInInfuse(urlString: streamURL)
                 } label: {
-                    Label("Play in Infuse", systemImage: "arrow.up.forward.app.fill")
+                    Label("Lire avec Infuse", systemImage: "arrow.up.forward.app.fill")
                 }
             }
         }
@@ -1829,7 +1931,7 @@ struct StreamRowView: View {
             // cached links sort first.
             if entry.stream.isTorrent, entry.isInstant {
                 MetaBadge(
-                    text: "⚡︎ Cached",
+                    text: "⚡︎ Disponible",
                     tint: OrivioPrimitives.success.opacity(0.22),
                     textColor: OrivioPrimitives.success
                 )

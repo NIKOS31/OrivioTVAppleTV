@@ -34,8 +34,8 @@ struct TraktDetail: View {
             // setter writes both so each runs its own adopt/reload.
             if profiles.profiles.count > 1 {
                 SettingsToggleCard(
-                    title: "Separate Trakt & SIMKL per profile",
-                    subtitle: "Each profile connects its own Trakt and SIMKL accounts here. Profiles that haven't connected one simply have none — nothing is shared between them. Off: one login per service for the whole device.",
+                    title: "Comptes Trakt et SIMKL propres à chaque profil",
+                    subtitle: "Chaque profil connecte ses comptes Trakt et SIMKL. Désactivé : partager un compte de chaque service sur cette TV.",
                     isOn: Binding(
                         get: { trakt.perProfileAccounts },
                         set: { trakt.perProfileAccounts = $0; simkl.perProfileAccounts = $0 }
@@ -51,7 +51,7 @@ struct TraktDetail: View {
 
             SettingsGroupCard(
                 title: "SIMKL",
-                subtitle: "A second tracking service, connected separately from Trakt"
+                subtitle: "Un service de suivi distinct de Trakt"
             ) {
                 simklSection
             }
@@ -76,7 +76,7 @@ struct TraktDetail: View {
                     VStack(spacing: OrivioSpacing.md) {
                         FocusAnchor()
                         ProgressView().tint(theme.palette.secondary)
-                        Text("Contacting Trakt…")
+                        Text("Connexion à Trakt…")
                             .font(.system(size: 22))
                             .foregroundStyle(theme.palette.textSecondary)
                     }
@@ -97,7 +97,7 @@ struct TraktDetail: View {
                     VStack(spacing: OrivioSpacing.md) {
                         FocusAnchor()
                         ProgressView().tint(theme.palette.secondary)
-                        Text("Contacting SIMKL…")
+                        Text("Connexion à SIMKL…")
                             .font(.system(size: 22))
                             .foregroundStyle(theme.palette.textSecondary)
                     }
@@ -128,7 +128,7 @@ struct TraktDetail: View {
                     .font(.system(size: 40))
                     .foregroundStyle(OrivioPrimitives.success)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(simkl.username ?? "Connected")
+                    Text(simkl.username ?? "Connecté")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(theme.palette.textPrimary)
                     Text("SIMKL account linked")
@@ -139,32 +139,32 @@ struct TraktDetail: View {
             .integrationRowBackground(theme)
 
             SettingsToggleCard(
-                title: "Sync watch history",
-                subtitle: "Two-way sync of watched movies & episodes (the ✓ badges) between this app and SIMKL",
+                title: "Synchroniser l’historique",
+                subtitle: "Synchroniser les films et épisodes vus avec SIMKL",
                 isOn: Binding(
                     get: { simkl.syncWatchHistory },
                     set: { simkl.syncWatchHistory = $0; simkl.onSyncSettingChange?() }
                 )
             )
             SettingsToggleCard(
-                title: "Sync Continue Watching",
-                subtitle: "Put the next episode of every show on SIMKL's \"watching\" list into your Continue Watching row. SIMKL stores no playback position, so those start at the beginning of the episode.",
+                title: "Synchroniser les titres à reprendre",
+                subtitle: "Retrouver les prochains épisodes suivis dans SIMKL. Ce service ne conserve pas la position de lecture : ils commencent au début.",
                 isOn: Binding(
                     get: { simkl.syncContinueWatching },
                     set: { simkl.syncContinueWatching = $0; simkl.onSyncSettingChange?() }
                 )
             )
             SettingsToggleCard(
-                title: "Sync watchlist",
-                subtitle: "Your Library and SIMKL's plan-to-watch list fill each other in. Removals stay local — SIMKL can't drop a title from a list without erasing its watch history too.",
+                title: "Synchroniser la liste à voir",
+                subtitle: "Synchroniser votre bibliothèque avec la liste à voir de SIMKL. Les suppressions restent locales.",
                 isOn: Binding(
                     get: { simkl.syncWatchlist },
                     set: { simkl.syncWatchlist = $0; simkl.onSyncSettingChange?() }
                 )
             )
             SettingsToggleCard(
-                title: "Sync ratings",
-                subtitle: "Two-way sync of your 1–10 star ratings with SIMKL (rate from any title's page)",
+                title: "Synchroniser les notes",
+                subtitle: "Synchroniser vos notes de 1 à 10 avec SIMKL",
                 isOn: Binding(
                     get: { simkl.syncRatings },
                     set: { simkl.syncRatings = $0; simkl.onSyncSettingChange?() }
@@ -173,11 +173,11 @@ struct TraktDetail: View {
 
             Button {
                 simkl.onSyncSettingChange?()
-                simkl.setSyncStatus("Syncing with SIMKL…")
+                simkl.setSyncStatus("Synchronisation avec SIMKL…")
             } label: {
                 SettingsActionRow(
-                    title: "Sync now",
-                    subtitle: simkl.lastSyncStatus ?? "Force a two-way sync with SIMKL",
+                    title: "Synchroniser maintenant",
+                    subtitle: simkl.lastSyncStatus ?? "Lancer une synchronisation avec SIMKL",
                     leadingIcon: "arrow.triangle.2.circlepath"
                 )
             }
@@ -186,21 +186,21 @@ struct TraktDetail: View {
             // Said once, here, rather than leaving a viewer to wonder why the
             // Trakt section above has a Continue Watching switch and this one
             // does not.
-            Text("SIMKL's API can't store a playback position, so partially-watched items don't sync — your Continue Watching row stays on this device. Once you finish a movie or episode, it's marked watched on SIMKL as usual.")
+            Text("SIMKL ne conserve pas la position des lectures en cours. Les films et épisodes terminés sont bien marqués comme vus.")
                 .font(.system(size: 20))
                 .foregroundStyle(theme.palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Button { simkl.signOut() } label: {
-                DestructivePillLabel(title: "Sign Out of SIMKL")
+                DestructivePillLabel(title: "Déconnecter SIMKL")
             }
             .buttonStyle(PlainCardButtonStyle())
             .padding(.top, OrivioSpacing.sm)
         } else if SimklStore.isConfigured {
             Button(action: startSimklLogin) {
                 SettingsActionRow(
-                    title: "Login",
-                    subtitle: "Sign in with a code on simkl.com/pin",
+                    title: "Connexion",
+                    subtitle: "Se connecter avec un code sur simkl.com/pin",
                     leadingIcon: "link"
                 )
             }
@@ -214,7 +214,7 @@ struct TraktDetail: View {
         } else {
             // No client id in this build. Say so plainly rather than offering a
             // Login button whose only possible outcome is an error.
-            Text("This build has no SIMKL client id, so SIMKL login is unavailable. Register an app at simkl.com/settings/developer and put its id in Secrets.swift as simklClientID.")
+            Text("La connexion à SIMKL n’est pas encore configurée dans cette version de nTV.")
                 .font(.system(size: 20))
                 .foregroundStyle(theme.palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -236,7 +236,7 @@ struct TraktDetail: View {
             simklExpiresAt = Date().addingTimeInterval(TimeInterval(code.expiresIn))
             beginSimklPolling(code)
         } catch {
-            simklStatus = "Couldn't start SIMKL login — \(error.localizedDescription)"
+            simklStatus = "Connexion à SIMKL impossible : \(error.localizedDescription)"
             showSimklConnect = false
         }
     }
@@ -292,10 +292,10 @@ struct TraktDetail: View {
                     .font(.system(size: 40))
                     .foregroundStyle(OrivioPrimitives.success)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(trakt.username ?? "Connected")
+                    Text(trakt.username ?? "Connecté")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(theme.palette.textPrimary)
-                    Text("Trakt account linked")
+                    Text("Compte Trakt connecté")
                         .font(.system(size: 20))
                         .foregroundStyle(theme.palette.textSecondary)
                 }
@@ -303,37 +303,37 @@ struct TraktDetail: View {
             .integrationRowBackground(theme)
 
             SettingsToggleCard(
-                title: "Scrobble playback",
-                subtitle: "Automatically mark what you watch on Trakt",
+                title: "Enregistrer les lectures dans Trakt",
+                subtitle: "Signaler automatiquement vos lectures à Trakt",
                 isOn: $trakt.scrobbleEnabled
             )
             SettingsToggleCard(
-                title: "Sync watch history",
-                subtitle: "Two-way sync of watched movies & episodes (the ✓ badges) between this app and Trakt",
+                title: "Synchroniser l’historique",
+                subtitle: "Synchroniser les films et épisodes vus avec Trakt",
                 isOn: Binding(
                     get: { trakt.syncWatchHistory },
                     set: { trakt.syncWatchHistory = $0; trakt.onTraktSettingChange?() }
                 )
             )
             SettingsToggleCard(
-                title: "Sync Continue Watching",
-                subtitle: "Pull your in-progress movies & episodes from Trakt into the Continue Watching row",
+                title: "Synchroniser les titres à reprendre",
+                subtitle: "Retrouver les lectures en cours de Trakt dans vos titres à reprendre",
                 isOn: Binding(
                     get: { trakt.syncPlayback },
                     set: { trakt.syncPlayback = $0; trakt.onTraktSettingChange?() }
                 )
             )
             SettingsToggleCard(
-                title: "Sync watchlist",
-                subtitle: "Two-way sync between your Library and your Trakt watchlist",
+                title: "Synchroniser la liste à voir",
+                subtitle: "Synchroniser votre bibliothèque et votre liste à voir Trakt",
                 isOn: Binding(
                     get: { trakt.syncWatchlist },
                     set: { trakt.syncWatchlist = $0; trakt.onTraktSettingChange?() }
                 )
             )
             SettingsToggleCard(
-                title: "Sync ratings",
-                subtitle: "Two-way sync of your 1–10 star ratings with Trakt (rate from any title's page)",
+                title: "Synchroniser les notes",
+                subtitle: "Synchroniser vos notes de 1 à 10 avec Trakt",
                 isOn: Binding(
                     get: { trakt.syncRatings },
                     set: { trakt.syncRatings = $0; trakt.onTraktSettingChange?() }
@@ -342,11 +342,11 @@ struct TraktDetail: View {
 
             Button {
                 trakt.onTraktSettingChange?()
-                trakt.setSyncStatus("Syncing with Trakt…")
+                trakt.setSyncStatus("Synchronisation avec Trakt…")
             } label: {
                 SettingsActionRow(
-                    title: "Sync now",
-                    subtitle: trakt.lastSyncStatus ?? "Force a two-way sync with Trakt",
+                    title: "Synchroniser maintenant",
+                    subtitle: trakt.lastSyncStatus ?? "Lancer une synchronisation avec Trakt",
                     leadingIcon: "arrow.triangle.2.circlepath"
                 )
             }
@@ -354,24 +354,24 @@ struct TraktDetail: View {
 
             Button { confirmClearPlayback = true } label: {
                 SettingsActionRow(
-                    title: "Clear Trakt Continue Watching",
-                    subtitle: "Empties Trakt's in-progress list — the source of re-imported Continue Watching rows. Your watched history is NOT touched.",
+                    title: "Effacer les lectures en cours de Trakt",
+                    subtitle: "Effacer les lectures partielles de Trakt sans supprimer votre historique de titres vus",
                     leadingIcon: "trash"
                 )
             }
             .buttonStyle(PlainCardButtonStyle())
-            .alert("Clear Trakt Continue Watching?", isPresented: $confirmClearPlayback) {
-                Button("Clear", role: .destructive) {
-                    trakt.setSyncStatus("Clearing Trakt continue watching…")
+            .alert("Effacer les lectures en cours de Trakt ?", isPresented: $confirmClearPlayback) {
+                Button("Effacer", role: .destructive) {
+                    trakt.setSyncStatus("Effacement des lectures en cours de Trakt…")
                     trakt.onClearContinueWatching?()
                 }
-                Button("Cancel", role: .cancel) {}
+                Button("Annuler", role: .cancel) {}
             } message: {
-                Text("Removes every partially-watched row from Trakt's continue-watching list, on Trakt itself. Your Trakt watched history stays exactly as it is. This cannot be undone.")
+                Text("Supprime les lectures partielles directement dans Trakt. Votre historique de titres vus reste conservé. Cette action est définitive.")
             }
 
             Button { trakt.signOut() } label: {
-                DestructivePillLabel(title: "Sign Out")
+                DestructivePillLabel(title: "Se déconnecter")
             }
             .buttonStyle(PlainCardButtonStyle())
             .padding(.top, OrivioSpacing.sm)
@@ -384,8 +384,8 @@ struct TraktDetail: View {
         VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
             Button(action: startLogin) {
                 SettingsActionRow(
-                    title: "Login",
-                    subtitle: "Sign in with a code on trakt.tv/activate",
+                    title: "Connexion",
+                    subtitle: "Se connecter avec un code sur trakt.tv/activate",
                     leadingIcon: "link"
                 )
             }
@@ -417,7 +417,7 @@ struct TraktDetail: View {
             codeExpiresAt = Date().addingTimeInterval(TimeInterval(code.expiresIn))
             beginPolling(code)
         } catch {
-            statusMessage = "Couldn't start Trakt login: \(error.localizedDescription)"
+            statusMessage = "Connexion à Trakt impossible : \(error.localizedDescription)"
             showConnect = false
         }
     }
@@ -516,10 +516,10 @@ struct TraktConnectPage: View {
     var body: some View {
         VStack(spacing: OrivioSpacing.xl) {
             VStack(spacing: OrivioSpacing.sm) {
-                Text("Connect Trakt")
+                Text("Connecter Trakt")
                     .font(FusionType.pageTitle(theme.font))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("Scan the code with your phone, or go to \(code.verificationURL) and enter the code below.")
+                Text("Scannez le code avec votre téléphone, ou ouvrez \(code.verificationURL) puis saisissez le code ci-dessous.")
                     .font(.system(size: 24))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -540,7 +540,7 @@ struct TraktConnectPage: View {
 
             HStack(spacing: OrivioSpacing.sm) {
                 ProgressView().tint(theme.palette.secondary)
-                Text("Waiting for authorization…")
+                Text("En attente de votre autorisation…")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -550,13 +550,13 @@ struct TraktConnectPage: View {
                 let seconds = expiresAt.timeIntervalSince(context.date)
                 let remaining = seconds.isFinite ? Int(min(max(seconds, 0), 86_400)) : 0
                 Text(remaining > 0
-                     ? "Code expires in \(remaining / 60):\(String(format: "%02d", remaining % 60))"
-                     : "Refreshing code…")
+                     ? "Expiration du code dans \(remaining / 60):\(String(format: "%02d", remaining % 60))"
+                     : "Renouvellement du code…")
                     .font(.system(size: 20))
                     .foregroundStyle(theme.palette.textTertiary)
             }
 
-            Text("Press Menu to cancel")
+            Text("Retour pour annuler")
                 .font(.system(size: 20))
                 .foregroundStyle(theme.palette.textTertiary)
             // Nothing else here is focusable; without this Menu never reaches
@@ -582,10 +582,10 @@ struct SimklConnectPage: View {
     var body: some View {
         VStack(spacing: OrivioSpacing.xl) {
             VStack(spacing: OrivioSpacing.sm) {
-                Text("Connect SIMKL")
+                Text("Connecter SIMKL")
                     .font(FusionType.pageTitle(theme.font))
                     .foregroundStyle(theme.palette.textPrimary)
-                Text("Scan the code with your phone, or go to \(code.verificationURL) and enter the code below.")
+                Text("Scannez le code avec votre téléphone, ou ouvrez \(code.verificationURL) puis saisissez le code ci-dessous.")
                     .font(.system(size: 24))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -605,7 +605,7 @@ struct SimklConnectPage: View {
 
             HStack(spacing: OrivioSpacing.sm) {
                 ProgressView().tint(theme.palette.secondary)
-                Text("Waiting for authorization…")
+                Text("En attente de votre autorisation…")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -614,13 +614,13 @@ struct SimklConnectPage: View {
                 let seconds = expiresAt.timeIntervalSince(context.date)
                 let remaining = seconds.isFinite ? Int(min(max(seconds, 0), 86_400)) : 0
                 Text(remaining > 0
-                     ? "Code expires in \(remaining / 60):\(String(format: "%02d", remaining % 60))"
-                     : "Refreshing code…")
+                     ? "Expiration du code dans \(remaining / 60):\(String(format: "%02d", remaining % 60))"
+                     : "Renouvellement du code…")
                     .font(.system(size: 20))
                     .foregroundStyle(theme.palette.textTertiary)
             }
 
-            Text("Press Menu to cancel")
+            Text("Retour pour annuler")
                 .font(.system(size: 20))
                 .foregroundStyle(theme.palette.textTertiary)
             // Nothing else here is focusable; without this Menu never reaches

@@ -20,6 +20,14 @@ enum AppGroupResolver {
     /// fails (it shouldn't).
     static let fallback = "group.com.innerapns.pubtest.CYCSPZ5MTR"
 
+    /// A signer also adds each target's own default group. Selecting the first
+    /// profile entry can therefore select different containers for app/appex.
+    /// Prefer the common requested group, including its re-signing suffix.
+    static func preferredGroup(in groups: [String]) -> String? {
+        let valid = groups.filter { $0.hasPrefix("group.") && !$0.isEmpty }
+        return valid.first { $0 == fallback || $0.hasPrefix(fallback + ".") } ?? valid.first
+    }
+
     static let identifier: String = {
         if let live = liveEntitlementGroup() { return live }
         // The private-API read can fail (a future tvOS, or a re-signer whose
@@ -48,7 +56,7 @@ enum AppGroupResolver {
         guard let task = create(nil),
               let value = copyValue(task, "com.apple.security.application-groups" as CFString, nil),
               let groups = value as? [String],
-              let first = groups.first
+              let first = preferredGroup(in: groups)
         else { return nil }
         return first
     }
@@ -83,7 +91,7 @@ enum AppGroupResolver {
                 .propertyList(from: plistData, format: nil) as? [String: Any],
               let entitlements = plist["Entitlements"] as? [String: Any],
               let groups = entitlements["com.apple.security.application-groups"] as? [String],
-              let first = groups.first, !first.isEmpty
+              let first = preferredGroup(in: groups)
         else { return nil }
         return first
     }

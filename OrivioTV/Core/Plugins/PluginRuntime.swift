@@ -25,7 +25,9 @@ final class PluginRuntime: @unchecked Sendable {
 
     init() {
         let delegate = BoundedFetchDelegate(maxBytes: Self.maxFetchBytes)
-        let c = URLSessionConfiguration.default
+        // Untrusted plugin fetches never inherit the app's shared cookies or disk cache.
+        let c = URLSessionConfiguration.ephemeral
+        c.urlCache = nil
         c.timeoutIntervalForRequest = 20
         fetchDelegate = delegate
         session = URLSession(configuration: c, delegate: delegate, delegateQueue: nil)
@@ -123,8 +125,8 @@ final class PluginRuntime: @unchecked Sendable {
             return true
         }
 
-        context.exceptionHandler = { _, value in
-            NSLog("[Plugin] JS exception: %@", value?.toString() ?? "?")
+        context.exceptionHandler = { _, _ in
+            NSLog("[Plugin] JS exception (private contents omitted)")
         }
 
         installConsole(context)
@@ -188,8 +190,9 @@ final class PluginRuntime: @unchecked Sendable {
     private func installConsole(_ context: JSContext) {
         let console = JSValue(newObjectIn: context)
         let log: @convention(block) () -> Void = {
-            let args = JSContext.currentArguments()?.map { ($0 as? JSValue)?.toString() ?? "" } ?? []
-            NSLog("[Plugin] %@", args.joined(separator: " "))
+            // Scripts may print tokenized URLs or provider responses. Keep their
+            // arbitrary contents out of app logs and exported diagnostics.
+            NSLog("[Plugin] console message (private contents omitted)")
         }
         for level in ["log", "error", "warn", "info", "debug"] {
             console?.setObject(log, forKeyedSubscript: level as NSString)

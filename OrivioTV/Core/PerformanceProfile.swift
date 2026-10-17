@@ -129,6 +129,11 @@ enum PerformanceProfile {
         return 400
     }
 
+    /// Shared windows across artwork consumers, including HTTP/2 transfers
+    /// (a connection count alone cannot bound multiplexed requests).
+    static var artworkDownloads: Int { isLowPower ? 4 : (isMidPower ? 6 : 8) }
+    static var artworkPreparations: Int { isLowPower ? 2 : (isMidPower ? 3 : 4) }
+
     /// Hard ceiling on the video read-ahead cache (compressed packets held in
     /// RAM by KSPlayer). tvOS has no working disk cache (FFmpeg's cache:
     /// protocol can't open a temp file in the sandbox), so the buffer lives in

@@ -267,6 +267,8 @@ final class ProgressStore: ObservableObject {
     /// `RatingsStore` and `TraktStore` already do this.
     private static let activeProfileKey = "orivio.profiles.active"
     private var profileID = UserDefaults.standard.object(forKey: activeProfileKey) as? Int ?? 1
+    /// Consumers must not present the previous profile's rows during a switch.
+    var scopedProfileID: Int { profileID }
     private var storageKey: String {
         profileID == 1 ? "orivio.progress.v1" : "orivio.progress.v1.p\(profileID)"
     }
@@ -464,10 +466,10 @@ final class ProgressStore: ObservableObject {
     /// this profile's Continue Watching may appear on the home screen at all.
     /// Without this the shelf kept the pre-PIN rows until the next playback
     /// save or relaunch.
-    func refreshTopShelf() {
+    func refreshTopShelf(force: Bool = false) {
         let shelf = TopShelfExporter.entries(from: continueWatching)
         let ticket = TopShelfExporter.nextSequence()
-        Task.detached(priority: .utility) { await TopShelfExporter.writeOrdered(shelf, sequence: ticket) }
+        Task.detached(priority: .utility) { await TopShelfExporter.writeOrdered(shelf, sequence: ticket, force: force) }
     }
 
     /// All entries, for a full push to the account backend.

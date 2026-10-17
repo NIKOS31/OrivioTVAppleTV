@@ -58,6 +58,8 @@ struct UserProfile: Codable, Identifiable, Hashable {
     var usesPrimaryPlugins: Bool
     var avatarID: String?
     var avatarURL: String?
+    /// Device-local artwork; does not depend on the shared account avatar catalog.
+    var localAvatarID: String?
     var pinEnabled: Bool
     /// SHA-256 of the PIN, cached on successful set/verify so a locked profile
     /// can still be unlocked offline. Device-local; never synced.
@@ -69,7 +71,8 @@ struct UserProfile: Codable, Identifiable, Hashable {
     init(
         id: Int, name: String, avatarColorHex: String,
         usesPrimaryAddons: Bool = false, usesPrimaryPlugins: Bool = false,
-        avatarID: String? = nil, avatarURL: String? = nil, pinEnabled: Bool = false,
+        avatarID: String? = nil, avatarURL: String? = nil, localAvatarID: String? = nil,
+        pinEnabled: Bool = false,
         pinHash: String? = nil, autoLink: AutoLinkPreferences? = nil
     ) {
         self.id = id
@@ -79,6 +82,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
         self.usesPrimaryPlugins = usesPrimaryPlugins
         self.avatarID = avatarID
         self.avatarURL = avatarURL
+        self.localAvatarID = localAvatarID
         self.pinEnabled = pinEnabled
         self.pinHash = pinHash
         self.autoLink = autoLink
@@ -86,7 +90,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, avatarColorHex, usesPrimaryAddons, usesPrimaryPlugins
-        case avatarID, avatarURL, pinEnabled, pinHash, autoLink
+        case avatarID, avatarURL, localAvatarID, pinEnabled, pinHash, autoLink
     }
 
     /// Tolerant decode, for the same reason `AutoLinkPreferences` has one — but
@@ -109,6 +113,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
         usesPrimaryPlugins = (try? c.decode(Bool.self, forKey: .usesPrimaryPlugins)) ?? false
         avatarID = try? c.decodeIfPresent(String.self, forKey: .avatarID)
         avatarURL = try? c.decodeIfPresent(String.self, forKey: .avatarURL)
+        localAvatarID = try? c.decodeIfPresent(String.self, forKey: .localAvatarID)
         pinEnabled = (try? c.decode(Bool.self, forKey: .pinEnabled)) ?? false
         pinHash = try? c.decodeIfPresent(String.self, forKey: .pinHash)
         autoLink = try? c.decodeIfPresent(AutoLinkPreferences.self, forKey: .autoLink)
@@ -184,7 +189,7 @@ final class ProfileStore: ObservableObject {
         // (a partially applied delete) is stale: the list is the user's view.
         deletedProfileIDs.subtract(profiles.map(\.id))
         if profiles.isEmpty {
-            profiles = [UserProfile(id: 1, name: "Profile 1", avatarColorHex: Self.avatarColors[0])]
+            profiles = [UserProfile(id: 1, name: "Profil 1", avatarColorHex: Self.avatarColors[0])]
             // Persist the synthesised default ONLY when there was nothing
             // readable to lose. If a stored blob exists but failed to decode,
             // writing this over it destroys every profile the user had (see
@@ -208,7 +213,7 @@ final class ProfileStore: ObservableObject {
 
     var active: UserProfile {
         profiles.first { $0.id == activeProfileID } ?? profiles.first
-            ?? UserProfile(id: 1, name: "Profile 1", avatarColorHex: Self.avatarColors[0])
+            ?? UserProfile(id: 1, name: "Profil 1", avatarColorHex: Self.avatarColors[0])
     }
 
     var canAddProfile: Bool { profiles.count < Self.maxProfiles }
@@ -413,8 +418,16 @@ final class ProfileStore: ObservableObject {
     func setAvatar(id: Int, avatarID: String?) {
         guard let idx = profiles.firstIndex(where: { $0.id == id }) else { return }
         profiles[idx].avatarID = avatarID
+        profiles[idx].avatarURL = nil
+        profiles[idx].localAvatarID = nil
         saveList()
         notifyChange()
+    }
+
+    func setLocalAvatar(id: Int, avatar: NTVProfileAvatar) {
+        guard let idx = profiles.firstIndex(where: { $0.id == id }) else { return }
+        profiles[idx].localAvatarID = avatar.id
+        saveList()
     }
 
     /// The active profile's Auto Link Selector settings (defaults if unset).
@@ -431,6 +444,7 @@ final class ProfileStore: ObservableObject {
 
     /// Resolves a profile's avatar image URL from the catalog (or its stored URL).
     func avatarURL(for profile: UserProfile) -> String? {
+        if let id = profile.localAvatarID, NTVProfileAvatar(rawValue: id) != nil { return nil }
         if let direct = profile.avatarURL, !direct.isEmpty { return direct }
         guard let avatarID = profile.avatarID else { return nil }
         return avatarCatalog.first { $0.id == avatarID }?.imageURL
@@ -522,6 +536,9 @@ final class ProfileStore: ObservableObject {
         let localAutoLink = Dictionary(profiles.compactMap { p in
             p.autoLink.map { (p.id, $0) }
         }, uniquingKeysWith: { first, _ in first })
+        let localAvatars = Dictionary(profiles.compactMap { p in
+            p.localAvatarID.map { (p.id, $0) }
+        }, uniquingKeysWith: { first, _ in first })
         // The pull RPC has no `pinEnabled` column, so every row arrives false
         // and the REAL value only lands in the separate `pull_profile_locks`
         // call, which is best-effort (`try?`). Carrying the local lock state
@@ -534,6 +551,7 @@ final class ProfileStore: ObservableObject {
             var merged = p
             merged.pinHash = merged.pinHash ?? localHashes[p.id]
             merged.autoLink = merged.autoLink ?? localAutoLink[p.id]
+            merged.localAvatarID = localAvatars[p.id]
             merged.pinEnabled = localPinEnabled[p.id] ?? merged.pinEnabled
             return merged
         }
@@ -611,7 +629,7 @@ enum ProfileScopedDefaults {
     /// Same key ProfileStore writes; read directly so stores are scoped
     /// correctly from launch, before any manager wires them up.
     static var activeProfileID: Int {
-        UserDefaults.standard.object(forKey: "orivio.profiles.active") as? Int ?? 1
+        NTVSecurePreferences.standard.object(forKey: "orivio.profiles.active") as? Int ?? 1
     }
 
     static func key(_ base: String, _ profile: Int) -> String { "\(base).p\(profile)" }
@@ -626,11 +644,11 @@ enum ProfileScopedDefaults {
     /// falls straight back to the device-wide copy — and turning it back on
     /// finds each profile's own state (or the seed) exactly where it was.
     static func isSeparate(_ feature: String) -> Bool {
-        (UserDefaults.standard.object(forKey: separateFlagKey(feature)) as? Bool) ?? true
+        (NTVSecurePreferences.standard.object(forKey: separateFlagKey(feature)) as? Bool) ?? true
     }
 
     static func setSeparate(_ feature: String, _ on: Bool) {
-        UserDefaults.standard.set(on, forKey: separateFlagKey(feature))
+        NTVSecurePreferences.standard.set(on, forKey: separateFlagKey(feature))
     }
 
     private static func separateFlagKey(_ feature: String) -> String {
@@ -645,20 +663,20 @@ enum ProfileScopedDefaults {
     /// Mode-aware reads: separate → scoped with the legacy seed fallback;
     /// shared → the legacy key alone.
     static func data(_ base: String, feature: String, _ profile: Int) -> Data? {
-        isSeparate(feature) ? data(base, profile) : UserDefaults.standard.data(forKey: base)
+        isSeparate(feature) ? data(base, profile) : NTVSecurePreferences.standard.data(forKey: base)
     }
 
     static func string(_ base: String, feature: String, _ profile: Int) -> String? {
-        isSeparate(feature) ? string(base, profile) : UserDefaults.standard.string(forKey: base)
+        isSeparate(feature) ? string(base, profile) : NTVSecurePreferences.standard.string(forKey: base)
     }
 
     static func bool(_ base: String, feature: String, _ profile: Int, default def: Bool = false) -> Bool {
         isSeparate(feature) ? bool(base, profile, default: def)
-            : (UserDefaults.standard.object(forKey: base) as? Bool) ?? def
+            : (NTVSecurePreferences.standard.object(forKey: base) as? Bool) ?? def
     }
 
     static func data(_ base: String, _ profile: Int) -> Data? {
-        if let scoped = UserDefaults.standard.data(forKey: key(base, profile)) {
+        if let scoped = NTVSecurePreferences.standard.data(forKey: key(base, profile)) {
             // De-pollution, same as TraktStore's adopt cleanup: while every
             // profile briefly seeded from the legacy value, incidental
             // echo-writes (TMDB's enabled-flip on init, theme didSets on a
@@ -675,41 +693,41 @@ enum ProfileScopedDefaults {
             // pollution being cleaned was seeded HISTORICALLY — one sweep per
             // slot is the whole job.
             let sweepKey = "orivio.profiles.depolluted." + key(base, profile)
-            if profile != 1, !UserDefaults.standard.bool(forKey: sweepKey) {
-                UserDefaults.standard.set(true, forKey: sweepKey)
-                if scoped == UserDefaults.standard.data(forKey: base) {
-                    UserDefaults.standard.removeObject(forKey: key(base, profile))
+            if profile != 1, !NTVSecurePreferences.standard.bool(forKey: sweepKey) {
+                NTVSecurePreferences.standard.set(true, forKey: sweepKey)
+                if scoped == NTVSecurePreferences.standard.data(forKey: base) {
+                    NTVSecurePreferences.standard.removeObject(forKey: key(base, profile))
                     return nil
                 }
             }
             return scoped
         }
-        return profile == 1 ? UserDefaults.standard.data(forKey: base) : nil
+        return profile == 1 ? NTVSecurePreferences.standard.data(forKey: base) : nil
     }
 
     static func string(_ base: String, _ profile: Int) -> String? {
-        if let scoped = UserDefaults.standard.string(forKey: key(base, profile)) { return scoped }
-        return profile == 1 ? UserDefaults.standard.string(forKey: base) : nil
+        if let scoped = NTVSecurePreferences.standard.string(forKey: key(base, profile)) { return scoped }
+        return profile == 1 ? NTVSecurePreferences.standard.string(forKey: base) : nil
     }
 
     static func bool(_ base: String, _ profile: Int, default def: Bool = false) -> Bool {
-        if let scoped = UserDefaults.standard.object(forKey: key(base, profile)) as? Bool { return scoped }
-        if profile == 1, let legacy = UserDefaults.standard.object(forKey: base) as? Bool { return legacy }
+        if let scoped = NTVSecurePreferences.standard.object(forKey: key(base, profile)) as? Bool { return scoped }
+        if profile == 1, let legacy = NTVSecurePreferences.standard.object(forKey: base) as? Bool { return legacy }
         return def
     }
 
     /// Remove one profile's scoped copies (profile deletion).
     static func forget(_ bases: [String], profile: Int) {
-        for base in bases { UserDefaults.standard.removeObject(forKey: key(base, profile)) }
+        for base in bases { NTVSecurePreferences.standard.removeObject(forKey: key(base, profile)) }
     }
 
     /// Remove EVERY profile's scoped copies plus the legacy seed (account
     /// switch, for credential-bearing stores).
     static func forgetAll(_ bases: [String]) {
         for base in bases {
-            UserDefaults.standard.removeObject(forKey: base)
+            NTVSecurePreferences.standard.removeObject(forKey: base)
             for id in 1...ProfileStore.maxProfiles {
-                UserDefaults.standard.removeObject(forKey: key(base, id))
+                NTVSecurePreferences.standard.removeObject(forKey: key(base, id))
             }
         }
     }

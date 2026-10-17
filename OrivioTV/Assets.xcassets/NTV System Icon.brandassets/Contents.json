@@ -1,0 +1,14 @@
+{
+  "assets": [
+    {
+      "filename": "NTVSystemStoreIcon.imagestack",
+      "idiom": "tv",
+      "role": "primary-app-icon",
+      "size": "1280x768"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

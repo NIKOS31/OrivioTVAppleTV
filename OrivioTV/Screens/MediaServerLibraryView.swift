@@ -13,7 +13,7 @@ struct MediaServerPane: View {
     let onPlay: (PlaybackRequest) -> Void
     let onOpenShow: (MediaServerItem) -> Void
 
-    private enum Section: String, CaseIterable { case movies = "Movies", shows = "Shows" }
+    private enum Section: String, CaseIterable { case movies = "Movies", shows = "Séries" }
     @State private var section: Section = .movies
     @State private var movies: [MediaServerItem] = []
     @State private var shows: [MediaServerItem] = []
@@ -53,17 +53,17 @@ struct MediaServerPane: View {
             .focusSection()
 
             if isLoading && movies.isEmpty && shows.isEmpty {
-                OrivioLoadingView(label: "Loading \(kind.displayName) library")
+                OrivioLoadingView(label: "Chargement de la bibliothèque \(kind.displayName)")
                     .frame(maxWidth: .infinity, minHeight: 400)
             } else if failed && movies.isEmpty && shows.isEmpty {
                 OrivioEmptyState(icon: "exclamationmark.triangle",
-                                title: "Couldn't reach \(kind.displayName)",
-                                message: "Check the server is on and reachable from this Apple TV, then reconnect it in Settings → Integrations.")
+                                title: "\(kind.displayName) est inaccessible",
+                                message: "Vérifiez que le serveur est allumé et joignable, puis reconnectez-le dans Réglages → Intégrations.")
                     .frame(maxWidth: .infinity, minHeight: 400)
             } else if items.isEmpty {
                 OrivioEmptyState(icon: section == .movies ? "film" : "tv",
-                                title: "No \(section.rawValue.lowercased()) on \(kind.displayName)",
-                                message: "Nothing in this library yet.")
+                                title: "Aucun contenu dans cette catégorie sur \(kind.displayName)",
+                                message: "Cette bibliothèque est vide pour le moment.")
                     .frame(maxWidth: .infinity, minHeight: 400)
             } else {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: OrivioSpacing.xl) {
@@ -190,11 +190,11 @@ struct MediaServerShowView: View {
         DetailScaffold(title: show.title,
                        subtitle: "\(show.kind.displayName) · \(episodes.count) episode\(episodes.count == 1 ? "" : "s")") {
             if isLoading {
-                OrivioLoadingView(label: "Loading episodes", holdsFocus: true)
+                OrivioLoadingView(label: "Chargement des épisodes", holdsFocus: true)
                     .frame(maxWidth: .infinity, minHeight: 300)
             } else if episodes.isEmpty {
-                OrivioEmptyState(icon: "tv", title: "No episodes",
-                                message: "The server has no episodes for this show.", holdsFocus: true)
+                OrivioEmptyState(icon: "tv", title: "Aucun épisode",
+                                message: "Ce serveur ne propose aucun épisode pour cette série.", holdsFocus: true)
                     .frame(maxWidth: .infinity, minHeight: 300)
             } else {
                 VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
@@ -210,7 +210,7 @@ struct MediaServerShowView: View {
                             HStack(spacing: OrivioSpacing.sm) {
                                 ForEach(seasons, id: \.self) { s in
                                     Button { season = s } label: {
-                                        SelectableChip(title: "Season \(s)", selected: season == s)
+                                        SelectableChip(title: "Saison \(s)", selected: season == s)
                                     }
                                     .buttonStyle(PlainCardButtonStyle())
                                     .frame(width: 220)

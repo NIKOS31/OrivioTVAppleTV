@@ -30,15 +30,15 @@ final class SimklStore: ObservableObject {
 
     /// Two-way watch-history / watched-badge sync with SIMKL.
     @Published var syncWatchHistory: Bool {
-        didSet { UserDefaults.standard.set(syncWatchHistory, forKey: Self.histKey) }
+        didSet { NTVSecurePreferences.standard.set(syncWatchHistory, forKey: Self.histKey) }
     }
     /// Two-way sync of the Library with SIMKL's plan-to-watch list.
     @Published var syncWatchlist: Bool {
-        didSet { UserDefaults.standard.set(syncWatchlist, forKey: Self.watchlistKey) }
+        didSet { NTVSecurePreferences.standard.set(syncWatchlist, forKey: Self.watchlistKey) }
     }
     /// Two-way sync of personal star ratings with SIMKL.
     @Published var syncRatings: Bool {
-        didSet { UserDefaults.standard.set(syncRatings, forKey: Self.ratingsKey) }
+        didSet { NTVSecurePreferences.standard.set(syncRatings, forKey: Self.ratingsKey) }
     }
     /// Seed Continue Watching from SIMKL's "watching" list.
     ///
@@ -50,7 +50,7 @@ final class SimklStore: ObservableObject {
     /// tracker is SIMKL sees an empty Continue Watching after a reinstall,
     /// which is the complaint this exists to answer.
     @Published var syncContinueWatching: Bool {
-        didSet { UserDefaults.standard.set(syncContinueWatching, forKey: Self.continueKey) }
+        didSet { NTVSecurePreferences.standard.set(syncContinueWatching, forKey: Self.continueKey) }
     }
 
     /// Last full-sync outcome, shown in Settings → Trakt & SIMKL.
@@ -79,15 +79,15 @@ final class SimklStore: ObservableObject {
     private static let activeProfileKey = "orivio.profiles.active"
 
     init() {
-        syncWatchHistory = UserDefaults.standard.object(forKey: Self.histKey) as? Bool ?? true
-        syncWatchlist = UserDefaults.standard.object(forKey: Self.watchlistKey) as? Bool ?? true
-        syncRatings = UserDefaults.standard.object(forKey: Self.ratingsKey) as? Bool ?? true
-        syncContinueWatching = UserDefaults.standard.object(forKey: Self.continueKey) as? Bool ?? true
-        perProfileAccounts = UserDefaults.standard.bool(forKey: Self.perProfileKey)
-        profileID = UserDefaults.standard.object(forKey: Self.activeProfileKey) as? Int ?? 1
+        syncWatchHistory = NTVSecurePreferences.standard.object(forKey: Self.histKey) as? Bool ?? true
+        syncWatchlist = NTVSecurePreferences.standard.object(forKey: Self.watchlistKey) as? Bool ?? true
+        syncRatings = NTVSecurePreferences.standard.object(forKey: Self.ratingsKey) as? Bool ?? true
+        syncContinueWatching = NTVSecurePreferences.standard.object(forKey: Self.continueKey) as? Bool ?? true
+        perProfileAccounts = NTVSecurePreferences.standard.bool(forKey: Self.perProfileKey)
+        profileID = NTVSecurePreferences.standard.object(forKey: Self.activeProfileKey) as? Int ?? 1
         let suffix = perProfileAccounts ? ".p\(profileID)" : ""
-        accessToken = UserDefaults.standard.string(forKey: Self.tokenKey + suffix)
-        username = UserDefaults.standard.string(forKey: Self.userKey + suffix)
+        accessToken = NTVSecurePreferences.standard.string(forKey: Self.tokenKey + suffix)
+        username = NTVSecurePreferences.standard.string(forKey: Self.userKey + suffix)
     }
 
     /// Give every PROFILE its own SIMKL account. Shares Trakt's UserDefaults
@@ -97,7 +97,7 @@ final class SimklStore: ObservableObject {
     @Published var perProfileAccounts: Bool {
         didSet {
             guard perProfileAccounts != oldValue else { return }
-            UserDefaults.standard.set(perProfileAccounts, forKey: Self.perProfileKey)
+            NTVSecurePreferences.standard.set(perProfileAccounts, forKey: Self.perProfileKey)
             if perProfileAccounts { adoptSharedLoginIntoPrimaryProfile() }
             reloadAccount()
         }
@@ -117,18 +117,18 @@ final class SimklStore: ObservableObject {
     /// Trakt there is no cleanup pass: nothing ever wrote SIMKL tokens into
     /// other profiles' slots while the login was shared.
     private func adoptSharedLoginIntoPrimaryProfile() {
-        guard let shared = UserDefaults.standard.string(forKey: Self.tokenKey),
-              UserDefaults.standard.string(forKey: Self.tokenKey + ".p1") == nil else { return }
-        UserDefaults.standard.set(shared, forKey: Self.tokenKey + ".p1")
-        UserDefaults.standard.set(UserDefaults.standard.string(forKey: Self.userKey),
+        guard let shared = NTVSecurePreferences.standard.string(forKey: Self.tokenKey),
+              NTVSecurePreferences.standard.string(forKey: Self.tokenKey + ".p1") == nil else { return }
+        NTVSecurePreferences.standard.set(shared, forKey: Self.tokenKey + ".p1")
+        NTVSecurePreferences.standard.set(NTVSecurePreferences.standard.string(forKey: Self.userKey),
                                   forKey: Self.userKey + ".p1")
     }
 
     /// Forget a deleted profile's SIMKL account so a recycled profile id never
     /// inherits it.
     func forgetProfile(_ id: Int) {
-        UserDefaults.standard.removeObject(forKey: Self.tokenKey + ".p\(id)")
-        UserDefaults.standard.removeObject(forKey: Self.userKey + ".p\(id)")
+        NTVSecurePreferences.standard.removeObject(forKey: Self.tokenKey + ".p\(id)")
+        NTVSecurePreferences.standard.removeObject(forKey: Self.userKey + ".p\(id)")
         if id == profileID { reloadAccount() }
     }
 
@@ -139,9 +139,9 @@ final class SimklStore: ObservableObject {
     func forgetAllProfiles() {
         didSignInInteractively = false
         for key in [Self.tokenKey, Self.userKey] {
-            UserDefaults.standard.removeObject(forKey: key)
+            NTVSecurePreferences.standard.removeObject(forKey: key)
             for id in 1...ProfileStore.maxProfiles {
-                UserDefaults.standard.removeObject(forKey: key + ".p\(id)")
+                NTVSecurePreferences.standard.removeObject(forKey: key + ".p\(id)")
             }
         }
         reloadAccount()
@@ -159,8 +159,8 @@ final class SimklStore: ObservableObject {
 
     /// Load token + username from whichever scope is active now.
     private func reloadAccount() {
-        accessToken = UserDefaults.standard.string(forKey: scopedTokenKey)
-        username = UserDefaults.standard.string(forKey: scopedUserKey)
+        accessToken = NTVSecurePreferences.standard.string(forKey: scopedTokenKey)
+        username = NTVSecurePreferences.standard.string(forKey: scopedUserKey)
         lastSyncStatus = nil
     }
 
@@ -168,7 +168,7 @@ final class SimklStore: ObservableObject {
 
     func store(access: String) {
         accessToken = access
-        UserDefaults.standard.set(access, forKey: scopedTokenKey)
+        NTVSecurePreferences.standard.set(access, forKey: scopedTokenKey)
     }
 
     /// Called by the PIN flow when a login completes on this device.
@@ -176,7 +176,7 @@ final class SimklStore: ObservableObject {
 
     func setUsername(_ name: String?) {
         username = name
-        UserDefaults.standard.set(name, forKey: scopedUserKey)
+        NTVSecurePreferences.standard.set(name, forKey: scopedUserKey)
     }
 
     func signOut() {
@@ -184,8 +184,8 @@ final class SimklStore: ObservableObject {
         lastSyncStatus = nil
         accessToken = nil
         username = nil
-        UserDefaults.standard.removeObject(forKey: scopedTokenKey)
-        UserDefaults.standard.removeObject(forKey: scopedUserKey)
+        NTVSecurePreferences.standard.removeObject(forKey: scopedTokenKey)
+        NTVSecurePreferences.standard.removeObject(forKey: scopedUserKey)
     }
 }
 
@@ -209,14 +209,7 @@ enum SimklPollResult {
 enum SimklService {
     private static let base = "https://api.simkl.com"
 
-    private static let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 25
-        // The poll hits the same URL every few seconds and a cached 200 would
-        // look like a login that never completes.
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
-    }()
+    private static let session = NTVAuthenticatedSession.make(timeout: 25)
 
     /// Mirrors `TraktService.request`: nil rather than a force-unwrap trap for
     /// a path that can't form a URL.

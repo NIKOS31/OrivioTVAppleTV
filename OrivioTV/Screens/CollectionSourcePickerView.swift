@@ -27,10 +27,10 @@ struct CollectionSourcePickerView: View {
     private var connectionWarning: String? {
         if tab == .trakt {
             return trakt.isSignedIn ? nil
-                : "Sign in to Trakt in Settings → Trakt for a list added here to show anything."
+                : "Connectez Trakt dans les réglages pour afficher les contenus de vos listes."
         }
         return tmdbSettings.isEnabled ? nil
-            : "Add your TMDB API key in Settings → Integrations → TMDB for a source added here to show anything."
+            : "Ajoutez votre clé TMDB dans Réglages → Intégrations pour afficher ces contenus."
     }
 
     var body: some View {
@@ -38,11 +38,11 @@ struct CollectionSourcePickerView: View {
             ATVBackground()
             VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
                 HStack {
-                    Text("Add TMDB / Trakt Source")
+                    Text("Ajouter un contenu TMDB ou Trakt")
                         .font(FusionType.pageTitle(theme.font))
                         .foregroundStyle(theme.palette.textPrimary)
                     Spacer()
-                    Button("Done", action: onDone)
+                    Button("Terminé", action: onDone)
                         .font(.system(size: 22, weight: .semibold))
                 }
                 // Warn per TAB about the service that tab actually needs —
@@ -126,10 +126,10 @@ enum TMDBCollectionPresets {
         ("FX", CollectionSourceDTO(tmdbSourceType: "NETWORK", title: "FX", tmdbId: 88, mediaType: "tv")),
         ("Peacock", CollectionSourceDTO(tmdbSourceType: "NETWORK", title: "Peacock", tmdbId: 3353, mediaType: "tv")),
         ("Paramount+", CollectionSourceDTO(tmdbSourceType: "NETWORK", title: "Paramount+", tmdbId: 4330, mediaType: "tv")),
-        ("Trending Movies", CollectionSourceDTO(tmdbSourceType: "DISCOVER", title: "Trending Movies", tmdbId: nil, mediaType: "movie", sortBy: "popularity.desc")),
-        ("Trending Shows", CollectionSourceDTO(tmdbSourceType: "DISCOVER", title: "Trending Shows", tmdbId: nil, mediaType: "tv", sortBy: "popularity.desc")),
-        ("Top Rated Movies", CollectionSourceDTO(tmdbSourceType: "DISCOVER", title: "Top Rated Movies", tmdbId: nil, mediaType: "movie", sortBy: "vote_average.desc")),
-        ("Top Rated Shows", CollectionSourceDTO(tmdbSourceType: "DISCOVER", title: "Top Rated Shows", tmdbId: nil, mediaType: "tv", sortBy: "vote_average.desc")),
+        ("Films tendance", CollectionSourceDTO(tmdbSourceType: "DISCOVER", title: "Films tendance", tmdbId: nil, mediaType: "movie", sortBy: "popularity.desc")),
+        ("Séries tendance", CollectionSourceDTO(tmdbSourceType: "DISCOVER", title: "Séries tendance", tmdbId: nil, mediaType: "tv", sortBy: "popularity.desc")),
+        ("Films les mieux notés", CollectionSourceDTO(tmdbSourceType: "DISCOVER", title: "Films les mieux notés", tmdbId: nil, mediaType: "movie", sortBy: "vote_average.desc")),
+        ("Séries les mieux notées", CollectionSourceDTO(tmdbSourceType: "DISCOVER", title: "Séries les mieux notées", tmdbId: nil, mediaType: "tv", sortBy: "vote_average.desc")),
     ]
 }
 
@@ -161,46 +161,46 @@ private struct DiscoverPickerContent: View {
     @State private var genre: String?
 
     private static let sorts = [
-        OrivioDropdownOption("popularity.desc", "Popularity"),
-        OrivioDropdownOption("vote_average.desc", "Top Rated"),
-        OrivioDropdownOption("vote_count.desc", "Most Voted"),
-        OrivioDropdownOption("primary_release_date.desc", "Newest"),
+        OrivioDropdownOption("popularity.desc", "Popularité"),
+        OrivioDropdownOption("vote_average.desc", "Les mieux notés"),
+        OrivioDropdownOption("vote_count.desc", "Les plus notés"),
+        OrivioDropdownOption("primary_release_date.desc", "Les plus récents"),
     ]
     private static let genres: [(String, String)] = [
-        ("28", "Action"), ("12", "Adventure"), ("16", "Animation"), ("35", "Comedy"),
-        ("80", "Crime"), ("99", "Documentary"), ("18", "Drama"), ("10751", "Family"),
-        ("14", "Fantasy"), ("36", "History"), ("27", "Horror"), ("10402", "Music"),
-        ("9648", "Mystery"), ("10749", "Romance"), ("878", "Sci-Fi"), ("53", "Thriller"),
-        ("10752", "War"), ("37", "Western"),
+        ("28", "Action"), ("12", "Aventure"), ("16", "Animation"), ("35", "Comédie"),
+        ("80", "Policier"), ("99", "Documentaire"), ("18", "Drame"), ("10751", "Famille"),
+        ("14", "Fantastique"), ("36", "Histoire"), ("27", "Horreur"), ("10402", "Musique"),
+        ("9648", "Mystère"), ("10749", "Romance"), ("878", "Science-fiction"), ("53", "Thriller"),
+        ("10752", "Guerre"), ("37", "Western"),
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
             Picker("", selection: $isMovie) {
-                Text("Movies").tag(true)
-                Text("TV Shows").tag(false)
+                Text("Films").tag(true)
+                Text("Séries").tag(false)
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 500)
 
-            OrivioDropdown(title: "Sort by", selection: sortBy, options: Self.sorts) { sortBy = $0 }
+            OrivioDropdown(title: "Trier par", selection: sortBy, options: Self.sorts) { sortBy = $0 }
 
             OrivioDropdown(
                 title: "Genre",
                 selection: genre ?? "",
-                options: [OrivioDropdownOption("", "Any")] + Self.genres.map { OrivioDropdownOption($0.0, $0.1) }
+                options: [OrivioDropdownOption("", "Tous")] + Self.genres.map { OrivioDropdownOption($0.0, $0.1) }
             ) { genre = $0.isEmpty ? nil : $0 }
 
             Button {
-                let name = (genre.flatMap { id in Self.genres.first { $0.0 == id }?.1 } ?? "Discover")
-                    + (isMovie ? " Movies" : " Shows")
+                let name = (genre.flatMap { id in Self.genres.first { $0.0 == id }?.1 } ?? "Découvrir")
+                    + (isMovie ? " Films" : " Séries")
                 let filters = genre.map { TmdbFiltersDTO(withGenres: $0) }
                 onAdd(CollectionSourceDTO(
                     tmdbSourceType: "DISCOVER", title: name, tmdbId: nil,
                     mediaType: isMovie ? "movie" : "tv", sortBy: sortBy, filters: filters
                 ))
             } label: {
-                SettingsActionRow(title: "Add Discover Source", leadingIcon: "plus.circle.fill")
+                SettingsActionRow(title: "Ajouter un catalogue de découverte", leadingIcon: "plus.circle.fill")
             }
             .buttonStyle(PlainCardButtonStyle())
         }
@@ -222,27 +222,27 @@ private struct SearchPickerContent: View {
         VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
             Picker("", selection: $kind) {
                 Text("Studio").tag(0)
-                Text("Cast").tag(1)
-                Text("Director").tag(2)
+                Text("Distribution").tag(1)
+                Text("Réalisation").tag(2)
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 500)
 
             if kind != 0 {
                 Picker("", selection: $isMovie) {
-                    Text("Movies").tag(true)
-                    Text("TV Shows").tag(false)
+                    Text("Films").tag(true)
+                    Text("Séries").tag(false)
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 500)
             }
 
             HStack {
-                TextField(kind == 0 ? "Search studios…" : "Search people…", text: $query)
+                TextField(kind == 0 ? "Rechercher un studio…" : "Rechercher une personne…", text: $query)
                     .font(.system(size: 24))
                     .frame(maxWidth: 600)
                     .onSubmit { Task { await search() } }
-                Button("Search") { Task { await search() } }
+                Button("Recherche") { Task { await search() } }
                     .font(.system(size: 22, weight: .semibold))
             }
 
@@ -299,24 +299,24 @@ private struct ByIDPickerContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
             Picker("", selection: $kind) {
-                Text("Network").tag(0)
-                Text("List").tag(1)
+                Text("Chaîne").tag(0)
+                Text("Liste").tag(1)
                 Text("Collection").tag(2)
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 600)
             .onChange(of: kind) { _, _ in resolvedName = nil; resolvedID = nil; error = nil }
 
-            Text(kind == 0 ? "Enter the TMDB network id (e.g. 213 for Netflix)."
-                 : "Paste a themoviedb.org URL or id.")
+            Text(kind == 0 ? "Saisissez l’identifiant TMDB de la chaîne, par exemple 213 pour Netflix."
+                 : "Collez un lien themoviedb.org ou un identifiant.")
                 .font(.system(size: 18))
                 .foregroundStyle(.secondary)
 
             HStack {
-                TextField(kind == 0 ? "Network id" : "URL or id", text: $input)
+                TextField(kind == 0 ? "Identifiant de la chaîne" : "URL or id", text: $input)
                     .font(.system(size: 24))
                     .frame(maxWidth: 600)
-                Button("Look up") { Task { await lookup() } }
+                Button("Rechercher") { Task { await lookup() } }
                     .font(.system(size: 22, weight: .semibold))
             }
 
@@ -332,7 +332,7 @@ private struct ByIDPickerContent: View {
                         mediaType: kind == 0 ? "tv" : "movie"
                     ))
                 } label: {
-                    SettingsActionRow(title: "Add \"\(resolvedName)\"", leadingIcon: "plus.circle.fill")
+                    SettingsActionRow(title: "Ajouter « \(resolvedName) »", leadingIcon: "plus.circle.fill")
                 }
                 .buttonStyle(PlainCardButtonStyle())
             }
@@ -343,7 +343,7 @@ private struct ByIDPickerContent: View {
         error = nil
         resolvedName = nil
         guard let id = kind == 0 ? Int(input.trimmingCharacters(in: .whitespaces)) : TMDBService.parseTMDBID(from: input) else {
-            error = "Couldn't find an id in that."
+            error = "Aucun identifiant trouvé."
             return
         }
         looking = true
@@ -356,7 +356,7 @@ private struct ByIDPickerContent: View {
         default: name = await TMDBService.collectionName(id: id, language: lang)
         }
         guard let name, !name.isEmpty else {
-            error = "Couldn't find that on TMDB."
+            error = "Aucun résultat trouvé sur TMDB."
             return
         }
         resolvedID = id
@@ -377,9 +377,9 @@ private struct TraktListPickerContent: View {
     @State private var error: String?
 
     private static let sorts = [
-        OrivioDropdownOption("rank", "List Order"), OrivioDropdownOption("added", "Date Added"),
-        OrivioDropdownOption("title", "Title"), OrivioDropdownOption("released", "Release Date"),
-        OrivioDropdownOption("popularity", "Popularity"), OrivioDropdownOption("votes", "Votes"),
+        OrivioDropdownOption("rank", "Ordre de la liste"), OrivioDropdownOption("added", "Date d’ajout"),
+        OrivioDropdownOption("title", "Titre"), OrivioDropdownOption("released", "Date de sortie"),
+        OrivioDropdownOption("popularity", "Popularité"), OrivioDropdownOption("votes", "Votes"),
     ]
 
     var body: some View {
@@ -391,18 +391,18 @@ private struct TraktListPickerContent: View {
                 TextField("trakt.tv/users/.../lists/...", text: $input)
                     .font(.system(size: 24))
                     .frame(maxWidth: 600)
-                Button("Look up") { Task { await lookup() } }
+                Button("Rechercher") { Task { await lookup() } }
                     .font(.system(size: 22, weight: .semibold))
             }
 
             Picker("", selection: $isMovie) {
-                Text("Movies").tag(true)
-                Text("TV Shows").tag(false)
+                Text("Films").tag(true)
+                Text("Séries").tag(false)
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 500)
 
-            OrivioDropdown(title: "Sort by", selection: sortBy, options: Self.sorts) { sortBy = $0 }
+            OrivioDropdown(title: "Trier par", selection: sortBy, options: Self.sorts) { sortBy = $0 }
 
             if looking { ProgressView() }
             if let error { Text(error).foregroundStyle(OrivioPrimitives.error) }
@@ -414,7 +414,7 @@ private struct TraktListPickerContent: View {
                         mediaType: isMovie ? "movie" : "tv", sortBy: sortBy, sortHow: sortHow
                     ))
                 } label: {
-                    SettingsActionRow(title: "Add \"\(resolved.title)\"", leadingIcon: "plus.circle.fill")
+                    SettingsActionRow(title: "Ajouter « \(resolved.title) »", leadingIcon: "plus.circle.fill")
                 }
                 .buttonStyle(PlainCardButtonStyle())
             }
@@ -427,7 +427,7 @@ private struct TraktListPickerContent: View {
         looking = true
         defer { looking = false }
         guard let info = await TraktService.publicListInfo(input: input) else {
-            error = "Couldn't find that Trakt list (must be public)."
+            error = "Cette liste Trakt est introuvable. Elle doit être publique."
             return
         }
         resolved = info

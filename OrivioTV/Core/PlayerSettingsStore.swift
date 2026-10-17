@@ -18,12 +18,12 @@ enum BufferProfile: String, Codable, CaseIterable {
 
     var label: String {
         switch self {
-        case .auto: return "Auto (recommended)"
-        case .conservative: return "Conservative (smaller)"
-        case .mb500: return "500 MB ahead"
-        case .gb1: return "1 GB ahead"
-        case .gb2: return "2 GB ahead"
-        case .max: return "Maximum (fills available memory)"
+        case .auto: return "Automatique, recommandé"
+        case .conservative: return "Économe"
+        case .mb500: return "500 Mo en avance"
+        case .gb1: return "1 Go en avance"
+        case .gb2: return "2 Go en avance"
+        case .max: return "Maximum, utilise la mémoire disponible"
         }
     }
 
@@ -50,22 +50,22 @@ enum PlayerEngine: String, Codable, CaseIterable {
 
     var label: String {
         switch self {
-        case .auto: return "Auto (recommended)"
-        case .native: return "Native (AVPlayer)"
+        case .auto: return "Automatique, recommandé"
+        case .native: return "Natif, AVPlayer"
         case .ffmpeg: return "FFmpeg (KSPlayer)"
         case .vlc: return "VLC"
-        case .external: return "External app"
+        case .external: return "App externe"
         }
     }
 
     var footnote: String {
         switch self {
         case .vlc:
-            return "VLC buffers internally (no cache bar) and renders its own subtitles. Try it when a file is choppy on the other engines."
+            return "VLC gère son tampon et ses sous-titres. Essayez-le si les autres moteurs lisent mal une source."
         case .external:
-            return "Send every stream to another player app installed on this Apple TV (Infuse, VLC, …) instead of playing in Orivio. Pick the app below."
+            return "Ouvrir les vidéos dans une autre app installée sur cette Apple TV, à choisir ci-dessous"
         default:
-            return "Auto picks the hardware AVPlayer for MP4/HLS and FFmpeg for MKV & friends; the other engine stays as automatic fallback."
+            return "Choisir automatiquement le moteur adapté à la source, avec un moteur de secours si nécessaire"
         }
     }
 }
@@ -82,9 +82,9 @@ enum AudioOutputMode: String, Codable, CaseIterable {
 
     var label: String {
         switch self {
-        case .auto: return "Auto (Atmos when supported)"
-        case .renderer: return "Enhanced renderer (always)"
-        case .engine: return "Standard (AVAudioEngine)"
+        case .auto: return "Automatique, Atmos si compatible"
+        case .renderer: return "Rendu amélioré"
+        case .engine: return "Standard, AVAudioEngine"
         }
     }
 }
@@ -146,7 +146,7 @@ struct PlayerSettings: Codable, Equatable {
     var skipSeconds: Int = 10
     /// Seconds a left/right press jumps while in SCRUB mode (the trackpad
     /// zoom-through-the-movie state) — coarser hops than normal skips.
-    var scrubJumpSeconds: Int = 60
+    var scrubJumpSeconds: Int = 10
     /// Diagnostics: show the last trackpad/remote event on-screen in the player
     /// (helps tune gestures on a real Apple TV — the Simulator has no remote).
     var showInputDebug: Bool = false
@@ -364,7 +364,7 @@ struct PlayerSettings: Codable, Equatable {
     /// Caption typeface choices (family name, label). "" = system font. All
     /// families tvOS actually ships, so `Font.custom` always resolves.
     static let subtitleFontOptions: [(String, String)] = [
-        ("", "System"),
+        ("", "Système"),
         ("Helvetica Neue", "Helvetica Neue"),
         ("Avenir Next", "Avenir Next"),
         ("Gill Sans", "Gill Sans"),
@@ -396,7 +396,7 @@ struct PlayerSettings: Codable, Equatable {
         for code in Locale.LanguageCode.isoLanguageCodes {
             let id = code.identifier
             guard id.count == 2,
-                  let name = Locale.current.localizedString(forLanguageCode: id),
+                  let name = Locale(identifier: "fr").localizedString(forLanguageCode: id),
                   !name.isEmpty,
                   seen.insert(name.lowercased()).inserted
             else { continue }
@@ -421,21 +421,21 @@ struct PlayerSettings: Codable, Equatable {
     /// filter must never make a real track unmatchable) and for the language
     /// selection screens.
     static let allAudioLanguageOptions: [(String, String)] =
-        languageOptions(first: ("", "Stream default"), showAll: true)
+        languageOptions(first: ("", "Choix de la source"), showAll: true)
     static let allSubtitleLanguageOptions: [(String, String)] =
-        languageOptions(first: ("", "First available"), showAll: true)
+        languageOptions(first: ("", "Première piste disponible"), showAll: true)
 
     /// Picker lists: everything when `showAll`, otherwise the chosen subset.
     /// `current` is always kept so a previously chosen language never
     /// disappears from its own dropdown.
     static func audioLanguageOptions(showAll: Bool, enabled: Set<String>,
                                      current: String = "") -> [(String, String)] {
-        languageOptions(first: ("", "Stream default"), showAll: showAll,
+        languageOptions(first: ("", "Choix de la source"), showAll: showAll,
                         enabled: enabled, include: current)
     }
     static func subtitleLanguageOptions(showAll: Bool, enabled: Set<String>,
                                         current: String = "") -> [(String, String)] {
-        languageOptions(first: ("", "First available"), showAll: showAll,
+        languageOptions(first: ("", "Première piste disponible"), showAll: showAll,
                         enabled: enabled, include: current)
     }
 
@@ -448,8 +448,8 @@ struct PlayerSettings: Codable, Equatable {
     static let upNextLeadValues: [Int] = [10, 15, 20, 30, 45, 60, 90, 120, 180]
     /// Subtitle color presets (hex, display name) — no color picker on tvOS.
     static let subtitleColorOptions: [(String, String)] = [
-        ("FFFFFF", "White"), ("F5F5F5", "Off-White"), ("FFEB3B", "Yellow"),
-        ("00E5FF", "Cyan"), ("69F0AE", "Green"), ("BDBDBD", "Grey"), ("000000", "Black"),
+        ("FFFFFF", "Blanc"), ("F5F5F5", "Blanc cassé"), ("FFEB3B", "Jaune"),
+        ("00E5FF", "Cyan"), ("69F0AE", "Vert"), ("BDBDBD", "Gris"), ("000000", "Noir"),
     ]
     /// Selectable subtitle vertical offsets (points; + raises).
     static let subtitleOffsetValues: [Int] = [-40, -20, 0, 20, 40, 80, 120, 160]
@@ -463,7 +463,7 @@ struct PlayerSettings: Codable, Equatable {
     /// Selectable per-press skip amounts (seconds).
     static let skipValues: [Int] = [5, 10, 15, 30]
     /// Selectable scrub-mode jump amounts (seconds).
-    static let scrubJumpValues: [Int] = [30, 60, 120, 300]
+    static let scrubJumpValues: [Int] = [5, 10, 15, 30, 60, 120, 300]
     /// Selectable per-tier link counts (for both the high-GB and low-GB halves).
     static let sourcesPerTierValues: [Int] = [0, 1, 2, 3, 4, 5, 6, 8, 10, 15]
     /// Max links shown per addon when the curated filters are OFF — enough to

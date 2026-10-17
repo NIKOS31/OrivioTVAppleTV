@@ -26,62 +26,62 @@ struct PlaybackSettingsDetail: View {
     @ViewBuilder
     private var settingsScaffold: some View {
         DetailScaffold(title: SettingsCategory.playback.title, subtitle: SettingsCategory.playback.subtitle) {
-            SettingsGroupCard(title: "Auto-play", subtitle: "What happens when an episode finishes") {
+            SettingsGroupCard(title: "Lecture automatique", subtitle: "Comportement à la fin d’un épisode") {
                 autoPlayControls
             }
-            SettingsGroupCard(title: "Seeking", subtitle: "How far a single skip jumps") {
+            SettingsGroupCard(title: "Avance et retour", subtitle: "Distance d’un saut dans la vidéo") {
                 OrivioDropdown(
-                    title: "Skip amount",
-                    subtitle: "Each left/right press; rapid presses add up, holding accelerates",
+                    title: "Durée d’un saut",
+                    subtitle: "Durée d’un clic gauche ou droit. Les clics répétés accélèrent le déplacement.",
                     icon: "goforward",
                     selection: String(store.settings.skipSeconds),
                     options: PlayerSettings.skipValues.map { OrivioDropdownOption(String($0), "\($0) seconds") }
                 ) { store.settings.skipSeconds = Int($0) ?? 10 }
 
                 OrivioDropdown(
-                    title: "Scrubber jump",
-                    subtitle: "Left/right press while scrubbing with the trackpad",
+                    title: "Pas de déplacement sur la barre",
+                    subtitle: "Durée d’un clic pendant le parcours de la barre",
                     icon: "forward.frame.fill",
                     selection: String(store.settings.scrubJumpSeconds),
                     options: PlayerSettings.scrubJumpValues.map {
                         OrivioDropdownOption(String($0), $0 < 60 ? "\($0) seconds" : "\($0 / 60) minute\($0 >= 120 ? "s" : "")")
                     }
-                ) { store.settings.scrubJumpSeconds = Int($0) ?? 60 }
+                ) { store.settings.scrubJumpSeconds = Int($0) ?? 10 }
 
                 PlaybackToggleRow(
                     icon: "forward.frame.fill",
-                    title: "Skip Intro button",
-                    subtitle: "Show a Skip Intro pill while inside an intro/recap chapter (⏯ skips it)",
+                    title: "Bouton Passer l’introduction",
+                    subtitle: "Afficher le bouton pendant les chapitres d’introduction ou de résumé",
                     isOn: s.skipIntroEnabled
                 )
 
                 PlaybackToggleRow(
                     icon: "forward.fill",
-                    title: "Auto-skip intros",
-                    subtitle: "Jump past intro and recap chapters automatically, no button press. Needs chapter markers in the file.",
+                    title: "Passer les introductions automatiquement",
+                    subtitle: "Passer automatiquement les chapitres d’introduction et de résumé, lorsque la vidéo les indique",
                     isOn: s.autoSkipSegments
                 )
 
                 PlaybackToggleRow(
                     icon: "sparkles.tv",
-                    title: "AniSkip for anime",
-                    subtitle: "Fetch intro/outro skip times from the public AniSkip database for anime episodes that carry no chapter markers, so Skip Intro and Up Next work on anime web releases. No account or key needed.",
+                    title: "AniSkip pour les animés",
+                    subtitle: "Utiliser AniSkip pour repérer les introductions et génériques des animés sans chapitres. Aucun compte nécessaire.",
                     isOn: s.animeSkipEnabled
                 )
             }
 
-            SettingsGroupCard(title: "Sources", subtitle: "Which links the source lists show") {
+            SettingsGroupCard(title: "Sources", subtitle: "Choisir les sources affichées") {
                 PlaybackToggleRow(
                     icon: "line.3.horizontal.decrease.circle.fill",
-                    title: "Link filters",
-                    subtitle: "Smart-rank links: each addon grouped by resolution — scored by cached status, release quality (REMUX > Blu-ray > WEB-DL), codec, HDR/DV, audio, seeders and bitrate. Off = show links exactly as each addon returns them (cached still first), up to \(PlayerSettings.unfilteredPerAddonCap) per addon",
+                    title: "Tri des sources",
+                    subtitle: "Classer les sources par qualité et disponibilité. Désactivé : conserver l’ordre des addons, avec les sources en cache d’abord, jusqu’à \(PlayerSettings.unfilteredPerAddonCap) par addon.",
                     isOn: s.sourceFiltersEnabled
                 )
 
                 if store.settings.sourceFiltersEnabled {
                     OrivioDropdown(
-                        title: "Links per resolution",
-                        subtitle: "Best-scored links kept in each of 2160p / 1080p / 720p / 480p per addon",
+                        title: "Sources par résolution",
+                        subtitle: "Nombre de meilleures sources conservées par résolution et par addon",
                         icon: "square.stack.3d.up.fill",
                         selection: String(store.settings.sourcesPerSizeTier),
                         options: PlayerSettings.sourcesPerTierValues.filter { $0 > 0 }.map {
@@ -91,8 +91,8 @@ struct PlaybackSettingsDetail: View {
                 }
 
                 OrivioDropdown(
-                    title: "Source search patience",
-                    subtitle: "How long each addon gets to answer a stream search. Raise it for aggregators that query Usenet indexers behind the scenes (AIOStreams with NZBgeek) — their full results can outlast the standard deadline. Fast addons still show up the moment they answer.",
+                    title: "Délai de recherche des sources",
+                    subtitle: "Temps accordé à chaque addon. Augmentez-le pour les addons qui prennent plus de temps ; les premières réponses restent affichées immédiatement.",
                     icon: "clock.arrow.circlepath",
                     selection: String(store.settings.sourceSearchTimeoutSeconds),
                     options: [45, 60, 90, 120].map {
@@ -101,67 +101,67 @@ struct PlaybackSettingsDetail: View {
                 ) { store.settings.sourceSearchTimeoutSeconds = Int($0) ?? 45 }
 
                 OrivioDropdown(
-                    title: "Minimum resolution",
-                    subtitle: "Hide links below this quality (links with no resolution tag are kept)",
+                    title: "Résolution minimale",
+                    subtitle: "Masquer les sources de qualité inférieure. Les sources sans résolution précisée restent affichées.",
                     icon: "arrow.up.right.video.fill",
                     selection: store.settings.streamMinResolution,
-                    options: [OrivioDropdownOption("", "No minimum")]
+                    options: [OrivioDropdownOption("", "Aucun minimum")]
                         + ["2160p", "1080p", "720p", "480p"].map { OrivioDropdownOption($0, $0) }
                 ) { store.settings.streamMinResolution = $0 }
 
                 PlaybackToggleRow(
                     icon: "cpu.fill",
-                    title: "Hide AV1 links",
-                    subtitle: "AV1 has no hardware decode on the Apple TV — those links stutter",
+                    title: "Masquer les sources AV1",
+                    subtitle: "Éviter les sources AV1 si elles manquent de fluidité sur votre Apple TV",
                     isOn: s.streamExcludeAV1
                 )
 
                 PlaybackToggleRow(
                     icon: "sparkles",
                     title: "HDR only",
-                    subtitle: "Only show HDR10 / HLG / Dolby Vision links",
+                    subtitle: "Afficher uniquement les sources HDR10, HLG ou Dolby Vision",
                     isOn: s.streamHDROnly
                 )
 
                 PlaybackToggleRow(
                     icon: "sparkles.tv.fill",
-                    title: "Dolby Vision only",
-                    subtitle: "Only show Dolby Vision links",
+                    title: "Dolby Vision uniquement",
+                    subtitle: "Afficher uniquement les sources Dolby Vision",
                     isOn: s.streamDolbyVisionOnly
                 )
 
                 PlaybackToggleRow(
                     icon: "bolt.fill",
-                    title: "Cached only",
-                    subtitle: "Only show debrid-cached links (instant play, no download wait)",
+                    title: "Disponibles immédiatement",
+                    subtitle: "Afficher uniquement les sources déjà disponibles chez votre service de débridage",
                     isOn: s.streamCachedOnly
                 )
             }
 
-            SettingsGroupCard(title: "Content", subtitle: "Advisories shown on the details page") {
+            SettingsGroupCard(title: "Contenu", subtitle: "Informations de contenu sur les fiches") {
                 PlaybackToggleRow(
                     icon: "exclamationmark.shield.fill",
-                    title: "Parental guide",
-                    subtitle: "Show IMDb content advisories (sex, violence, profanity, drugs, frightening) on the details page",
+                    title: "Guide parental",
+                    subtitle: "Afficher les avertissements IMDb concernant le contenu des films et séries",
                     isOn: s.parentalGuideEnabled
                 )
             }
 
             // Advanced-only cards (hidden in Essential experience mode).
             if theme.experienceMode.isAdvanced {
-            SettingsGroupCard(title: "Auto-play source", subtitle: "Skip the Sources page and start playing on its own") {
+            SettingsGroupCard(title: "Choix automatique de la source", subtitle: "Lancer la lecture sans passer par la liste des sources") {
                 PlaybackToggleRow(
                     icon: "play.circle.fill",
-                    title: "Auto-play best source",
-                    subtitle: "When you open a title, start the top-ranked link automatically instead of showing the source list",
+                    title: "Lire la meilleure source automatiquement",
+                    subtitle: "Lancer directement la source la mieux classée à l’ouverture d’un titre",
                     isOn: s.autoPlaySourceEnabled
                 )
 
                 if store.settings.autoPlaySourceEnabled {
                     PlaybackToggleRow(
                         icon: "bolt.fill",
-                        title: "Cached sources only",
-                        subtitle: "Only auto-play a debrid-cached / instant link — never wait on a torrent that has to resolve first",
+                        title: "Sources immédiatement disponibles",
+                        subtitle: "Lancer automatiquement seulement les sources disponibles immédiatement",
                         isOn: s.autoPlaySourceCachedOnly
                     )
 
@@ -171,12 +171,12 @@ struct PlaybackSettingsDetail: View {
                             .foregroundStyle(theme.palette.textSecondary)
                             .frame(width: 34)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Match (optional)")
+                            Text("Filtre de nom, facultatif")
                                 .font(.system(size: 24, weight: .semibold))
                                 .foregroundStyle(theme.palette.textPrimary)
                             TextField("e.g. 2160p|remux", text: s.autoPlaySourceRegex)
                                 .font(.system(size: 22))
-                            Text("Case-insensitive; the auto-played link's name must match. Blank = first in the list.")
+                            Text("Le nom de la source doit contenir ce texte. Laissez vide pour choisir la première source.")
                                 .font(.system(size: 18))
                                 .foregroundStyle(theme.palette.textTertiary)
                         }
@@ -185,15 +185,15 @@ struct PlaybackSettingsDetail: View {
 
                 PlaybackToggleRow(
                     icon: "arrow.clockwise.circle.fill",
-                    title: "Reuse last link",
-                    subtitle: "Replay the last source you played for a title without searching addons again, within the window below",
+                    title: "Réutiliser la dernière source",
+                    subtitle: "Reprendre la dernière source utilisée pour ce titre sans relancer la recherche",
                     isOn: s.reuseLastLinkEnabled
                 )
 
                 if store.settings.reuseLastLinkEnabled {
                     OrivioDropdown(
-                        title: "Reuse window",
-                        subtitle: "How long a remembered link stays valid before Orivio searches again",
+                        title: "Durée de conservation d’une source",
+                        subtitle: "Durée pendant laquelle une source peut être réutilisée",
                         icon: "clock.fill",
                         selection: String(store.settings.reuseLastLinkCacheHours),
                         options: PlayerSettings.reuseLastLinkHoursValues.map {
@@ -203,9 +203,9 @@ struct PlaybackSettingsDetail: View {
                 }
             }
 
-            SettingsGroupCard(title: "Player", subtitle: "Which engine opens streams") {
+            SettingsGroupCard(title: "Lecteur", subtitle: "Choisir le moteur de lecture") {
                 OrivioDropdown(
-                    title: "Playback engine",
+                    title: "Moteur de lecture",
                     subtitle: store.settings.playerEngine.footnote,
                     icon: "play.rectangle.on.rectangle.fill",
                     selection: store.settings.playerEngine.rawValue,
@@ -213,8 +213,8 @@ struct PlaybackSettingsDetail: View {
                 ) { store.settings.playerEngine = PlayerEngine(rawValue: $0) ?? .auto }
 
                 OrivioDropdown(
-                    title: "Playback mode",
-                    subtitle: "Automatic picks the best supported path. Maximum Fidelity never downgrades (native Dolby Vision, Profile 7 conversion always on, Atmos renderer when the route supports it) — heaviest on older boxes. Compatibility takes the most forgiving path for streams that misbehave.",
+                    title: "Mode de lecture",
+                    subtitle: "Automatique adapte la lecture. Fidélité maximale privilégie la qualité, avec un coût plus élevé sur les anciens appareils. Compatibilité privilégie la lecture des sources difficiles.",
                     icon: "dial.high.fill",
                     selection: store.settings.playbackMode.rawValue,
                     options: PlaybackMode.allCases.map { OrivioDropdownOption($0.rawValue, $0.label) }
@@ -222,29 +222,29 @@ struct PlaybackSettingsDetail: View {
 
                 PlaybackToggleRow(
                     icon: "sun.max.fill",
-                    title: "Brighten Profile 7 Dolby Vision",
-                    subtitle: "Convert Dolby Vision Profile 7 to 8.1 so the enhancement layer's brightness survives, instead of playing the dark HDR10 base layer. Costs CPU on older Apple TVs — turn off if a Profile 7 title stutters.",
+                    title: "Adapter le Dolby Vision profil 7",
+                    subtitle: "Convertir le profil 7 vers le profil 8.1 pour préserver la luminosité. Désactivez cette option si la lecture manque de fluidité.",
                     isOn: s.convertProfile7ForBrightness
                 )
 
                 PlaybackToggleRow(
                     icon: "speedometer",
-                    title: "Match frame rate (24p)",
-                    subtitle: "Switch the TV to the film's true rate (e.g. 24Hz), which removes 3:2 pulldown so 24p film plays with no repeated frames. OFF by default: this rate change is a heavier HDMI renegotiation than a range-only switch, and some TVs mis-handshake it into a grey screen (recovering flashes through several more mode changes). Turn ON only if your TV handles 24p switches cleanly.",
+                    title: "Adapter la fréquence d’images",
+                    subtitle: "Adapter la TV à la cadence du film, par exemple 24 Hz. Cette option peut provoquer un changement de mode HDMI ; activez-la si votre TV le gère correctement.",
                     isOn: s.matchFrameRate
                 )
 
                 PlaybackToggleRow(
                     icon: "waveform.badge.plus",
-                    title: "Dolby Atmos passthrough (experimental)",
-                    subtitle: "ON by default. For an E-AC-3 track the container tags as Dolby Atmos, re-mux the audio into a local HLS stream and play it with AVPlayer, so an HDMI receiver gets true Dolby Atmos instead of PCM. Engages only when the track declares Atmos and the route is HDMI; falls back automatically otherwise.",
+                    title: "Sortie Dolby Atmos, expérimentale",
+                    subtitle: "Transmettre le Dolby Atmos des pistes E-AC-3 compatibles à votre équipement HDMI. La lecture habituelle est utilisée dans les autres cas.",
                     isOn: s.atmosPassthrough
                 )
 
                 PlaybackToggleRow(
                     icon: "internaldrive.fill",
-                    title: "Hybrid disk cache",
-                    subtitle: "Download the film to the Apple TV's storage at full speed while playing, so seeking anywhere already-downloaded is instant — like Infuse. A film too big for the free space keeps a sliding window instead, filling in around wherever you have been. Direct-file streams only (HLS plays normally); the cache is deleted when playback ends.",
+                    title: "Cache vidéo sur le stockage",
+                    subtitle: "Télécharger la vidéo pendant la lecture pour accélérer les déplacements dans les parties déjà reçues. Le cache s’adapte à l’espace libre et est supprimé après lecture. Sources de fichiers directs uniquement.",
                     isOn: s.hybridDiskCacheEnabled
                 )
 
@@ -256,8 +256,8 @@ struct PlaybackSettingsDetail: View {
                     let installed = ExternalPlayers.installed
                     if !installed.isEmpty {
                         OrivioDropdown(
-                            title: "External player",
-                            subtitle: "Streams open in this app; playback, resume and history then live there",
+                            title: "Lecteur externe",
+                            subtitle: "Confier la lecture, la reprise et l’historique à une autre app",
                             icon: "arrow.up.forward.app.fill",
                             selection: store.settings.externalPlayerID,
                             options: installed.map { OrivioDropdownOption($0.id, $0.name) }
@@ -265,8 +265,8 @@ struct PlaybackSettingsDetail: View {
 
                         PlaybackToggleRow(
                             icon: "captions.bubble.fill",
-                            title: "Forward subtitles",
-                            subtitle: "Fetch a subtitle in your preferred language from your subtitle addons and pass it to the external player (Infuse / VLC / VidHub)",
+                            title: "Transmettre les sous-titres",
+                            subtitle: "Envoyer au lecteur externe les sous-titres de vos addons dans la langue choisie",
                             isOn: s.externalPlayerForwardSubtitles
                         )
 
@@ -276,8 +276,8 @@ struct PlaybackSettingsDetail: View {
                             ?? installed.first)?.supportsPlaylist == true {
                             PlaybackToggleRow(
                                 icon: "list.and.film",
-                                title: "Send the rest of the season",
-                                subtitle: "Hand the next few episodes over as a playlist so next-episode keeps working in the other app. Their links are resolved before the handoff, which adds a moment to starting a show; the episode you pressed play on always goes first.",
+                                title: "Transmettre les épisodes suivants",
+                                subtitle: "Préparer une liste d’épisodes pour le lecteur externe. Leur recherche peut retarder légèrement le démarrage.",
                                 isOn: s.externalPlayerSendPlaylist
                             )
                         }
@@ -285,35 +285,35 @@ struct PlaybackSettingsDetail: View {
                 }
 
                 OrivioDropdown(
-                    title: "Video scaling",
-                    subtitle: "Default zoom for the video. Cycle it live in the player with the aspect button.",
+                    title: "Taille de l’image",
+                    subtitle: "Format par défaut, également réglable pendant la lecture",
                     icon: "aspectratio.fill",
                     selection: store.settings.aspectModeRaw,
                     options: AspectMode.allCases.map { OrivioDropdownOption($0.rawValue, $0.label) }
                 ) { store.settings.aspectModeRaw = $0 }
             }
 
-            SettingsGroupCard(title: "On-screen display", subtitle: "Player overlays and status") {
+            SettingsGroupCard(title: "Affichage du lecteur", subtitle: "Commandes et informations de lecture") {
                 PlaybackToggleRow(
                     icon: "photo.fill",
-                    title: "Loading backdrop",
-                    subtitle: "Show the full-screen loading screen (artwork + spinner) while a stream opens",
+                    title: "Fond pendant le chargement",
+                    subtitle: "Afficher l’illustration et l’indicateur pendant l’ouverture d’une source",
                     isOn: s.loadingOverlayEnabled
                 )
                 if store.settings.loadingOverlayEnabled {
                     PlaybackToggleRow(
                         icon: "text.append",
-                        title: "Loading status",
-                        subtitle: "Show the “Loading / Caching %” text and cache bar on the loading screen",
+                        title: "État du chargement",
+                        subtitle: "Afficher la progression du chargement et du cache",
                         isOn: s.showPlayerLoadingStatus
                     )
                 }
             }
 
-            SettingsGroupCard(title: "Audio", subtitle: "Track selection and output") {
+            SettingsGroupCard(title: "Audio", subtitle: "Choix des pistes et sortie audio") {
                 OrivioDropdown(
-                    title: "Preferred language",
-                    subtitle: "Automatically pick a matching audio track when the stream has one",
+                    title: "Langue préférée",
+                    subtitle: "Choisir automatiquement une piste dans cette langue lorsqu’elle existe",
                     icon: "waveform",
                     selection: store.settings.preferredAudioLanguage,
                     options: PlayerSettings.audioLanguageOptions(
@@ -325,8 +325,8 @@ struct PlaybackSettingsDetail: View {
 
                 Button { showAudioLanguages = true } label: {
                     SettingsActionRow(
-                        title: "Audio languages",
-                        subtitle: "Choose which languages the picker lists",
+                        title: "Langues audio",
+                        subtitle: "Choisir les langues proposées dans la liste",
                         value: audioLanguagesSummary,
                         leadingIcon: "globe"
                     )
@@ -334,8 +334,8 @@ struct PlaybackSettingsDetail: View {
                 .buttonStyle(PlainCardButtonStyle())
 
                 OrivioDropdown(
-                    title: "Surround & Dolby Atmos",
-                    subtitle: "Auto uses the enhanced renderer (Atmos/spatial + lighter TrueHD/DTS-HD decode) only when your TV or receiver reports spatial-audio support. Takes effect on next playback.",
+                    title: "Son multicanal et Dolby Atmos",
+                    subtitle: "Adapter la sortie audio aux capacités de votre TV ou ampli. Le changement s’applique à la prochaine lecture.",
                     icon: "hifispeaker.2.fill",
                     selection: store.settings.audioOutputMode.rawValue,
                     options: AudioOutputMode.allCases.map { OrivioDropdownOption($0.rawValue, $0.label) }
@@ -343,25 +343,25 @@ struct PlaybackSettingsDetail: View {
             }
             } // end advanced-only cards
 
-            SettingsGroupCard(title: "Subtitles", subtitle: "How captions look and when they turn on") {
+            SettingsGroupCard(title: "Sous-titres", subtitle: "Style et activation des sous-titres") {
                 PlaybackToggleRow(
                     icon: "captions.bubble.fill",
-                    title: "Subtitles on by default",
-                    subtitle: "Automatically enable subtitles when a stream loads, picking your preferred language when it's available",
+                    title: "Activer les sous-titres par défaut",
+                    subtitle: "Activer les sous-titres dans votre langue préférée lorsqu’ils sont disponibles",
                     isOn: s.subtitlesOnByDefault
                 )
 
                 PlaybackToggleRow(
                     icon: "textformat.alt",
-                    title: "Full styled subtitles (ASS/SSA)",
-                    subtitle: "Render fancy anime/fansub subtitles — custom fonts, positioning, karaoke — properly. Titles that carry ASS/SSA subtitles play in the VLC engine (which includes libass and reads embedded fonts). You lose that title's scrub-thumbnail preview while it plays. Off = the built-in renderer (readable text, but drops fonts/effects).",
+                    title: "Styles complets des sous-titres ASS/SSA",
+                    subtitle: "Préserver les polices, positions et effets avec VLC. Les aperçus de déplacement ne sont alors pas disponibles. Désactivé : utiliser le rendu de texte simple.",
                     isOn: s.fullAssSubtitles
                 )
 
                 if store.settings.subtitlesOnByDefault {
                     OrivioDropdown(
-                        title: "Preferred language",
-                        subtitle: "Chosen automatically when the stream has a matching subtitle; otherwise the first available is used",
+                        title: "Langue préférée",
+                        subtitle: "Choisir cette langue lorsqu’elle existe, sinon la première piste disponible",
                         icon: "globe",
                         selection: store.settings.preferredSubtitleLanguage,
                         options: PlayerSettings.subtitleLanguageOptions(
@@ -372,8 +372,8 @@ struct PlaybackSettingsDetail: View {
                     ) { store.settings.preferredSubtitleLanguage = $0 }
 
                     OrivioDropdown(
-                        title: "Secondary language",
-                        subtitle: "Used when the preferred language isn't available",
+                        title: "Langue secondaire",
+                        subtitle: "Langue utilisée si la langue préférée est absente",
                         icon: "globe.badge.chevron.backward",
                         selection: store.settings.subtitleSecondaryLanguage,
                         options: PlayerSettings.subtitleLanguageOptions(
@@ -385,16 +385,16 @@ struct PlaybackSettingsDetail: View {
 
                     PlaybackToggleRow(
                         icon: "exclamationmark.bubble.fill",
-                        title: "Prefer forced subtitles",
-                        subtitle: "When a forced track (foreign dialogue only) exists in your language, choose it",
+                        title: "Privilégier les sous-titres forcés",
+                        subtitle: "Choisir les sous-titres des dialogues étrangers lorsqu’ils existent dans votre langue",
                         isOn: s.subtitlePreferForced
                     )
                 }
 
                 Button { showSubtitleLanguages = true } label: {
                     SettingsActionRow(
-                        title: "Subtitle languages",
-                        subtitle: "Turn on every language, or pick only the ones you want in the list",
+                        title: "Langues des sous-titres",
+                        subtitle: "Afficher toutes les langues ou sélectionner celles qui vous intéressent",
                         value: subtitleLanguagesSummary,
                         leadingIcon: "globe"
                     )
@@ -402,7 +402,7 @@ struct PlaybackSettingsDetail: View {
                 .buttonStyle(PlainCardButtonStyle())
 
                 OrivioDropdown(
-                    title: "Text size",
+                    title: "Taille du texte",
                     icon: "textformat.size",
                     selection: String(store.settings.subtitleSize),
                     options: PlayerSettings.subtitleSizeValues.map {
@@ -411,16 +411,16 @@ struct PlaybackSettingsDetail: View {
                 ) { store.settings.subtitleSize = Int($0) ?? 36 }
 
                 OrivioDropdown(
-                    title: "Font",
-                    subtitle: "Also adjustable live from the Subtitles panel during playback.",
+                    title: "Police",
+                    subtitle: "Également réglable pendant la lecture",
                     icon: "textformat",
                     selection: store.settings.subtitleFontName,
                     options: PlayerSettings.subtitleFontOptions.map { OrivioDropdownOption($0.0, $0.1) }
                 ) { store.settings.subtitleFontName = $0 }
 
                 OrivioDropdown(
-                    title: "Timing offset",
-                    subtitle: "Shift captions earlier (−) or later (+). Adjustable live from the Subtitles panel during playback.",
+                    title: "Décalage des sous-titres",
+                    subtitle: "Afficher les sous-titres plus tôt (−) ou plus tard (+)",
                     icon: "timer",
                     selection: String(store.settings.subtitleDelaySeconds),
                     options: PlayerSettings.subtitleDelayValues.map {
@@ -429,7 +429,7 @@ struct PlaybackSettingsDetail: View {
                 ) { store.settings.subtitleDelaySeconds = Double($0) ?? 0 }
 
                 OrivioDropdown(
-                    title: "Text color",
+                    title: "Couleur du texte",
                     icon: "paintpalette.fill",
                     selection: store.settings.subtitleTextColorHex,
                     options: PlayerSettings.subtitleColorOptions.map { OrivioDropdownOption($0.0, $0.1) }
@@ -437,46 +437,46 @@ struct PlaybackSettingsDetail: View {
 
                 PlaybackToggleRow(
                     icon: "bold",
-                    title: "Bold text",
-                    subtitle: "Heavier caption weight",
+                    title: "Texte en gras",
+                    subtitle: "Renforcer l’épaisseur du texte",
                     isOn: s.subtitleBold
                 )
 
                 PlaybackToggleRow(
                     icon: "a.square.fill",
-                    title: "Outline",
-                    subtitle: "Draw an outline around the text so it's readable on any background",
+                    title: "Contour",
+                    subtitle: "Améliorer la lisibilité sur tous les fonds",
                     isOn: s.subtitleOutlineEnabled
                 )
 
                 if store.settings.subtitleOutlineEnabled {
                     OrivioDropdown(
-                        title: "Outline color",
+                        title: "Couleur du contour",
                         icon: "scribble",
                         selection: store.settings.subtitleOutlineColorHex,
                         options: PlayerSettings.subtitleColorOptions.map { OrivioDropdownOption($0.0, $0.1) }
                     ) { store.settings.subtitleOutlineColorHex = $0 }
 
                     OrivioDropdown(
-                        title: "Outline thickness",
+                        title: "Épaisseur du contour",
                         icon: "lineweight",
                         selection: String(store.settings.subtitleOutlineWidth),
                         options: PlayerSettings.subtitleOutlineWidthValues.map {
-                            OrivioDropdownOption(String($0), $0 == 1 ? "Thin (1 pt)" : "\($0) pt")
+                            OrivioDropdownOption(String($0), $0 == 1 ? "Fin, 1 pt" : "\($0) pt")
                         }
                     ) { store.settings.subtitleOutlineWidth = Int($0) ?? 2 }
                 }
 
                 PlaybackToggleRow(
                     icon: "rectangle.fill.on.rectangle.fill",
-                    title: "Background plate",
-                    subtitle: "Panel behind captions for readability on bright scenes",
+                    title: "Fond des sous-titres",
+                    subtitle: "Améliorer la lisibilité dans les scènes claires",
                     isOn: s.subtitleBackground
                 )
 
                 if store.settings.subtitleBackground {
                     OrivioDropdown(
-                        title: "Background opacity",
+                        title: "Opacité du fond",
                         icon: "circle.lefthalf.filled",
                         selection: String(store.settings.subtitleBackgroundOpacity),
                         options: PlayerSettings.subtitleBackgroundOpacityValues.map {
@@ -486,24 +486,24 @@ struct PlaybackSettingsDetail: View {
                 }
 
                 OrivioDropdown(
-                    title: "Vertical position",
-                    subtitle: "Raise or lower the captions",
+                    title: "Position verticale",
+                    subtitle: "Monter ou descendre les sous-titres",
                     icon: "arrow.up.and.down.text.horizontal",
                     selection: String(store.settings.subtitleVerticalOffset),
                     options: PlayerSettings.subtitleOffsetValues.map {
-                        OrivioDropdownOption(String($0), $0 == 0 ? "Default" : ($0 > 0 ? "Higher +\($0)" : "Lower \($0)"))
+                        OrivioDropdownOption(String($0), $0 == 0 ? "Par défaut" : ($0 > 0 ? "Plus haut +\($0)" : "Plus bas \($0)"))
                     }
                 ) { store.settings.subtitleVerticalOffset = Int($0) ?? 0 }
             }
 
-            SettingsGroupCard(title: "Trailers", subtitle: "Preview a title's trailer while browsing") {
+            SettingsGroupCard(title: "Bandes-annonces", subtitle: "Aperçu des bandes-annonces pendant la navigation") {
                 OrivioDropdown(
-                    title: "Auto-play trailer",
-                    subtitle: "Play the trailer in the backdrop after sitting on a title",
+                    title: "Lire les bandes-annonces automatiquement",
+                    subtitle: "Lancer la bande-annonce après un moment sur un titre",
                     icon: "play.tv.fill",
                     selection: String(store.settings.autoPlayTrailerSeconds),
                     options: PlayerSettings.trailerDelayValues.map {
-                        OrivioDropdownOption(String($0), $0 == 0 ? "Off" : "After \($0)s")
+                        OrivioDropdownOption(String($0), $0 == 0 ? "Désactivé" : "Après \($0) s")
                     }
                 ) { store.settings.autoPlayTrailerSeconds = Int($0) ?? 0 }
             }
@@ -514,15 +514,15 @@ struct PlaybackSettingsDetail: View {
     private var autoPlayControls: some View {
         PlaybackToggleRow(
             icon: "forward.end.fill",
-            title: "Auto-play next episode",
-            subtitle: "Run a countdown on the Up Next card and start the next episode automatically. Off = the card still appears, but waits for you to press Play",
+            title: "Lire l’épisode suivant automatiquement",
+            subtitle: "Lancer l’épisode suivant après un compte à rebours. Désactivé : attendre votre validation.",
             isOn: s.autoPlayNextEpisode
         )
 
         // Shown regardless of auto-play — the Up Next card always appears.
         OrivioDropdown(
-            title: "Show Up Next",
-            subtitle: "When credits chapters exist the card appears as they start; otherwise this many seconds before the end",
+            title: "Afficher l’épisode suivant",
+            subtitle: "Afficher la proposition au générique, ou avant la fin selon ce délai",
             icon: "clock.fill",
             selection: String(store.settings.upNextLeadSeconds),
             options: PlayerSettings.upNextLeadValues.map {
@@ -533,14 +533,14 @@ struct PlaybackSettingsDetail: View {
         if store.settings.autoPlayNextEpisode {
             PlaybackToggleRow(
                 icon: "eye.fill",
-                title: "Still watching?",
-                subtitle: "Pause auto-play after several episodes to check you're still there",
+                title: "Vous regardez toujours ?",
+                subtitle: "Demander confirmation après plusieurs épisodes",
                 isOn: s.stillWatchingEnabled
             )
 
             if store.settings.stillWatchingEnabled {
                 OrivioDropdown(
-                    title: "Ask after",
+                    title: "Demander après",
                     icon: "repeat",
                     selection: String(store.settings.stillWatchingEpisodeThreshold),
                     options: (2...6).map { OrivioDropdownOption(String($0), "\($0) episodes") }
@@ -548,7 +548,7 @@ struct PlaybackSettingsDetail: View {
             }
 
             OrivioDropdown(
-                title: "Auto-play countdown",
+                title: "Compte à rebours",
                 icon: "timer",
                 selection: String(store.settings.autoPlayTimeoutSeconds),
                 options: PlayerSettings.timeoutValues.map { OrivioDropdownOption(String($0), timeoutLabel($0)) }
@@ -556,16 +556,16 @@ struct PlaybackSettingsDetail: View {
 
             PlaybackToggleRow(
                 icon: "square.stack.3d.up.fill",
-                title: "Prefer same source group",
-                subtitle: "Pick the next episode from the same release group when possible",
+                title: "Privilégier le même groupe de sources",
+                subtitle: "Choisir une source du même groupe pour l’épisode suivant",
                 isOn: s.preferBingeGroupForNextEpisode
             )
 
             if store.settings.preferBingeGroupForNextEpisode {
                 PlaybackToggleRow(
                     icon: "arrow.triangle.2.circlepath",
-                    title: "Reuse the same source",
-                    subtitle: "Keep the next episode on the same addon as well as the same group, so it's as close to the current source as possible",
+                    title: "Privilégier le même addon",
+                    subtitle: "Utiliser le même addon et le même groupe pour l’épisode suivant",
                     isOn: s.reuseBingeGroup
                 )
             }
@@ -574,10 +574,10 @@ struct PlaybackSettingsDetail: View {
 
     private var audioLanguagesSheet: some View {
         LanguageSelectionDetail(
-            title: "Audio languages",
-            subtitle: "Turn on every language, or pick only the ones you want the audio picker to list.",
-            allLabel: "All languages",
-            allHint: "List every language the platform knows. Off = only the ones you turn on below.",
+            title: "Langues audio",
+            subtitle: "Afficher toutes les langues audio ou sélectionner celles de votre choix",
+            allLabel: "Toutes les langues",
+            allHint: "Afficher toutes les langues. Désactivé : afficher seulement votre sélection.",
             all: s.allAudioLanguages,
             enabled: s.enabledAudioLanguages,
             options: Array(PlayerSettings.allAudioLanguageOptions.dropFirst())
@@ -589,10 +589,10 @@ struct PlaybackSettingsDetail: View {
 
     private var subtitleLanguagesSheet: some View {
         LanguageSelectionDetail(
-            title: "Subtitle languages",
-            subtitle: "Turn on every language, or pick only the ones you want the subtitle pickers to list.",
-            allLabel: "All languages",
-            allHint: "List every language the platform knows. Off = only the ones you turn on below.",
+            title: "Langues des sous-titres",
+            subtitle: "Afficher toutes les langues de sous-titres ou sélectionner celles de votre choix",
+            allLabel: "Toutes les langues",
+            allHint: "Afficher toutes les langues. Désactivé : afficher seulement votre sélection.",
             all: s.allSubtitleLanguages,
             enabled: s.enabledSubtitleLanguages,
             options: Array(PlayerSettings.allSubtitleLanguageOptions.dropFirst())
@@ -605,25 +605,25 @@ struct PlaybackSettingsDetail: View {
     /// "All languages" or "N selected" for the drill-in rows.
     private var audioLanguagesSummary: String {
         store.settings.allAudioLanguages
-            ? "All" : "\(store.settings.enabledAudioLanguages.count) selected"
+            ? "Tous" : "\(store.settings.enabledAudioLanguages.count) sélectionnées"
     }
     private var subtitleLanguagesSummary: String {
         store.settings.allSubtitleLanguages
-            ? "All" : "\(store.settings.enabledSubtitleLanguages.count) selected"
+            ? "Tous" : "\(store.settings.enabledSubtitleLanguages.count) sélectionnées"
     }
 
     private func sizeLabel(_ size: Int) -> String {
         switch size {
-        case ..<32: return "Small (\(size)pt)"
-        case ..<40: return "Standard (\(size)pt)"
-        case ..<50: return "Large (\(size)pt)"
-        default: return "Huge (\(size)pt)"
+        case ..<32: return "Petit (\(size) pt)"
+        case ..<40: return "Standard (\(size) pt)"
+        case ..<50: return "Grand (\(size) pt)"
+        default: return "Très grand (\(size) pt)"
         }
     }
 
     private func timeoutLabel(_ seconds: Int) -> String {
-        if seconds == 0 { return "Instant" }
-        if seconds == PlayerSettings.timeoutUnlimited { return "Wait for me" }
+        if seconds == 0 { return "Immédiat" }
+        if seconds == PlayerSettings.timeoutUnlimited { return "Attendre ma validation" }
         return "\(seconds)s"
     }
 
@@ -654,8 +654,8 @@ struct LanguageSelectionDetail: View {
             }
             if !all {
                 SettingsGroupCard(
-                    title: "Languages",
-                    subtitle: "On: listed in the picker. Off: hidden. You can switch All languages back on at any time."
+                    title: "Langues",
+                    subtitle: "Activer une langue pour la proposer dans les listes. Vous pouvez réactiver toutes les langues à tout moment."
                 ) {
                     ForEach(options, id: \.0) { code, name in
                         PlaybackToggleRow(icon: "character.bubble", title: name,

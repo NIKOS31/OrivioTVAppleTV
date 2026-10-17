@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
 
 struct HomeRow: Identifiable {
@@ -46,33 +47,54 @@ enum HomeEntry: Identifiable {
 /// Persists the last-rendered Home catalog rows (their items) to disk, keyed by
 /// catalog key, so the screen paints instantly on a cold start and then
 /// refreshes in the background (stale-while-revalidate).
+enum NTVHomeSources {
+    /// Provider selection only, not a security/trust decision. XPERIENCE's
+    /// configured manifests use a different suffix for each configuration.
+    static func recommendations(from addons: [InstalledAddon]) -> [InstalledAddon] {
+        addons.filter {
+            let id = $0.manifest.id.lowercased()
+            return $0.enabled && $0.manifest.providesCatalogs
+                && (id == "app.xperience" || id.hasPrefix("app.xperience."))
+        }
+    }
+}
+
 enum HomeCatalogCache {
+    private static let writes = DispatchQueue(label: "ntv.home.catalog-cache", qos: .utility)
     private static let fileURL: URL = {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return caches.appendingPathComponent("orivio-home-catalogs.json")
     }()
 
-    static func load() -> [String: [MetaItem]] {
-        guard let data = try? Data(contentsOf: fileURL),
+    static func load(from url: URL? = nil) -> [String: [MetaItem]] {
+        guard let data = try? Data(contentsOf: url ?? fileURL),
               let decoded = try? JSONDecoder().decode([String: [MetaItem]].self, from: data) else { return [:] }
         return decoded
     }
 
-    static func save(_ rows: [String: [MetaItem]]) {
+    static func save(_ rows: [String: [MetaItem]], to url: URL? = nil) {
         // Encode + write OFF the main thread. This is called from the @MainActor
         // Home load right after a refresh; encoding ~15 rows × 30 MetaItems and
         // writing the file synchronously there is a visible hitch on the A8 the
         // moment Home finishes loading. It's fire-and-forget persistence, so a
         // utility-queue hop costs the UI nothing.
-        DispatchQueue.global(qos: .utility).async {
+        let destination = url ?? fileURL
+        writes.async {
             guard let data = try? JSONEncoder().encode(rows) else { return }
-            try? data.write(to: fileURL, options: .atomic)
+            try? data.write(to: destination, options: .atomic)
+        }
+    }
+
+    static func waitForPendingWrites() async {
+        await withCheckedContinuation { continuation in
+            writes.async { continuation.resume() }
         }
     }
 }
 
 @MainActor
 final class HomeViewModel: ObservableObject {
+    private var recommendationIdentity: String?
     @Published var entries: [HomeEntry] = [] {
         didSet { rebuildItemIndex() }
     }
@@ -123,7 +145,12 @@ final class HomeViewModel: ObservableObject {
 
     static func heroCatalogRow(_ entries: [HomeEntry], heroKey: String) -> HomeRow? {
         let catalogs = entries.compactMap { entry -> HomeRow? in
-            if case .catalog(let row) = entry { return row }
+            if case .catalog(let row) = entry {
+                let profile = ProfileScopedDefaults.activeProfileID
+                let items = row.items.filter { !NTVAnimeLibrary.shared.contains($0, profile: profile) }
+                guard !items.isEmpty else { return nil }
+                return HomeRow(id: row.id, title: row.title, items: items, addon: row.addon, catalog: row.catalog)
+            }
             return nil
         }
         if !heroKey.isEmpty, let chosen = catalogs.first(where: { $0.catalogKey == heroKey }) {
@@ -204,7 +231,7 @@ final class HomeViewModel: ObservableObject {
     func continueItems(
         progress store: ProgressStore, sortMode: ContinueWatchingSortMode
     ) -> [WatchProgress] {
-        store.continueWatching(sortMode: sortMode).map(withCatalogArt)
+        store.continueWatching(sortMode: sortMode).filter { !NTVAnimeLibrary.shared.contains(metaFor($0)) }.map(withCatalogArt)
     }
 
     /// Collections that share ONE combined "Collections" row (viewMode other
@@ -230,16 +257,37 @@ final class HomeViewModel: ObservableObject {
         addonManager: AddonManager,
         collections: CollectionsStore,
         settings: HomeCatalogSettingsStore,
-        providers: CollectionProviders
+        providers: CollectionProviders,
+        xperienceOnly: Bool = false
     ) async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ntvRowLayoutFixture") {
+            if entries.isEmpty {
+                let rows = (0..<6).map { row in
+                    HomeRow(id: "fixture.row.\(row)", title: "Rangée \(row + 1)",
+                        items: (0..<24).map { column in
+                            MetaItem(id: "fixture.row.\(row).item.\(column)", type: "movie",
+                                name: column.isMultiple(of: 2) ? "Titre court" : "Un titre volontairement plus long",
+                                description: column.isMultiple(of: 2) ? nil : "Une description sur plusieurs lignes pour contrôler la stabilité du bandeau pendant la navigation entre les rangées.",
+                                releaseInfo: column.isMultiple(of: 3) ? nil : "2026",
+                                genres: column.isMultiple(of: 3) ? nil : ["Adventure", "Science Fiction"])
+                        })
+                }
+                entries = rows.map(HomeEntry.catalog)
+                initialHero = rows.first?.items.first
+            }
+            isLoading = false; return
+        }
+        #endif
         // Fingerprint includes catalog counts (so rows refresh when the live
         // manifests replace the bundled seed) plus the layout customization
         // state and collection list, so edits re-render immediately. viewMode +
         // pinToTop are included so changing a collection's Home layout or its
         // pin re-renders without a relaunch.
-        var fingerprint = addonManager.catalogAddons.map {
+        var fingerprint = recommendationAddons(addonManager, xperienceOnly: xperienceOnly).map {
             "\($0.id)#\(($0.manifest.catalogs ?? []).count)"
         }
+        fingerprint.append("xperienceOnly=\(xperienceOnly)/profile=\(addonManager.profileID)")
         fingerprint.append(settings.orderKeys.joined(separator: ","))
         fingerprint.append(settings.disabledKeys.sorted().joined(separator: ","))
         fingerprint.append(settings.customTitles.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ","))
@@ -267,7 +315,24 @@ final class HomeViewModel: ObservableObject {
         guard entries.isEmpty || fingerprint != loadedFingerprint else { return }
         loadedFingerprint = fingerprint
         await load(addonManager: addonManager, collections: collections,
-                   settings: settings, providers: providers)
+                   settings: settings, providers: providers, xperienceOnly: xperienceOnly)
+    }
+
+    private func recommendationAddons(_ manager: AddonManager, xperienceOnly: Bool) -> [InstalledAddon] {
+        var addons = manager.catalogAddons
+        #if DEBUG
+        // Explicit native-UI fixture: public metadata, no private addon URL,
+        // no installation or persistence, and never enabled in Release.
+        if xperienceOnly, ProcessInfo.processInfo.arguments.contains("-ntvXperienceHomeFixture"),
+           let source = addons.first(where: { $0.manifestURL == AddonManager.cinemetaURL }) {
+            let m = source.manifest
+            let manifest = AddonManifest(id: "app.xperience.ui-fixture", name: "XPERIENCE · fixture",
+                version: m.version, description: m.description, logo: m.logo, types: m.types,
+                idPrefixes: m.idPrefixes, catalogs: m.catalogs, resources: m.resources)
+            addons.append(InstalledAddon(manifestURL: source.manifestURL, manifest: manifest))
+        }
+        #endif
+        return xperienceOnly ? NTVHomeSources.recommendations(from: addons) : addons
     }
 
     func load(
@@ -278,13 +343,14 @@ final class HomeViewModel: ObservableObject {
         /// connected — a collection opened with nothing connected explains
         /// inside (per folder) that TMDB or Trakt needs setting up. Hiding
         /// them here just made the feature look broken with no pointer to why.
-        providers: CollectionProviders
+        providers: CollectionProviders,
+        xperienceOnly: Bool = false
     ) async {
         loadGeneration &+= 1
         let generation = loadGeneration
         /// False once a newer load has started; a superseded run stops
         /// publishing instead of overwriting the newer one's rows.
-        func isCurrent() -> Bool { loadGeneration == generation }
+        func isCurrent() -> Bool { loadGeneration == generation && !Task.isCancelled }
 
         isLoading = entries.isEmpty
         loadError = nil
@@ -301,6 +367,16 @@ final class HomeViewModel: ObservableObject {
         }
         heroCatalogKey = resolvedHeroKey
 
+        let activeCatalogAddons = recommendationAddons(addonManager, xperienceOnly: xperienceOnly)
+        let identity = "\(xperienceOnly)/\(addonManager.profileID)/" + activeCatalogAddons.map(\.id).joined(separator: "|")
+        if recommendationIdentity != identity {
+            recommendationIdentity = identity
+            entries = []
+            initialHero = nil
+            heroSourceRevision &+= 1
+            isLoading = true
+        }
+
         // Assemble the available rows keyed the same way the sync payload is,
         // then let the layout settings decide order and visibility.
         var catalogByKey: [String: (addon: InstalledAddon, catalog: ManifestCatalog)] = [:]
@@ -313,8 +389,8 @@ final class HomeViewModel: ObservableObject {
         // rescue them because the cut was taken in MANIFEST order, before the
         // user's order was merged in. `maxHomeRows` below is the real ceiling,
         // and it cuts in the user's own order.
-        for addon in addonManager.catalogAddons {
-            for catalog in (addon.manifest.catalogs ?? []) where !catalog.requiresExtra {
+        for addon in activeCatalogAddons {
+            for catalog in (addon.manifest.catalogs ?? []) where catalog.appearsOnHome && !NTVAnimeDomain.contains(catalog) {
                 let key = HomeCatalogSettingsStore.catalogKey(
                     addonID: addon.manifest.id, type: catalog.type, catalogID: catalog.id
                 )
@@ -430,10 +506,11 @@ final class HomeViewModel: ObservableObject {
                     // shipped could still hold duplicate ids. Unreleased items
                     // are dropped here too — the cache may predate the setting
                     // (or the title's release date may have passed since).
-                    var staleItems = items.deduplicatedByID()
+                    var staleItems = items.deduplicatedByID().filter { !NTVAnimeLibrary.shared.contains($0) }
                     if settings.hideUnreleasedContent {
                         staleItems = staleItems.filter { !$0.isUnreleased }
                     }
+                    staleItems = Array(staleItems.prefix(30))
                     guard !staleItems.isEmpty else { continue }
                     let staleRow = HomeEntry.catalog(HomeRow(
                         id: Self.rowID(request),
@@ -466,7 +543,7 @@ final class HomeViewModel: ObservableObject {
         if isLoading {
             // No artificial pause — go straight to fetching so the first-run
             // load is as fast as the network allows.
-            loadingStep = "Loading catalogs…"
+            loadingStep = "Chargement des catalogues…"
         }
 
         // REVALIDATE: fetch the catalogs, a bounded number at a time.
@@ -507,7 +584,9 @@ final class HomeViewModel: ObservableObject {
             // Read once here, not inside the task: `settings` is main-actor state.
             let hideUnreleased = settings.hideUnreleasedContent
             func startNext() {
-                guard next < pending.count else { return }
+                // Generation is checked on the main actor before replenishing
+                // this window. The local scheduler needs only cancellation.
+                guard next < pending.count, !Task.isCancelled else { return }
                 let (index, key, title, rowID, request) = pending[next]
                 next += 1
                 group.addTask {
@@ -530,6 +609,7 @@ final class HomeViewModel: ObservableObject {
                     // "Hide unreleased content" (Settings → Layout). Filtered
                     // BEFORE the 30-item trim so a row full of upcoming titles
                     // still fills up with things you can actually watch.
+                    items = items.filter { !NTVAnimeDomain.contains($0) }
                     if hideUnreleased { items = items.filter { !$0.isUnreleased } }
                     guard !items.isEmpty else {
                         NSLog("[OrivioHome] row dropped — %@: %@ (%@)",
@@ -587,7 +667,7 @@ final class HomeViewModel: ObservableObject {
         // republishing this run's (older) row list over it.
         guard isCurrent() else { return }
 
-        if isLoading { loadingStep = "Loading artwork…" }
+        if isLoading { loadingStep = "Chargement des illustrations…" }
 
         let ordered = fetched.sorted { $0.index < $1.index }
         // Per-row fallback, so one dead catalog can't blank its row and an
@@ -616,7 +696,7 @@ final class HomeViewModel: ObservableObject {
         // cached ones, and an already-cached URL costs a `fileExists` here.
         warmSpotlightArt()
         if entries.isEmpty {
-            loadError = "No catalogs available. Check your addons and network connection."
+            loadError = "Aucun catalogue disponible. Vérifiez vos addons et votre connexion."
         }
         isLoading = false
         loadingStep = nil
@@ -646,8 +726,8 @@ final class HomeViewModel: ObservableObject {
         // APK row header format: "{Catalog Name} - {Type}" (e.g. "Trending Movies - Movie").
         let typeLabel: String
         switch request.catalog.type {
-        case "series", "tv": typeLabel = "Series"
-        case "movie": typeLabel = "Movie"
+        case "series", "tv": typeLabel = "Séries"
+        case "movie": typeLabel = "Film"
         default: typeLabel = request.catalog.type.capitalized
         }
         let baseName = request.catalog.name ?? request.catalog.id.capitalized
@@ -993,7 +1073,7 @@ final class HeroFocus: ObservableObject {
         // cutting the first title short — on the pinned billboard, right
         // after its trailer had finally started.
         lastRotation = Date()
-        if item == nil, let first = items.first { item = first }
+        if item == nil || item.map({ NTVAnimeLibrary.shared.contains($0) }) == true { item = items.first }
     }
 
     /// Record a user interaction so the timer holds off for a beat.
@@ -1044,6 +1124,7 @@ final class HeroFocus: ObservableObject {
     /// passed the guard (item still X) without cancelling the pending Y, so Y
     /// landed while focus sat on X — the "wrong hero" flash.
     private var pendingID: String?
+    private var focusSettle = NTVFocusSettlePolicy()
     private var enriched: [String: MetaItem] = [:]
     /// Insertion order for `enriched`, so the cache can be capped. Each entry
     /// can be a full series (hundreds of episodes); unbounded, a long browse
@@ -1090,8 +1171,9 @@ final class HeroFocus: ObservableObject {
         }
         task?.cancel()
         pendingID = newItem.id
+        let settle = focusSettle.delay(at: ProcessInfo.processInfo.systemUptime, minimumNanoseconds: settleNanos)
         task = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: settleNanos)   // let focus settle
+            try? await Task.sleep(nanoseconds: settle)   // let focus settle
             guard !Task.isCancelled else { return }
             let display = enriched[newItem.id] ?? newItem
             let fade = PerformanceSettingsStore.shared.heroCrossfadeEffective
@@ -1165,6 +1247,12 @@ struct HomeView: View {
     var onOpenSettings: () -> Void = {}
 
     private var usesNTVLayout: Bool { theme.palette.id == NTVDesign.palette.id }
+    private var activeXperienceIsMissing: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ntvXperienceHomeFixture") { return false }
+        #endif
+        return NTVHomeSources.recommendations(from: addonManager.catalogAddons).isEmpty
+    }
 
     private var layout: HomeLayout { homeCatalogSettings.homeLayout }
 
@@ -1296,9 +1384,16 @@ struct HomeView: View {
 
     var body: some View {
         layoutContent
+        .overlay(alignment: .bottom) {
+            if usesNTVLayout {
+                NTVResumePrompt(onResume: onResume, includes: {
+                    !NTVAnimeLibrary.shared.contains(viewModel.metaFor($0))
+                })
+            }
+        }
         .onAppear {
             isVisible = true
-            hero.layout = homeCatalogSettings.heroLayout
+            hero.layout = usesNTVLayout ? .pinnedFocus : homeCatalogSettings.heroLayout
             hero.onBrowseStateChange = { browsing in
                 AppProbe.focus("home handoff browsedIntoContent=\(browsing)")
                 // DEFERRED BY ONE TURN, and that is the whole fix for "the
@@ -1336,7 +1431,7 @@ struct HomeView: View {
         // on the roll instead of inheriting a browse that already happened.
         .onChange(of: homeCatalogSettings.heroLayout) { _, mode in
             AppProbe.focus("home heroLayout=\(mode)")
-            hero.layout = mode
+            hero.layout = usesNTVLayout ? .pinnedFocus : mode
             hero.resetBrowseHandoff()
         }
         // HYBRID, going back UP. The pinned hero's return strip binds the same
@@ -1416,7 +1511,8 @@ struct HomeView: View {
                     addonManager: addonManager,
                     collections: collections,
                     settings: homeCatalogSettings,
-                    providers: collectionProviders
+                    providers: collectionProviders,
+                    xperienceOnly: usesNTVLayout
                 )
             }
         }
@@ -1426,6 +1522,7 @@ struct HomeView: View {
         // decoding, then profile scoping republishes four settings at once — so
         // a cold start ran the whole catalog sweep two to four times over.
         .onChange(of: addonManager.addons) { _, _ in scheduleReload() }
+        .onChange(of: usesNTVLayout) { _, _ in scheduleReload() }
         .onChange(of: collections.collections) { _, _ in scheduleReload() }
         // Collection rows render regardless, but a provider change still
         // reloads Home so anything downstream of the connections is fresh.
@@ -1452,7 +1549,14 @@ struct HomeView: View {
             }
         }
         // Paint the hero from the cached rows without waiting for the network.
-        .onChange(of: viewModel.initialHero) { _, item in seedHero(item) }
+        .onChange(of: viewModel.initialHero) { _, item in
+            if item == nil, usesNTVLayout {
+                hero.item = nil
+                didSeedHeroFocus = false
+            } else {
+                seedHero(item)
+            }
+        }
         // Hero source changed: arm one forced reseed for the recomputed hero.
         .onChange(of: viewModel.heroSourceRevision) { _, _ in forceHeroReseed = true }
     }
@@ -1569,37 +1673,42 @@ struct HomeView: View {
     /// remain owned by HomeView and its persistent model.
     private var ntvLayout: some View {
         ZStack {
-            ATVBackground()
+            NTVFocusBackdrop(hero: hero, identifier: "ntv.home.backdrop")
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 32) {
                     Text("Accueil")
                         .font(.system(size: 38, weight: .semibold))
                         .foregroundStyle(NTVDesign.textPrimary)
                         .accessibilityIdentifier("ntv.home.heading")
+                        .ntvHalloweenDecor(.heading)
+                        .padding(.horizontal, NTVViewport.horizontalInset)
                     if perf.settings.heroBackdrop {
                         NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
                                          onSelect: heroSelect, onBack: onHomeBack)
+                            .padding(.horizontal, NTVViewport.horizontalInset)
                             .focusSection()
                     }
                     if viewModel.entries.isEmpty && !viewModel.isLoading {
                         let continued = mergedContinueItems()
                         if !continued.isEmpty { continueRow(continued) }
                         NTVEmptyCatalog(
-                            message: viewModel.loadError ?? "Vos catalogues apparaîtront ici dès qu’un addon sera disponible.",
+                            message: activeXperienceIsMissing ? "Ajoutez XPERIENCE pour afficher vos recommandations."
+                                : viewModel.loadError ?? "Vos recommandations apparaîtront ici dès qu’elles seront disponibles.",
                             onOpenSettings: onOpenSettings,
                             onRetry: { Task { await reload() } }
                         )
+                        .accessibilityIdentifier("ntv.home.empty")
+                        .padding(.horizontal, NTVViewport.horizontalInset)
                     } else {
                         rowsContent
                     }
                 }
-                .modifier(RailClearingLeading(withRail: 120, withoutRail: OrivioSpacing.huge))
-                .padding(.trailing, OrivioSpacing.huge)
+                .modifier(RailClearingLeading(withRail: 120, withoutRail: 0))
                 .padding(.top, OrivioSpacing.lg)
                 .padding(.bottom, 120)
             }
-            .scrollClipDisabled()
         }
+        .ignoresSafeArea(edges: .horizontal)
     }
 
     private var fusionModernLayout: some View {
@@ -1738,7 +1847,8 @@ struct HomeView: View {
             addonManager: addonManager,
             collections: collections,
             settings: homeCatalogSettings,
-            providers: collectionProviders
+            providers: collectionProviders,
+            xperienceOnly: usesNTVLayout
         )
         done("\(viewModel.entries.count) rows")
         // Usually already done from the cache above; this covers a cold launch
@@ -1758,7 +1868,7 @@ struct HomeView: View {
                 .frame(height: 460)
         } else if let error = viewModel.loadError, viewModel.entries.isEmpty {
             VStack(spacing: OrivioSpacing.lg) {
-                OrivioEmptyState(icon: "antenna.radiowaves.left.and.right.slash", title: "Nothing to show", message: error)
+                OrivioEmptyState(icon: "antenna.radiowaves.left.and.right.slash", title: "Aucun contenu à afficher", message: error)
                 Button {
                     Task { await reload() }
                 } label: {
@@ -1856,7 +1966,7 @@ struct HomeView: View {
         let pinned = liveFavorites.homeChannels
         if !pinned.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-                RowHeader(title: "Live Channels")
+                RowHeader(title: "Chaînes en direct")
                     .padding(.leading, OrivioSpacing.sm)
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
@@ -2007,12 +2117,21 @@ struct HomeView: View {
     }
 
     private func mergedContinueItems() -> [WatchProgress] {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ntvNewEpisodeFixture") {
+            return [WatchProgress(id: "fixture.new:1:2", metaID: "fixture.new", type: "series",
+                name: "Série de validation", poster: nil, background: nil, logo: nil,
+                season: 1, episode: 2, episodeTitle: "Le prochain épisode",
+                positionSeconds: 0, durationSeconds: 1, streamURL: nil,
+                updatedAt: Date(timeIntervalSince1970: 1_700_000_000), newEpisodeCount: 1)]
+        }
+        #endif
         let sortMode = homeCatalogSettings.continueWatchingSortMode
         // By stamp, not by show: a row saved AFTER the judgement (the viewer
         // went back to that episode) is shown at once, without waiting for the
         // refresh to re-judge it.
         let active = progressStore.continueWatching(sortMode: sortMode)
-            .filter { !supersededContinueRows.contains(Self.continueRowStamp($0)) }
+            .filter { !supersededContinueRows.contains(Self.continueRowStamp($0)) && !NTVAnimeLibrary.shared.contains(viewModel.metaFor($0)) }
         let activeMetaIDs = Set(active.map(\.metaID))
         // Also filtered here, not only in the async refresh: `removeShow` on a
         // synthesised card has no progress rows to delete, so the card would sit
@@ -2020,6 +2139,7 @@ struct HomeView: View {
         // sequential metadata fetches first.
         let additions = nextUpContinueItems.filter {
             !activeMetaIDs.contains($0.metaID)
+                && !NTVAnimeLibrary.shared.contains(viewModel.metaFor($0))
                 && !progressStore.dismissedNextUpShows.contains($0.metaID)
                 && !trakt.droppedShowIDs.contains($0.metaID)
         }
@@ -2378,6 +2498,7 @@ struct HomeView: View {
     private func catalogHeader(_ row: HomeRow) -> some View {
         HStack(alignment: .firstTextBaseline) {
             RowHeader(title: row.title)
+                .ntvHalloweenDecor(.row)
             if let addon = row.addon, let catalog = row.catalog {
                 Spacer()
                 Button {
@@ -2491,9 +2612,10 @@ struct HomeView: View {
 /// only this row (not all of Home) and the row can implement Back navigation:
 /// Back while scrolled into the row jumps to the first card; Back on the first
 /// card bubbles up (`onBackAtStart`) to open the sidebar / focus the tab bar.
-private struct HomePosterRow: View {
+struct HomePosterRow: View {
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var homeCatalogSettings: HomeCatalogSettingsStore
+    @State private var unavailableUntil: [String: Date] = [:]
     let row: HomeRow
     let useLandscape: Bool
     let hero: HeroFocus
@@ -2502,15 +2624,49 @@ private struct HomePosterRow: View {
     let onSeeAll: (InstalledAddon, ManifestCatalog, String) -> Void
     let onBackAtStart: () -> Void
 
+    var accessibilityPrefix = "ntv.home.poster"
+    var restoreItemID: String? = nil
+    var onVerticalMove: ((MoveCommandDirection) -> Void)? = nil
+    var focusFirstRequestID: UUID? = nil
+    var onLeftAtStart: (() -> Void)? = nil
+    var onFirstVisibleChange: ((String?) -> Void)? = nil
+    var focusFirstScroll = true
+
     @FocusState private var focusedID: String?
+    @FocusState private var emptyRowFocused: Bool
+    @FocusState private var seeAllFocused: Bool
+
+    private var displayedItems: [MetaItem] {
+        let profile = ProfileScopedDefaults.activeProfileID
+        return row.items.filter {
+            !NTVAnimeLibrary.shared.contains($0, profile: profile) &&
+            (!homeCatalogSettings.hideUnreleasedContent || !$0.isUnreleased) &&
+            (!homeCatalogSettings.hideUnavailableSources || (unavailableUntil[$0.id] ?? .distantPast) <= Date() || $0.id == focusedID)
+        }
+    }
 
     var body: some View {
+        let visible = displayedItems
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
             header
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
-                        ForEach(row.items) { item in
+                        if visible.isEmpty, let onLeftAtStart {
+                            VStack(alignment: .leading, spacing: 18) {
+                                Text("Aucun titre correspondant aux filtres.")
+                                    .font(.system(size: 29))
+                                    .foregroundStyle(theme.palette.textSecondary)
+                                Button(action: onLeftAtStart) {
+                                    Label("Catégories", systemImage: "line.3.horizontal.decrease")
+                                }
+                                .buttonStyle(NTVActionButtonStyle())
+                                .focused($emptyRowFocused)
+                                .accessibilityIdentifier("ntv.catalog.filteredEmpty.\(row.id)")
+                            }
+                            .frame(minHeight: homeCatalogSettings.posterSize.posterWidth * 1.5, alignment: .topLeading)
+                        }
+                        ForEach(visible) { item in
                             // Equatable cell: a focus step writes the row's
                             // @FocusState, which re-runs THIS row body — with
                             // plain cells every materialized card re-built its
@@ -2526,9 +2682,11 @@ private struct HomePosterRow: View {
                                 useLandscape: useLandscape,
                                 captionWidth: useLandscape ? 340 : homeCatalogSettings.posterSize.posterWidth,
                                 showLabel: homeCatalogSettings.showPosterLabels,
+                                cornerRadius: CGFloat(homeCatalogSettings.posterCornerRadius),
                                 hero: hero,
                                 onSelect: onSelect,
-                                onPlayManually: onPlayManually
+                                onPlayManually: onPlayManually,
+                                accessibilityPrefix: accessibilityPrefix
                             )
                             .equatable()
                             .focused($focusedID, equals: item.id)
@@ -2536,7 +2694,8 @@ private struct HomePosterRow: View {
                             .id(item.id)
                         }
                     }
-                    .padding(.horizontal, OrivioSpacing.huge)
+                    .padding(.horizontal, theme.palette.id == NTVDesign.palette.id
+                             ? NTVViewport.horizontalInset : OrivioSpacing.huge)
                     .padding(.vertical, OrivioSpacing.lg)
                 }
                 .scrollClipDisabled()
@@ -2547,6 +2706,28 @@ private struct HomePosterRow: View {
                 // Back: jump to the first card if scrolled in; on the first
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
+                .modifier(CatalogRowMovementObserver(
+                    enabled: onVerticalMove != nil, rowID: row.id))
+                .onReceive(NotificationCenter.default.publisher(
+                    for: UIFocusSystem.movementDidFailNotification)) { note in
+                    // A move command also fires when UIKit successfully moves
+                    // second -> first. Only a failed LEFT is the extra press
+                    // at the boundary, after the first poster already has focus.
+                    guard focusedID != nil || emptyRowFocused,
+                          let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                            as? UIFocusUpdateContext else { return }
+                    if context.focusHeading == .left,
+                       emptyRowFocused || focusedID == displayedItems.first?.id {
+                        onLeftAtStart?()
+                    } else if context.focusHeading == .up {
+                        onVerticalMove?(.up)
+                    } else if context.focusHeading == .down {
+                        onVerticalMove?(.down)
+                    }
+                    // A successful native vertical move has already scrolled
+                    // and chosen its destination. Never run a second scrollTo
+                    // for that same press; only bridge an actual failed move.
+                }
                 // Coming back out of the rail lands on THIS row's first card
                 // when this was the row the viewer left (ContentFocusRouter).
                 // Re-registered whenever the first card CHANGES, not just on
@@ -2554,24 +2735,92 @@ private struct HomePosterRow: View {
                 // replaced in place by refreshes and sync pulls — a stale
                 // handler scrolled to a card that no longer exists and its
                 // focus write was silently dropped.
-                .onAppear { registerRowHandler(proxy) }
-                .onChange(of: row.items.first?.id) { _, _ in registerRowHandler(proxy) }
-                .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
-                .onChange(of: focusedID) { _, new in
-                    if new != nil { ContentFocusRouter.shared.noteFocused(row: row.id) }
+                .onAppear { registerRowHandler(proxy); onFirstVisibleChange?(displayedItems.first?.id) }
+                .onChange(of: visible.first?.id) { _, first in
+                    registerRowHandler(proxy); onFirstVisibleChange?(first)
                 }
+                .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
+                .onChange(of: focusedID) { old, new in
+                    guard let new else { return }
+                    let enteredRow = onVerticalMove != nil && ContentFocusRouter.startsCatalogRow(
+                        previousItem: old, previousRow: ContentFocusRouter.shared.lastRowID,
+                        currentRow: row.id, restorationItem: restoreItemID)
+                    ContentFocusRouter.shared.noteFocused(row: row.id)
+                    guard enteredRow, let first = displayedItems.first?.id, first != new else { return }
+                    // Normalize in this update, rather than scheduling an
+                    // unowned next-turn jump that can outlive a quick Up/Down.
+                    // The router owns/cancels retries while lazy cards mount.
+                    ContentFocusRouter.shared.land(in: row.id, assign: {
+                        proxy.scrollTo(first, anchor: .leading)
+                        focusedID = first
+                    }, landed: { focusedID == first }, focusToken: { focusedID })
+                }
+                .onChange(of: emptyRowFocused) { _, focused in
+                    if focused { ContentFocusRouter.shared.noteFocused(row: row.id) }
+                }
+                .onChange(of: seeAllFocused) { _, focused in
+                    guard focused else { return }
+                    let enteredRow = onVerticalMove != nil && ContentFocusRouter.startsCatalogRow(
+                        previousItem: nil, previousRow: ContentFocusRouter.shared.lastRowID,
+                        currentRow: row.id, restorationItem: restoreItemID)
+                    ContentFocusRouter.shared.noteFocused(row: row.id)
+                    guard enteredRow, let first = displayedItems.first?.id else { return }
+                    // At a far-right column UIKit can enter the NEXT shelf via
+                    // its See All header, before any poster receives focus.
+                    // Treat that as a row entry too; otherwise poster-only
+                    // normalization never runs and Down strands focus here.
+                    ContentFocusRouter.shared.land(in: row.id, assign: {
+                        proxy.scrollTo(first, anchor: .leading)
+                        focusedID = first
+                    }, landed: { focusedID == first }, focusToken: { focusedID })
+                }
+                .task(id: focusFirstRequestID) {
+                    guard focusFirstRequestID != nil else { return }
+                    guard let first = displayedItems.first?.id else {
+                        if onLeftAtStart != nil { emptyRowFocused = true }
+                        return
+                    }
+                    // This task belongs to ONE catalog move. A newer move, a
+                    // detail push or disappearance cancels it; no detached
+                    // router retry may drag focus back to an obsolete row.
+                    ContentFocusRouter.shared.land(in: row.id, assign: {
+                        if focusFirstScroll { proxy.scrollTo(first, anchor: .leading) }
+                        focusedID = first
+                    }, landed: { focusedID == first }, focusToken: { focusedID })
+                }
+                .task(id: restoreItemID) {
+                    guard let target = restoreItemID, row.items.contains(where: { $0.id == target }) else { return }
+                    let interaction = ContentFocusRouter.shared.interactionGeneration
+                    // Allow the pop transition to mount this row before a focus
+                    // write. Reuse its loaded data and scroll only this shelf.
+                    try? await Task.sleep(for: .milliseconds(320))
+                    guard !Task.isCancelled, ContentFocusRouter.shared.interactionGeneration == interaction else { return }
+                    ContentFocusRouter.shared.land(in: row.id, assign: {
+                        proxy.scrollTo(target, anchor: .center)
+                        focusedID = target
+                    }, landed: { focusedID == target }, focusToken: { focusedID })
+                }
+            }
+        }
+        .background {
+            if homeCatalogSettings.hideUnavailableSources {
+                NTVAvailabilityObserver(items: row.items, focusedID: focusedID,
+                    hideUpcoming: homeCatalogSettings.hideUnreleasedContent, unavailableUntil: $unavailableUntil)
             }
         }
     }
 
     private func registerRowHandler(_ proxy: ScrollViewProxy) {
-        let firstID = row.items.first?.id
+        let firstID = displayedItems.first?.id
         ContentFocusRouter.shared.register(row.id) {
-            guard let first = firstID else { return false }
+            guard let first = firstID else {
+                guard onLeftAtStart != nil else { return false }
+                emptyRowFocused = true; return true
+            }
             // Retry until the card actually holds focus: deep in the row the
             // first card is unloaded, and it takes the scroll a few ticks to
             // materialize it on the slower boxes.
-            ContentFocusRouter.land(assign: {
+            ContentFocusRouter.shared.land(in: row.id, assign: {
                 proxy.scrollTo(first, anchor: .leading)
                 focusedID = first
             }, landed: { focusedID == first },
@@ -2586,13 +2835,14 @@ private struct HomePosterRow: View {
     /// focus alone fails (the "doesn't work far into the row" bug). Scrolling it
     /// into view renders it, then focus can land on it.
     private func backToStart(_ proxy: ScrollViewProxy) {
-        guard let first = row.items.first?.id, focusedID != first else {
+        guard let first = displayedItems.first?.id, focusedID != first else {
             onBackAtStart()
             return
         }
-        withAnimation(FusionMotion.focusMove) { proxy.scrollTo(first, anchor: .leading) }
-        // Defer the focus so the just-rendered first card exists to receive it.
-        DispatchQueue.main.async { focusedID = first }
+        ContentFocusRouter.shared.land(in: row.id, assign: {
+            withAnimation(FusionMotion.focusMove) { proxy.scrollTo(first, anchor: .leading) }
+            focusedID = first
+        }, landed: { focusedID == first }, focusToken: { focusedID })
     }
 
     @ViewBuilder
@@ -2607,9 +2857,77 @@ private struct HomePosterRow: View {
                     SeeAllLabel()
                 }
                 .buttonStyle(PlainCardButtonStyle())
-                .padding(.trailing, OrivioSpacing.huge)
+                .focused($seeAllFocused)
+                .padding(.trailing, theme.palette.id == NTVDesign.palette.id
+                         ? NTVViewport.horizontalInset : OrivioSpacing.huge)
             }
         }
+    }
+}
+
+/// Catalog shelves bridge their own failed moves below. Home shelves must
+/// leave the command handler absent so boundary moves reach RootView.
+/// `enabled` is fixed for the lifetime of a row, preserving its view identity.
+private struct CatalogRowMovementObserver: ViewModifier {
+    let enabled: Bool
+    let rowID: String
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.onMoveCommand { _ in
+                // A new command after landing cancels stale retries that
+                // could otherwise pull the viewer back to the first card.
+                ContentFocusRouter.shared.noteUserMovement(in: rowID)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Mounted only when the source filter is enabled. Ordinary poster rows do
+/// not subscribe to profile/addon updates or launch a task on every focus step.
+struct NTVAvailabilityObserver: View {
+    @EnvironmentObject private var addons: AddonManager
+    @EnvironmentObject private var profiles: ProfileStore
+    let items: [MetaItem]
+    let focusedID: String?
+    let hideUpcoming: Bool
+    @Binding var unavailableUntil: [String: Date]
+    private var scope: String {
+        NTVSourceAvailabilityStore.scope(profile: profiles.activeProfileID, addons: addons.addons.filter(\.enabled))
+    }
+    private var taskKey: String {
+        scope + "#\(focusedID ?? "")#\(hideUpcoming)#" + items.map(\.id).joined(separator: "#")
+    }
+    var body: some View {
+        Color.clear.frame(width: 0, height: 0).allowsHitTesting(false).accessibilityHidden(true)
+            .onAppear { unavailableUntil = [:] }
+            .onChange(of: scope) { _, _ in unavailableUntil = [:] }
+            .task(id: taskKey) {
+                guard focusedID != nil else { return }
+                let selectedScope = scope
+                let sources = addons.streamAddons
+                let start = max(0, (items.firstIndex { $0.id == focusedID } ?? 0) - 1)
+                do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
+                while !Task.isCancelled {
+                    for item in items.dropFirst(start).prefix(6) {
+                        if hideUpcoming && item.isUnreleased { continue }
+                        do {
+                            _ = try await NTVSourceAvailabilityStore.shared.check(item: item, sources: sources,
+                                metadata: addons.metaAddons(for: item.type, id: item.id), scope: selectedScope)
+                        } catch { return }
+                        guard !Task.isCancelled, selectedScope == scope else { return }
+                    }
+                    let absent = await NTVSourceAvailabilityStore.shared.absentUntil(for: items, scope: selectedScope)
+                    guard !Task.isCancelled, selectedScope == scope else { return }
+                    if unavailableUntil != absent { unavailableUntil = absent }
+                    // Expired absence must not hide a newly available release.
+                    // This loop stops immediately when focus leaves the row.
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                }
+            }
     }
 }
 
@@ -2631,9 +2949,11 @@ private struct HomePosterCell: View, Equatable {
     /// comparison and the row would keep its captions until something else
     /// forced a rebuild. Included in `==` below for the same reason.
     let showLabel: Bool
+    let cornerRadius: CGFloat
     let hero: HeroFocus
     let onSelect: (MetaItem) -> Void
     let onPlayManually: (MetaItem, MetaVideo?) -> Void
+    let accessibilityPrefix: String
     @State private var focused = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -2641,6 +2961,8 @@ private struct HomePosterCell: View, Equatable {
             && lhs.useLandscape == rhs.useLandscape
             && lhs.captionWidth == rhs.captionWidth
             && lhs.showLabel == rhs.showLabel
+            && lhs.cornerRadius == rhs.cornerRadius
+            && lhs.accessibilityPrefix == rhs.accessibilityPrefix
     }
 
     var body: some View {
@@ -2678,9 +3000,11 @@ private struct HomePosterCell: View, Equatable {
                 }
             }
             .mediaCardButtonStyle()
+            .buttonBorderShape(.roundedRectangle(radius: useLandscape ? 16 : cornerRadius))
             .holdProbe("poster \(item.name)", enabled: PerformanceSettingsStore.shared.settings.showHoldProbe)
             .posterHoldMenu(item) { onSelect(item) }
             .onPlayPauseCommand { onPlayManually(item, nil) }
+            .accessibilityIdentifier("\(accessibilityPrefix).\(item.type).\(item.id)")
 
             if showLabel {
                 ATVCardCaption(
@@ -2725,7 +3049,7 @@ private struct ContinueWatchingRow: View {
         let firstID = items.first?.id
         ContentFocusRouter.shared.register(Self.routerID) {
             guard let first = firstID else { return false }
-            ContentFocusRouter.land(assign: {
+            ContentFocusRouter.shared.land(in: Self.routerID, assign: {
                 proxy.scrollTo(first, anchor: .leading)
                 focusedCWCard = first
             }, landed: { focusedCWCard == first },
@@ -2738,7 +3062,7 @@ private struct ContinueWatchingRow: View {
         // Focus model mirrors HomePosterRow (plain @FocusState, no .focusScope /
         // .focusSection).
         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-            RowHeader(title: "Continue Watching")
+            RowHeader(title: "Continuer à regarder")
             ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 // Wider gap than the poster rows (.xl, not .lg): these cards
@@ -2774,7 +3098,8 @@ private struct ContinueWatchingRow: View {
                       .id(progress.id)
                     }
                 }
-                .padding(.horizontal, OrivioSpacing.huge)
+                .padding(.horizontal, theme.palette.id == NTVDesign.palette.id
+                         ? NTVViewport.horizontalInset : OrivioSpacing.huge)
                 .padding(.vertical, OrivioSpacing.lg)
             }
             .scrollClipDisabled()
@@ -2905,7 +3230,7 @@ private struct HomeLoadingBackdrop: View {
     @EnvironmentObject private var theme: ThemeManager
     let step: String?
 
-    private let steps = ["Loading add-ons…", "Loading catalogs…", "Loading artwork…"]
+    private let steps = ["Chargement des addons…", "Chargement des catalogues…", "Chargement des illustrations…"]
     private var activeIndex: Int { steps.firstIndex(of: step ?? "") ?? 0 }
 
     var body: some View {
@@ -2966,7 +3291,7 @@ struct RetryLabel: View {
         HStack(spacing: OrivioSpacing.sm) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 20, weight: .semibold))
-            Text("Try Again")
+            Text("Réessayer")
                 .font(.system(size: 24, weight: .semibold))
         }
         .foregroundStyle(isFocused ? theme.palette.onSecondary : theme.palette.textPrimary)
@@ -2985,7 +3310,7 @@ struct RetryLabel: View {
 struct SeeAllLabel: View {
     @EnvironmentObject private var theme: ThemeManager
     @Environment(\.isFocused) private var isFocused
-    var text: String = "See All"
+    var text: String = "Tout voir"
 
     var body: some View {
         HStack(spacing: 6) {

@@ -53,16 +53,44 @@ struct LiveChannel: Identifiable, Hashable {
     }
 }
 
-/// Live TV / IPTV tab. Merges two sources: `tv`-type catalogs from installed
-/// add-ons AND an embedded iptv-org playlist, so there are channels out of the
-/// box. Direct (M3U) channels play immediately; add-on channels go through the
-/// normal source picker.
+/// Live TV from installed `tv`-type add-on catalogs. A playlist is loaded only
+/// when the viewer explicitly configures one; nTV never fetches a default
+/// channel directory. Add-on channels use the normal source picker.
 @MainActor
 final class LiveTVViewModel: ObservableObject {
     struct Section: Identifiable {
         let id: String
         let title: String
-        let channels: [LiveChannel]
+        var channels: [LiveChannel]
+        var canLoadMore = false
+        var loadingMore = false
+        var loadError: String?
+    }
+
+    struct CatalogChoice: Identifiable {
+        let addon: InstalledAddon
+        let catalog: ManifestCatalog
+        var id: String { "addon|\(addon.id)|\(catalog.id)" }
+        var title: String { "\(addon.manifest.name) · \(catalog.name ?? catalog.id)" }
+    }
+    typealias CatalogLoader = (InstalledAddon, ManifestCatalog, String?, Int?) async throws -> [MetaItem]
+    private let catalogLoader: CatalogLoader
+    @Published private(set) var catalogChoices: [CatalogChoice] = []
+    @Published var selectedCatalogID = ""
+    @Published var selectedGenre = ""
+    private var nextOffsets: [String: Int] = [:]
+    private var requests: [String: CatalogChoice] = [:]
+
+    init(catalogLoader: @escaping CatalogLoader = { addon, catalog, genre, skip in
+        try await StremioAPI.catalog(addon: addon, catalog: catalog, genre: genre, skip: skip)
+    }) {
+        self.catalogLoader = catalogLoader
+    }
+
+    var genreOptions: [String] {
+        let choice = catalogChoices.first { $0.id == selectedCatalogID }
+            ?? (catalogChoices.count == 1 ? catalogChoices.first : nil)
+        return choice?.catalog.genreOptions ?? []
     }
 
     @Published var sections: [Section] = []
@@ -89,36 +117,40 @@ final class LiveTVViewModel: ObservableObject {
     private var loadGeneration = 0
 
     func load(addonManager: AddonManager) async {
+        await load(addons: addonManager.catalogAddons)
+    }
+
+    func load(addons: [InstalledAddon]) async {
         loadGeneration += 1
         let generation = loadGeneration
         isLoading = sections.isEmpty
+        catalogChoices = addons.filter { $0.enabled && $0.manifest.providesCatalogs }.flatMap { addon in
+            (addon.manifest.catalogs ?? []).filter { $0.type == "tv" && !$0.requiresExtra }
+                .map { CatalogChoice(addon: addon, catalog: $0) }
+        }
+        if !selectedCatalogID.isEmpty && !catalogChoices.contains(where: { $0.id == selectedCatalogID }) {
+            selectedCatalogID = ""
+        }
+        if !selectedGenre.isEmpty && !genreOptions.contains(selectedGenre) { selectedGenre = "" }
+        nextOffsets = [:]
+        requests = [:]
 
         // 1) Add-on tv catalogs (fast) — show these first.
-        let addonSections = await addonSections(addonManager)
+        let addonSections = await addonSections(generation: generation)
         guard generation == loadGeneration else { return }
+        guard !Task.isCancelled else { isLoading = false; loadingIPTV = false; return }
         sections = addonSections
         if !addonSections.isEmpty { isLoading = false }
 
-        // 2) The IPTV list — the viewer's own playlist when one is set in
-        // Settings → Live TV (it replaces the built-in source entirely),
-        // otherwise the language/country iptv-org playlist chosen there.
-        loadingIPTV = true
+        // Optional explicit playlist. Installed TV add-ons stand on their own.
         let settings = LiveTVSettingsStore.shared
-        var m3u = await M3UService.channels(from: settings.primaryPlaylistURL)
-
-        // Safety net: if a language is chosen but its iptv-org playlist came
-        // back empty (unsupported/unavailable), pull the global list and keep
-        // only channels whose country is one where that language is spoken, so
-        // non-matching-language channels are still hidden. Never for a custom
-        // playlist: falling back to the global list would resurrect the very
-        // built-in source the custom URL is meant to replace.
-        if !settings.usesCustomPlaylist && !settings.languageCode.isEmpty && m3u.isEmpty {
-            let allowed = settings.countriesForLanguage(settings.languageCode)
-            if !allowed.isEmpty {
-                let global = await M3UService.channels(from: M3UService.iptvOrgURL)
-                m3u = global.filter { ch in ch.country.map { allowed.contains($0) } ?? false }
-            }
+        guard settings.usesCustomPlaylist else {
+            loadingIPTV = false
+            isLoading = false
+            return
         }
+        loadingIPTV = true
+        let m3u = await M3UService.channels(from: settings.primaryPlaylistURL)
 
         guard generation == loadGeneration else { return }
         sections = addonSections + m3uSections(m3u)
@@ -126,34 +158,74 @@ final class LiveTVViewModel: ObservableObject {
         isLoading = false
     }
 
-    private func addonSections(_ addonManager: AddonManager) async -> [Section] {
-        var requests: [(addon: InstalledAddon, catalog: ManifestCatalog)] = []
-        for addon in addonManager.catalogAddons {
-            for catalog in (addon.manifest.catalogs ?? [])
-            where catalog.type == "tv" && !catalog.requiresExtra {
-                requests.append((addon, catalog))
-            }
-        }
-        guard !requests.isEmpty else { return [] }
+    private func addonSections(generation: Int) async -> [Section] {
+        let choices = catalogChoices.filter { selectedCatalogID.isEmpty || $0.id == selectedCatalogID }
+        guard !choices.isEmpty else { return [] }
+        let loader = catalogLoader
+        let genre = selectedGenre.isEmpty ? nil : selectedGenre
 
         var built: [(Int, Section)] = []
         await withTaskGroup(of: (Int, Section?).self) { group in
-            for (i, req) in requests.enumerated() {
+            for (i, req) in choices.enumerated() {
                 group.addTask {
-                    let metas = (try? await StremioAPI.catalog(addon: req.addon, catalog: req.catalog)) ?? []
-                    guard !metas.isEmpty else { return (i, nil) }
+                    do {
+                    let metas = try await loader(req.addon, req.catalog, genre, nil)
                     let title = req.catalog.name ?? req.catalog.id.capitalized
-                    let channels = metas.map {
+                    let channels = metas.prefix(400).map {
                         LiveChannel(id: $0.id, name: $0.name,
                                     logo: $0.logo ?? $0.poster ?? $0.background,
                                     group: title, directURL: nil, meta: $0)
                     }
-                    return (i, Section(id: "addon|\(req.addon.id)|\(req.catalog.id)", title: title, channels: channels))
+                    return (i, Section(id: req.id, title: title, channels: channels,
+                                       canLoadMore: req.catalog.supportsSkip && !metas.isEmpty && channels.count < 400))
+                    } catch {
+                        return (i, Section(id: req.id, title: req.catalog.name ?? req.catalog.id,
+                                           channels: [], loadError: "Les chaînes n’ont pas pu être chargées. Réessayez."))
+                    }
                 }
             }
             for await (i, section) in group { if let section { built.append((i, section)) } }
         }
+        guard generation == loadGeneration && !Task.isCancelled else { return [] }
+        for (index, section) in built {
+            requests[section.id] = choices[index]
+            nextOffsets[section.id] = section.channels.count
+        }
         return built.sorted { $0.0 < $1.0 }.map(\.1)
+    }
+
+    func loadMore(sectionID: String) async {
+        guard let request = requests[sectionID],
+              let index = sections.firstIndex(where: { $0.id == sectionID }),
+              sections[index].canLoadMore, !sections[index].loadingMore else { return }
+        let generation = loadGeneration
+        sections[index].loadingMore = true
+        sections[index].loadError = nil
+        do {
+            let metas = try await catalogLoader(request.addon, request.catalog,
+                                                selectedGenre.isEmpty ? nil : selectedGenre,
+                                                nextOffsets[sectionID] ?? 0)
+            guard generation == loadGeneration,
+                  let current = sections.firstIndex(where: { $0.id == sectionID }) else { return }
+            guard !Task.isCancelled else { sections[current].loadingMore = false; return }
+            var seen = Set(sections[current].channels.map(\.id))
+            let fresh = metas.filter { seen.insert($0.id).inserted }
+            let room = max(0, 400 - sections[current].channels.count)
+            let title = sections[current].title
+            let appended = fresh.prefix(room).map {
+                LiveChannel(id: $0.id, name: $0.name, logo: $0.logo ?? $0.poster ?? $0.background,
+                            group: title, directURL: nil, meta: $0)
+            }
+            sections[current].channels.append(contentsOf: appended)
+            nextOffsets[sectionID, default: 0] += metas.count
+            sections[current].canLoadMore = !fresh.isEmpty && sections[current].channels.count < 400
+            sections[current].loadingMore = false
+        } catch {
+            guard generation == loadGeneration,
+                  let current = sections.firstIndex(where: { $0.id == sectionID }) else { return }
+            sections[current].loadingMore = false
+            if !Task.isCancelled { sections[current].loadError = "La suite n’a pas pu être chargée. Réessayez." }
+        }
     }
 
     private func m3uSections(_ channels: [M3UChannel]) -> [Section] {
@@ -173,7 +245,7 @@ final class LiveTVViewModel: ObservableObject {
 }
 
 enum ChannelSort: String, CaseIterable, Identifiable {
-    case defaultOrder = "Default"
+    case defaultOrder = "Par défaut"
     case nameAsc = "A → Z"
     case nameDesc = "Z → A"
     var id: String { rawValue }
@@ -197,6 +269,7 @@ struct LiveTVView: View {
     let onSelectChannel: (MetaItem) -> Void
     /// Direct (M3U) channel → play its URL immediately.
     let onPlayDirect: (LiveChannel) -> Void
+    var showsHeading: Bool = true
 
     @State private var searchText = ""
     @State private var sortMode: ChannelSort = .defaultOrder
@@ -210,16 +283,19 @@ struct LiveTVView: View {
         "\(liveSettings.countryCode)|\(liveSettings.languageCode)|\(liveSettings.customPlaylistURL)"
     }
 
+    private var addonKey: String {
+        addonManager.addons.map { "\($0.id)|\($0.enabled)|\($0.manifest.version ?? "")" }
+            .joined(separator: ";")
+    }
+
     var body: some View {
         ZStack {
             ATVBackground()
             content
         }
-        .task { await viewModel.loadIfNeeded(addonManager: addonManager) }
-        // Reload the IPTV list when the location/language changes in Settings.
-        .onChange(of: settingsKey) { _, _ in
+        .task(id: settingsKey + "|" + addonKey + "|" + viewModel.selectedCatalogID + "|" + viewModel.selectedGenre) {
             selectedGroupID = ""
-            Task { await viewModel.load(addonManager: addonManager) }
+            await viewModel.load(addonManager: addonManager)
         }
     }
 
@@ -256,21 +332,26 @@ struct LiveTVView: View {
     @ViewBuilder
     private var content: some View {
         if viewModel.isLoading && viewModel.sections.isEmpty {
-            OrivioLoadingView(label: "Loading channels…")
+            OrivioLoadingView(label: "Chargement des chaînes…")
         } else if viewModel.sections.isEmpty {
             OrivioEmptyState(
                 icon: "tv",
-                title: "No channels",
-                message: "Couldn't load channels. Check your connection, or install a Live TV / IPTV add-on from Add-ons → Discover."
+                title: "Aucune chaîne disponible",
+                message: "Ajoutez un addon de chaînes TV dans Addons. Ses catalogues apparaîtront ici lorsqu’ils seront disponibles."
             )
         } else {
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: OrivioSpacing.xl) {
-                    header
+                    if showsHeading { header }
                     controls
                     if filtering {
                         gridContext
                         filteredGrid
+                        if let section = selectedSection {
+                            paginationControls(section)
+                        } else {
+                            ForEach(viewModel.sections) { section in paginationControls(section) }
+                        }
                     } else {
                         // Favourites first, above every other group — that is
                         // the whole point of favouriting a channel.
@@ -292,7 +373,7 @@ struct LiveTVView: View {
     private var gridContext: some View {
         if !selectedGroupID.isEmpty {
             HStack(spacing: OrivioSpacing.md) {
-                Button { selectedGroupID = "" } label: { SeeAllLabel(text: "‹ All Channels") }
+                Button { selectedGroupID = "" } label: { SeeAllLabel(text: "‹ Toutes les chaînes") }
                     .buttonStyle(PlainCardButtonStyle())
                 Text(selectedSection?.title ?? "")
                     .font(.system(size: 30, weight: .bold))
@@ -305,12 +386,13 @@ struct LiveTVView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Live TV")
+            Text("TV en direct")
                 .font(.system(size: 40, weight: .heavy))
                 .foregroundStyle(theme.palette.textPrimary)
+                .accessibilityIdentifier("ntv.live.heading")
             Text(viewModel.loadingIPTV
-                 ? "Loading the IPTV channel list…"
-                 : "Channels from your add-ons and the built-in IPTV list")
+                 ? "Chargement de votre liste de chaînes…"
+                 : "Les chaînes de vos addons")
                 .font(.system(size: 21))
                 .foregroundStyle(theme.palette.textSecondary)
         }
@@ -318,12 +400,13 @@ struct LiveTVView: View {
     }
 
     private var controls: some View {
+        VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
         HStack(spacing: OrivioSpacing.lg) {
             HStack(spacing: OrivioSpacing.sm) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textSecondary)
-                TextField("Search channels", text: $searchText)
+                TextField("Rechercher une chaîne", text: $searchText)
                     .font(.system(size: 23))
             }
             .padding(.horizontal, OrivioSpacing.lg)
@@ -332,13 +415,32 @@ struct LiveTVView: View {
             .frame(maxWidth: 560)
 
             OrivioDropdown(
-                title: "Sort",
+                title: "Trier",
                 selection: sortMode.rawValue,
                 options: ChannelSort.allCases.map { OrivioDropdownOption($0.rawValue) },
                 triggerWidth: 240
             ) { sortMode = ChannelSort(rawValue: $0) ?? .defaultOrder }
 
             Spacer(minLength: 0)
+        }
+        HStack(spacing: OrivioSpacing.lg) {
+            if viewModel.catalogChoices.count > 1 {
+                OrivioDropdown(title: "Catalogue", selection: viewModel.selectedCatalogID,
+                               options: [OrivioDropdownOption("", "Tous les catalogues")]
+                                + viewModel.catalogChoices.map { OrivioDropdownOption($0.id, $0.title) },
+                               triggerWidth: 440) {
+                    viewModel.selectedGenre = ""
+                    viewModel.selectedCatalogID = $0
+                }
+            }
+            if !viewModel.genreOptions.isEmpty {
+                OrivioDropdown(title: "Catégorie", selection: viewModel.selectedGenre,
+                               options: [OrivioDropdownOption("", "Toutes les catégories")]
+                                + viewModel.genreOptions.map { OrivioDropdownOption($0) },
+                               triggerWidth: 380) { viewModel.selectedGenre = $0 }
+                .accessibilityIdentifier("ntv.live.category")
+            }
+        }
         }
         .padding(.horizontal, OrivioSpacing.huge)
     }
@@ -360,7 +462,7 @@ struct LiveTVView: View {
         let capped = shown.count > Self.gridDisplayCap ? Array(shown.prefix(Self.gridDisplayCap)) : shown
         return Group {
             if shown.isEmpty {
-                Text(searchText.isEmpty ? "No channels in this group." : "No channels match “\(searchText)”.")
+                Text(searchText.isEmpty ? "Aucune chaîne dans cette catégorie." : "Aucune chaîne pour « \(searchText) ».")
                     .font(.system(size: 22))
                     .foregroundStyle(theme.palette.textSecondary)
                     .padding(.horizontal, OrivioSpacing.huge)
@@ -383,7 +485,7 @@ struct LiveTVView: View {
                 }
                 .padding(.horizontal, OrivioSpacing.huge)
                 if shown.count > capped.count {
-                    Text("Showing the first \(capped.count) of \(shown.count) channels — keep typing to narrow the search.")
+                    Text("\(capped.count) chaînes affichées sur \(shown.count). Précisez votre recherche pour voir les autres.")
                         .font(.system(size: 22))
                         .foregroundStyle(theme.palette.textSecondary)
                         .padding(.horizontal, OrivioSpacing.huge)
@@ -401,7 +503,7 @@ struct LiveTVView: View {
         if !favorites.channels.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
                 HStack(alignment: .firstTextBaseline) {
-                    RowHeader(title: "Favorites")
+                    RowHeader(title: "Favoris")
                     Spacer()
                 }
                 ScrollView(.horizontal) {
@@ -431,7 +533,7 @@ struct LiveTVView: View {
                 Spacer()
                 // Every row can open its full channel list.
                 Button { selectedGroupID = section.id } label: {
-                    SeeAllLabel(text: "Show All")
+                    SeeAllLabel(text: "Tout voir")
                 }
                 .buttonStyle(PlainCardButtonStyle())
                 .padding(.trailing, OrivioSpacing.huge)
@@ -452,7 +554,29 @@ struct LiveTVView: View {
                 .padding(.vertical, OrivioSpacing.lg)
             }
             .scrollClipDisabled()
+            if section.channels.isEmpty { paginationControls(section) }
         }
+    }
+
+    @ViewBuilder
+    private func paginationControls(_ section: LiveTVViewModel.Section) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let error = section.loadError {
+                Text(error).font(.system(size: 22)).foregroundStyle(theme.palette.textSecondary)
+            }
+            if section.canLoadMore {
+                Button(section.loadingMore ? "Chargement…" : "Charger les chaînes suivantes") {
+                    Task { await viewModel.loadMore(sectionID: section.id) }
+                }
+                .buttonStyle(PlainCardButtonStyle())
+                .disabled(section.loadingMore)
+                .accessibilityIdentifier("ntv.live.more")
+            } else if section.channels.isEmpty {
+                Button("Réessayer") { Task { await viewModel.load(addonManager: addonManager) } }
+                    .buttonStyle(PlainCardButtonStyle())
+            }
+        }
+        .padding(.horizontal, OrivioSpacing.huge)
     }
 }
 

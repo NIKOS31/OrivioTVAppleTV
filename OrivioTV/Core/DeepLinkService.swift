@@ -5,6 +5,8 @@ import Foundation
 enum DeepLink: Equatable {
     /// Open a title's detail page. `id` is a Stremio id (`tt…` or `tmdb:<n>`).
     case meta(type: String, id: String)
+    /// Resume the active profile's local progress; never carries a stream URL.
+    case resume(type: String, id: String)
     /// Install a Stremio/Orivio addon from its manifest URL.
     case addonInstall(url: String)
     /// An external player finished and handed playback back to us
@@ -79,6 +81,10 @@ enum DeepLinkService {
                 return .meta(type: normalizeType(type), id: id)
             }
             return metaFromPath(segments)
+        case "resume":
+            guard let type = firstParam(query, "type", "mediatype", "media_type"),
+                  let id = metaID(query), ["movie", "series"].contains(normalizeType(type)) else { return nil }
+            return .resume(type: normalizeType(type), id: id)
         case "detail", "details", "open", "watch":
             return metaFromPath(segments)
         case "imdb", "tmdb":

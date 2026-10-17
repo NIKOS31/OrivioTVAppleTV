@@ -7,17 +7,19 @@ import CryptoKit
 /// MetaRepositoryImpl — without it, a Home screen (many rows) + focus-prefetch
 /// + back-nav fire piles of duplicate requests for the same meta/catalog.
 actor RequestCoalescer {
-    private var inFlight: [String: Task<Data, Error>] = [:]
+    private let requests: NTVSharedWorkPool<Data>
+
+    init(limit: Int = AddonSweepLimits.catalogs) {
+        requests = NTVSharedWorkPool(limit: limit)
+    }
 
     func data(for key: String, _ work: @Sendable @escaping () async throws -> Data) async throws -> Data {
-        if let existing = inFlight[key] {
-            return try await existing.value
-        }
-        let task = Task { try await work() }
-        inFlight[key] = task
-        let result = await task.result
-        inFlight[key] = nil
-        return try result.get()
+        try await requests.value(for: key, work)
+    }
+
+    /// Counts only: no configured URL is exposed by diagnostics.
+    var activity: (running: Int, queued: Int, waiters: Int) {
+        get async { await requests.activity }
     }
 }
 

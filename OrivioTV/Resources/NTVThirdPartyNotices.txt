@@ -1,0 +1,22 @@
+nTV — Additional third-party notices
+
+NuvioDesktop — NuvioMedia contributors
+https://github.com/NuvioMedia/NuvioDesktop
+Reference revision: d2e21f20782f4516b62bbdcb4764d6271db1d614
+License: GNU General Public License, version 3.
+
+NTVNuvioRuntime.swift is a Swift adaptation of formatPlaybackTime and
+formatPlaybackRuntime in PlayerLayout.kt. Seconds replace milliseconds;
+non-finite values and malformed engine durations are guarded explicitly.
+The elapsed/remaining-time interaction is adapted from PlayerControlActions.kt.
+This is a partial port. Nuvio's executable and playback engine are not bundled.
+
+nTV source and modifications:
+https://github.com/NIKOS31/OrivioTVAppleTV
+The full GPLv3 license is included as NTV-GPL-3.0.txt.
+
+Anime metadata and imagery: AniList, https://anilist.co/
+API documentation and terms: https://docs.anilist.co/
+AniList metadata does not imply stream availability or playback rights.
+
+Other existing components retain their own licenses and notices.

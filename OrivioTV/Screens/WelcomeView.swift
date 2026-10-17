@@ -68,7 +68,9 @@ struct WelcomeView: View {
             guard signedIn, step == .choose || step == .email else { return }
             onFinished()
         }
-        .onAppear { if account.qrLogin == nil { account.startQRLogin() } }
+        .onAppear {
+            if OrivioConfig.isConfigured, account.qrLogin == nil { account.startQRLogin() }
+        }
         .onDisappear { account.cancelQRLogin() }
     }
 
@@ -86,7 +88,7 @@ struct WelcomeView: View {
                 // address plus the code shown separately. Printing the full
                 // webURL was unreadable — it embeds the code, so the line then
                 // said "go to …?code=e9cd… and enter e9cd…".
-                Text("Scan the code with your phone, or go to \(Self.displayHost) and enter the code below.")
+                Text("Scannez le code avec votre téléphone, ou ouvrez \(Self.displayHost) puis saisissez le code ci-dessous.")
                     .font(FusionType.bodyText(theme.font))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -104,11 +106,11 @@ struct WelcomeView: View {
                     .font(.system(size: 20))
                     .foregroundStyle(theme.palette.textTertiary)
             } else if OrivioConfig.isConfigured {
-                OrivioLoadingView(label: "Preparing sign-in").frame(height: 300)
+                OrivioLoadingView(label: "Préparation de la connexion").frame(height: 300)
             } else {
                 // No backend configured in this build — say so instead of
                 // showing a QR that can never complete.
-                Text("Accounts aren't configured in this build. You can still use \(NTVBrand.name) without one.")
+                Text("Vous pouvez utiliser \(NTVBrand.name) sans compte.")
                     .font(FusionType.bodyText(theme.font))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -116,7 +118,7 @@ struct WelcomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let error = account.errorMessage {
+            if OrivioConfig.isConfigured, let error = account.errorMessage {
                 Text(error)
                     .font(.system(size: 20))
                     .foregroundStyle(OrivioPrimitives.red300)
@@ -127,12 +129,12 @@ struct WelcomeView: View {
 
             HStack(spacing: OrivioSpacing.md) {
                 if OrivioConfig.isConfigured {
-                    Button("Sign in with email") {
+                    Button("Connexion par e-mail") {
                         account.errorMessage = nil
                         step = .email
                     }
                 }
-                Button("Use without an account") {
+                Button("Continuer sans compte") {
                     account.cancelQRLogin()
                     step = .offerAddons
                 }
@@ -146,7 +148,7 @@ struct WelcomeView: View {
 
     private var addonOffer: some View {
         VStack(spacing: OrivioSpacing.lg) {
-            Text("Add add-ons?")
+            Text("Ajouter des addons ?")
                 .font(FusionType.pageTitle(theme.font))
                 .foregroundStyle(theme.palette.textPrimary)
             Text("Les addons fournissent les catalogues, les affiches et les sources de lecture de \(NTVBrand.name). Cinemeta et OpenSubtitles sont déjà installés. Vous pouvez ajouter vos addons depuis votre téléphone, maintenant ou plus tard dans Réglages → Addons.")
@@ -156,9 +158,9 @@ struct WelcomeView: View {
                 .frame(maxWidth: 900)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: OrivioSpacing.md) {
-                Button("Add add-ons now") { step = .addAddons }
+                Button("Ajouter mes addons") { step = .addAddons }
                     .focused($offerFocus)
-                Button("Later, in Settings", action: onFinished)
+                Button("Plus tard, dans les réglages", action: onFinished)
             }
             .padding(.top, OrivioSpacing.sm)
             .onAppear { offerFocus = true }
@@ -169,16 +171,16 @@ struct WelcomeView: View {
 
     private var emailForm: some View {
         VStack(spacing: OrivioSpacing.md) {
-            Text("Sign in")
+            Text("Se connecter")
                 .font(FusionType.pageTitle(theme.font))
                 .foregroundStyle(theme.palette.textPrimary)
 
-            TextField("Email", text: $email)
+            TextField("Adresse e-mail", text: $email)
                 .textContentType(.emailAddress)
                 .keyboardType(.emailAddress)
                 .focused($focus, equals: .email)
                 .frame(maxWidth: 700)
-            SecureField("Password", text: $password)
+            SecureField("Mot de passe", text: $password)
                 .textContentType(.password)
                 .focused($focus, equals: .password)
                 .frame(maxWidth: 700)
@@ -193,7 +195,7 @@ struct WelcomeView: View {
             }
 
             HStack(spacing: OrivioSpacing.md) {
-                Button(signingIn ? "Signing in…" : "Sign in") {
+                Button(signingIn ? "Connexion…" : "Se connecter") {
                     guard !signingIn else { return }
                     signingIn = true
                     Task {
@@ -205,7 +207,7 @@ struct WelcomeView: View {
                     }
                 }
                 .disabled(signingIn)
-                Button("Back") {
+                Button("Retour") {
                     account.errorMessage = nil
                     password = ""
                     step = .choose

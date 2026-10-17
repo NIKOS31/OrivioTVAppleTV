@@ -1,0 +1,17 @@
+# Twitch dans nTV : état et contrat
+
+Le dossier `OrivioTV/Custom/Twitch` prépare un client natif des API officielles. Il n’est pas instancié par l’interface de l’app : l’identifiant public de l’application nTV reste à enregistrer et la lecture native des directs reste à résoudre. Aucun identifiant d’une autre application, secret client, token utilisateur, scraper ou URL de lecture non documentée n’est inclus.
+
+`NTVTwitchAPI` couvre Device Code pour client public, rafraîchissement sans secret, validation de l’identité/scopes, révocation, suivis en direct et recherche de chaînes avec curseur. Le scope demandé est `user:read:follows`. Les endpoints OAuth et Helix sont fixes ; le transport éphémère ne conserve ni cookies ni cache et refuse les redirections. L’adresse d’activation doit être une page HTTPS Twitch officielle. Les erreurs exposées au produit sont en français et ne contiennent pas le corps du serveur.
+
+`NTVTwitchAuthorization` respecte l’intervalle donné par Twitch, le délai du code et l’annulation. `authorization_pending` continue l’attente ; `slow_down` l’allonge. Le jeton reçu est validé pour le bon client et les suivis avant que l’autorisation soit acceptée.
+
+`NTVTwitchSession` isole une session par profil. Le Trousseau local contient les deux jetons, sans synchronisation iCloud ou copie dans UserDefaults/le backend. Le renouvellement est partagé entre requêtes concurrentes : le jeton de renouvellement d’un client public est utilisable une seule fois. Sa nouvelle valeur est sauvegardée avant les requêtes suivantes. Une déconnexion retire d’abord la session locale ; les réponses d’une session précédente sont rejetées.
+
+Lors du raccordement à l’interface, appeler `validateSession()` à l’entrée au premier plan et toutes les heures tant que la session est active, comme Twitch l’exige. Les requêtes du modèle revalident également si l’heure est dépassée et retentent une seule fois après un 401 et un renouvellement. Une erreur réseau temporaire ne supprime pas arbitrairement le compte. Détruire/annuler la tâche de connexion et remplacer l’acteur lors d’un changement de profil.
+
+Les tests utilisent uniquement un transport injecté et des réponses fictives. Ils couvrent l’attente/ralentissement, annulation/expiration, encodage d’un refresh token contenant des caractères réservés, adresse d’activation, client/scopes incohérents, curseurs Helix, renouvellement concurrent et réponse tardive après déconnexion. Ils ne prouvent pas une connexion à un vrai compte ou une lecture Twitch.
+
+Les résultats Helix sont des métadonnées de chaînes/directs et des images. Ne pas les convertir en `StreamEntry` sans un vrai contrat de lecture compatible : l’API Helix ne fournit pas de source HLS dans ces réponses, et le lecteur embarquable documenté est un lecteur web. tvOS ne propose pas de WebView. Le prochain raccordement du menu dépend donc aussi de la solution de lecture, pas seulement du formulaire de connexion.
+
+Sources officielles : [Device Code](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow), [validation](https://dev.twitch.tv/docs/authentication/validate-tokens/), [renouvellement](https://dev.twitch.tv/docs/authentication/refresh-tokens/), [API Helix](https://dev.twitch.tv/docs/api/reference/), [lecteur embarquable](https://dev.twitch.tv/docs/embed/video-and-clips/), [WebViews Apple](https://developer.apple.com/design/human-interface-guidelines/web-views).

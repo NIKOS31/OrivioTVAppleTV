@@ -4,6 +4,43 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testRecentSearchesLeaveSpaceForPostersAndClearBackToTheField() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-searchDemo",
+            "-ntvSearchLayoutFixture", "-ntvRecentSearchesFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let field = app.buttons["ntv.search.field"]
+        let clear = app.buttons["ntv.search.recent.clear"]
+        XCTAssertTrue(field.waitForExistence(timeout: 20))
+        XCTAssertTrue(clear.waitForExistence(timeout: 10))
+        let posters = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.search.poster.")).allElementsBoundByIndex
+        XCTAssertGreaterThanOrEqual(posters.count, 6)
+        let screen = app.windows.firstMatch.frame
+        let top = posters.map(\.frame.minY).min() ?? screen.maxY
+        XCTAssertGreaterThan(top, clear.frame.maxY, "History and posters must be separate rows.")
+        XCTAssertLessThan(top, screen.minY + screen.height * 0.6,
+                          "A horizontal history scroller must not consume the result grid's height.")
+        capture("ntv-search-recent-with-posters")
+        let remote = XCUIRemote.shared
+        for _ in 0..<4 {
+            if field.hasFocus { break }
+            remote.press(.down)
+            if focused(field, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(field, timeout: 5))
+        remote.press(.down)
+        XCTAssertTrue(focused(clear, timeout: 5), "The clear action must be reachable without opening the keyboard.")
+        remote.press(.select)
+        XCTAssertTrue(focused(field, timeout: 5), "Removing the focused history must return to Search.")
+        XCTAssertFalse(clear.exists)
+        XCTAssertFalse(app.textFields["ntv.search.editor"].exists)
+        capture("ntv-search-history-cleared-focus-restored")
+    }
+
     func testAdvancedSubtitleOptionsStayNearTransportAndRestoreFocus() {
         continueAfterFailure = false
         let app = XCUIApplication()

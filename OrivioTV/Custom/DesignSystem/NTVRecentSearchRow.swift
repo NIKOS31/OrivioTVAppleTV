@@ -3,7 +3,8 @@ import SwiftUI
 /// History changes invalidate this small leaf, not the search result grids.
 struct NTVRecentSearchRow: View {
     @EnvironmentObject private var profiles: ProfileStore
-    @ObservedObject private var history = NTVRecentSearches.shared
+    @ObservedObject private var history = NTVRecentSearches.current
+    var onFocusSearch: () -> Void = {}
     let onSelect: (String) -> Void
 
     var body: some View {
@@ -14,7 +15,10 @@ struct NTVRecentSearchRow: View {
                 HStack(spacing: 28) {
                     Text("Recherches récentes").font(.system(size: 29, weight: .semibold))
                     Spacer()
-                    Button("Tout effacer") { history.clear(profile: profile) }
+                    Button("Tout effacer") {
+                        onFocusSearch()
+                        history.clear(profile: profile)
+                    }
                         .buttonStyle(NTVActionButtonStyle())
                         .accessibilityIdentifier("ntv.search.recent.clear")
                 }
@@ -31,6 +35,7 @@ struct NTVRecentSearchRow: View {
                             .contextMenu {
                                 Button("Supprimer cette recherche", role: .destructive) {
                                     history.remove(query, profile: profile)
+                                    if history.queries(profile: profile).isEmpty { onFocusSearch() }
                                 }
                             }
                         }
@@ -38,6 +43,9 @@ struct NTVRecentSearchRow: View {
                 }
                 .scrollIndicators(.hidden)
                 .scrollClipDisabled()
+                // A horizontal ScrollView otherwise takes all remaining
+                // height from Search's VStack and squeezes out the posters.
+                .frame(height: 98)
             }
             .focusSection()
             .accessibilityIdentifier("ntv.search.recent")

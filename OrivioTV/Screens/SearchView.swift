@@ -183,6 +183,7 @@ struct SearchView: View {
     let onSelect: (MetaItem) -> Void
     var onOpenDiscover: () -> Void = {}
     var animeContext = false
+    @FocusState private var searchFieldFocused: Bool
 
     private var usesNTVLayout: Bool { theme.palette.id == NTVDesign.palette.id }
     private var contentInset: CGFloat { usesNTVLayout ? NTVViewport.horizontalInset : OrivioSpacing.huge }
@@ -237,8 +238,9 @@ struct SearchView: View {
                 searchBar
                     .zIndex(1)
                 if viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    NTVRecentSearchRow { query in
-                        NTVRecentSearches.shared.record(query)
+                    NTVRecentSearchRow(onFocusSearch: { searchFieldFocused = true }) { query in
+                        searchFieldFocused = true
+                        NTVRecentSearches.current.record(query)
                         viewModel.query = query
                     }
                     .padding(.horizontal, contentInset)
@@ -309,8 +311,9 @@ struct SearchView: View {
     private var searchBar: some View {
         HStack(spacing: OrivioSpacing.md) {
             SearchField(text: $viewModel.query,
+                        focused: $searchFieldFocused,
                         placeholder: animeContext ? "Rechercher un animé dans mes addons" : "Rechercher un film ou une série",
-                        onCommit: { NTVRecentSearches.shared.record(viewModel.query) })
+                        onCommit: { NTVRecentSearches.current.record(viewModel.query) })
             if !animeContext {
                 Button(action: onOpenDiscover) { SearchBarIcon(systemName: "square.grid.2x2") }
                     .buttonStyle(PlainCardButtonStyle())
@@ -335,7 +338,7 @@ struct SearchView: View {
                         item: item,
                         captionWidth: width,
                         onSelect: { item in
-                            NTVRecentSearches.shared.record(viewModel.query)
+                            NTVRecentSearches.current.record(viewModel.query)
                             onSelect(item)
                         }
                     )
@@ -378,8 +381,8 @@ private struct SearchBarIcon: View {
 /// focus be the sole highlight means the highlight and the field are one shape.
 private struct SearchField: View {
     @EnvironmentObject private var theme: ThemeManager
-    @FocusState private var focused: Bool
     @Binding var text: String
+    @FocusState.Binding var focused: Bool
     var placeholder = "Rechercher un film ou une série"
     var onCommit: () -> Void = {}
     @State private var editing = false

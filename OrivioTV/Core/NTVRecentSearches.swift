@@ -6,6 +6,12 @@ import Combine
 @MainActor
 final class NTVRecentSearches: ObservableObject {
     static let shared = NTVRecentSearches()
+    static var current: NTVRecentSearches {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ntvRecentSearchesFixture") { return NTVRecentSearchFixture.store }
+        #endif
+        return shared
+    }
     static let limit = 8
     @Published private(set) var revision = 0
     private let defaults: UserDefaults

@@ -715,10 +715,11 @@ struct MetaVideo: Codable, Identifiable, Hashable {
     let released: String?
     let originalSeason: Int?
     let originalEpisode: Int?
+    let absoluteEpisode: Int?
 
     private enum CodingKeys: String, CodingKey {
         case id, title, name, season, episode, number, thumbnail, overview, released
-        case originalSeason, originalEpisode
+        case originalSeason, originalEpisode, absoluteEpisode, absolute_number
     }
 
     init(from decoder: Decoder) throws {
@@ -734,6 +735,8 @@ struct MetaVideo: Codable, Identifiable, Hashable {
         released = try? c.decode(String.self, forKey: .released)
         originalSeason = try? c.decode(Int.self, forKey: .originalSeason)
         originalEpisode = try? c.decode(Int.self, forKey: .originalEpisode)
+        let absolute = (try? c.decode(Int.self, forKey: .absoluteEpisode)) ?? (try? c.decode(Int.self, forKey: .absolute_number))
+        absoluteEpisode = absolute.flatMap { $0 > 0 ? $0 : nil }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -747,12 +750,13 @@ struct MetaVideo: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(released, forKey: .released)
         try c.encodeIfPresent(originalSeason, forKey: .originalSeason)
         try c.encodeIfPresent(originalEpisode, forKey: .originalEpisode)
+        try c.encodeIfPresent(absoluteEpisode, forKey: .absoluteEpisode)
     }
 
     init(
         id: String, title: String?, season: Int?, episode: Int?,
         thumbnail: String? = nil, overview: String? = nil, released: String? = nil,
-        originalSeason: Int? = nil, originalEpisode: Int? = nil
+        originalSeason: Int? = nil, originalEpisode: Int? = nil, absoluteEpisode: Int? = nil
     ) {
         self.id = id
         self.title = title
@@ -763,6 +767,7 @@ struct MetaVideo: Codable, Identifiable, Hashable {
         self.released = released
         self.originalSeason = originalSeason
         self.originalEpisode = originalEpisode
+        self.absoluteEpisode = absoluteEpisode.flatMap { $0 > 0 ? $0 : nil }
     }
 
     var hasAired: Bool {
@@ -770,6 +775,12 @@ struct MetaVideo: Codable, Identifiable, Hashable {
         if let date = ReleaseDateParser.isoFractional.date(from: released) { return date <= Date() }
         if let date = ReleaseDateParser.iso.date(from: released) { return date <= Date() }
         return true
+    }
+
+    /// Never derive an absolute anime number from the array index or season size.
+    var displayEpisodeCode: String {
+        guard let absoluteEpisode else { return seasonEpisodeCode }
+        return seasonEpisodeCode.isEmpty ? "Épisode \(absoluteEpisode)" : "\(seasonEpisodeCode) · Ép. \(absoluteEpisode)"
     }
 
     var seasonEpisodeCode: String {
@@ -1478,5 +1489,37 @@ struct SeasonEpisode: Comparable, Hashable {
 
     static func < (a: SeasonEpisode, b: SeasonEpisode) -> Bool {
         (a.season, a.episode) < (b.season, b.episode)
+    }
+}
+
+
+/// Release metadata only: an aired episode need not yet have a playable source.
+struct NTVEpisodeReleaseStatus: Equatable {
+    let count: Int
+    let newSeason: Int?
+    static let none = Self(count: 0, newSeason: nil)
+    static func resolve(episodes: [MetaVideo], startedAt: Date?, reached: Set<SeasonEpisode>, now: Date) -> Self {
+        guard let startedAt, !reached.isEmpty else { return .none }
+        let aired = episodes.filter { ($0.airedDate.map { $0 <= now }) == true }
+        let furthest = aired.compactMap { video -> SeasonEpisode? in
+            guard let season = video.season, let episode = video.episode else { return nil }
+            let point = SeasonEpisode(season: season, episode: episode)
+            return reached.contains(point) ? point : nil
+        }.max()
+        guard let furthest else { return .none }
+        var eligible = Set<SeasonEpisode>()
+        for video in aired {
+            guard let season = video.season, let episode = video.episode,
+                  let date = video.airedDate, date > startedAt else { continue }
+            let point = SeasonEpisode(season: season, episode: episode)
+            if point > furthest { eligible.insert(point) }
+        }
+        let season = furthest.season > 0 ? eligible.map(.season).filter { $0 > furthest.season }.min() : nil
+        return Self(count: eligible.count, newSeason: season)
+    }
+    var label: String? {
+        guard count > 0 else { return nil }
+        if let newSeason { return "Nouvelle saison · S\(newSeason)" }
+        return count == 1 ? "Nouvel épisode" : "\(min(count, 99)) nouveaux épisodes"
     }
 }

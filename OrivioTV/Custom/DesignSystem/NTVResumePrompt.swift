@@ -10,6 +10,7 @@ struct NTVResumePrompt: View {
     @State private var candidate: WatchProgress?
     @State private var candidateProfile: Int?
     @State private var ready = false
+    @ObservedObject private var suggestions = NTVResumeSuggestion.shared
 
     var body: some View {
         Group {
@@ -34,6 +35,10 @@ struct NTVResumePrompt: View {
             consider(progress.items)
         }
         .onReceive(progress.$items) { items in consider(items) }
+        .onChange(of: suggestions.revision) { _, _ in
+            if suggestions.mode(profile: profiles.activeProfileID) == .off { candidate = nil }
+            else { consider(progress.items) }
+        }
     }
 
     private func consider(_ items: [String: WatchProgress]) {

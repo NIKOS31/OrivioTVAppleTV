@@ -101,8 +101,13 @@ final class NTVCoreTests: XCTestCase {
     }
 
     @MainActor
-    func testResumeSuggestionIsOncePerProfileAndAnEmptyLoadDoesNotConsumeIt() {
-        let session = NTVResumeSuggestion()
+    func testResumeSuggestionIsOncePerProfileAndAnEmptyLoadDoesNotConsumeIt() throws {
+        let suite = "ntv.resume.tests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let session = NTVResumeSuggestion(defaults: defaults)
+        session.setMode(.latest, profile: 1)
+        session.setMode(.latest, profile: 2)
         let now = Date(timeIntervalSince1970: 1_000_000)
         func row(_ id: String, position: Double = 180, duration: Double = 3600, date: Date? = nil) -> WatchProgress {
             WatchProgress(id: id, metaID: id, type: "movie", name: "Film", poster: nil,
@@ -774,5 +779,161 @@ private actor TVPageRetryFixture {
         offsets.append(skip)
         if offsets.count == 1 { throw URLError(.notConnectedToInternet) }
         return [MetaItem(id: "b", type: "tv", name: "B")]
+    }
+}
+
+
+@MainActor
+final class NTVPlayerComfortTests: XCTestCase {
+    private func withDefaults(_ body: (UserDefaults) throws -> Void) throws {
+        let suite = "ntv.player.comfort.tests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        try body(defaults)
+    }
+    private let now = Date(timeIntervalSince1970: 1_750_000_000)
+    private func row(_ id: String = "film") -> WatchProgress {
+        WatchProgress(id: id, metaID: id, type: "movie", name: "Film", poster: nil,
+            background: nil, logo: nil, season: nil, episode: nil, episodeTitle: nil,
+            positionSeconds: 180, durationSeconds: 3600, updatedAt: now)
+    }
+    func testOnlyANewProcessCanClaimAnInterruptedPlayback() throws {
+        try withDefaults { defaults in
+            let live = NTVResumeSuggestion(defaults: defaults)
+            live.record(id: "film", profile: 1, session: UUID(), position: 180, duration: 3600, now: now)
+            XCTAssertNil(live.claim(profile: 1, items: [row()], now: now), "Returning from PiP or changing tabs is not a crash.")
+            let relaunched = NTVResumeSuggestion(defaults: defaults)
+            XCTAssertNil(relaunched.claim(profile: 1, items: [], now: now))
+            XCTAssertEqual(relaunched.claim(profile: 1, items: [row()], now: now)?.id, "film")
+            XCTAssertNil(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row()], now: now))
+        }
+    }
+    func testVoluntaryExitDoesNotSuggestResumeOnRelaunch() throws {
+        try withDefaults { defaults in
+            let live = NTVResumeSuggestion(defaults: defaults), session = UUID()
+            live.record(id: "film", profile: 1, session: session, position: 180, duration: 3600, now: now)
+            live.clear(profile: 1, session: session)
+            XCTAssertNil(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row()], now: now))
+        }
+    }
+    func testLateTeardownCannotClearTheReplacementPlayersMarker() throws {
+        try withDefaults { defaults in
+            let live = NTVResumeSuggestion(defaults: defaults), old = UUID(), replacement = UUID()
+            live.record(id: "old", profile: 1, session: old, position: 180, duration: 3600, now: now)
+            live.record(id: "new", profile: 1, session: replacement, position: 180, duration: 3600, now: now)
+            live.clear(profile: 1, session: old)
+            XCTAssertEqual(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row("new")], now: now)?.id, "new")
+        }
+    }
+    func testResumePreferencesAndInterruptionMarkersAreProfileScoped() throws {
+        try withDefaults { defaults in
+            let live = NTVResumeSuggestion(defaults: defaults)
+            live.setMode(.off, profile: 1)
+            live.setMode(.latest, profile: 2)
+            live.record(id: "film", profile: 1, session: UUID(), position: 180, duration: 3600, now: now)
+            let relaunched = NTVResumeSuggestion(defaults: defaults)
+            XCTAssertEqual(relaunched.mode(profile: 1), .off)
+            XCTAssertEqual(relaunched.mode(profile: 2), .latest)
+            XCTAssertEqual(relaunched.mode(profile: 3), .interrupted)
+            XCTAssertNil(relaunched.claim(profile: 1, items: [row()], now: now))
+            XCTAssertNotNil(relaunched.claim(profile: 2, items: [row()], now: now))
+            relaunched.purge(profile: 2)
+            XCTAssertEqual(relaunched.mode(profile: 2), .interrupted)
+        }
+    }
+    func testFinishedContentCannotBecomeAnInterruptionOffer() throws {
+        try withDefaults { defaults in
+            let live = NTVResumeSuggestion(defaults: defaults), session = UUID()
+            live.record(id: "film", profile: 1, session: session, position: 180, duration: 3600, now: now)
+            live.record(id: "film", profile: 1, session: session, position: 3590, duration: 3600, now: now)
+            XCTAssertNil(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row()], now: now))
+        }
+    }
+    func testInterruptionMarkersHaveNoRawIdentifiersAndDoNotInvalidateHomeOnSave() throws {
+        try withDefaults { defaults in
+            let live = NTVResumeSuggestion(defaults: defaults), id = "https://example.invalid/private/fixture"
+            live.record(id: id, profile: 1, session: UUID(), position: 180, duration: 3600, now: now)
+            let data = try XCTUnwrap(defaults.data(forKey: ProfileScopedDefaults.key("ntv.resume.marker.v2", 1)))
+            XCTAssertFalse(String(decoding: data, as: UTF8.self).contains(id))
+            XCTAssertEqual(live.revision, 0, "Periodic progress must not invalidate the Home prompt subtree.")
+            XCTAssertEqual(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row(id)], now: now)?.id, id)
+        }
+    }
+    func testExpiredOrFinishedSavedRowsDoNotConsumeAnUnrelatedOffer() throws {
+        try withDefaults { defaults in
+            let live = NTVResumeSuggestion(defaults: defaults)
+            live.record(id: "film", profile: 1, session: UUID(), position: 180, duration: 3600, now: now.addingTimeInterval(-31 * 86400))
+            XCTAssertNil(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row()], now: now))
+            defaults.set(Data(repeating: 0, count: 1025), forKey: ProfileScopedDefaults.key("ntv.resume.marker.v2", 1))
+            XCTAssertNil(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row()], now: now))
+        }
+    }
+    func testTransportStaysVisibleAcrossEveryBusyOrPausedState() {
+        XCTAssertTrue(NTVTransportIdlePolicy.canHide(playing: true, buffering: false, switching: false, scrubbing: false, seeking: false))
+        for flags in [(false,false,false,false,false),(true,true,false,false,false),
+                      (true,false,true,false,false),(true,false,false,true,false),(true,false,false,false,true)] {
+            XCTAssertFalse(NTVTransportIdlePolicy.canHide(playing: flags.0, buffering: flags.1, switching: flags.2, scrubbing: flags.3, seeking: flags.4))
+        }
+    }
+    func testTrackLanguageMetadataWinsOverAnAmbiguousLabel() {
+        let options = [TrackOption(id: "one", displayName: "French commentary", payload: .off, languageCode: "eng"),
+                       TrackOption(id: "two", displayName: "Français SDH", payload: .off)]
+        let groups = NTVTrackLanguageGroup.build(options)
+        XCTAssertEqual(groups.first { $0.id == "en" }?.options.map(\.id), ["one"])
+        XCTAssertEqual(groups.first { $0.id == "fr" }?.options.map(\.id), ["two"])
+    }
+    func testSubtitleProviderNameCannotInventATrackLanguage() {
+        let groups = NTVTrackLanguageGroup.build([
+            TrackOption(id: "sub-off", displayName: "Off", payload: .off),
+            TrackOption(id: "unknown", displayName: "Track 1 · French Provider", payload: .off),
+            TrackOption(id: "fr", displayName: "fr · Provider", payload: .off),
+            TrackOption(id: "fr-sdh", displayName: "French (SDH) · Provider", payload: .off)])
+        XCTAssertEqual(groups.map(\.id), ["fr", "und"])
+        XCTAssertEqual(groups.first?.options.map(\.id), ["fr", "fr-sdh"])
+        XCTAssertEqual(groups.last?.options.map(\.id), ["unknown"])
+    }
+    func testArrivingTracksRetainLanguageAndTrackIdentities() {
+        let french = TrackOption(id: "fr", displayName: "French", payload: .off)
+        let before = NTVTrackLanguageGroup.build([french])
+        let after = NTVTrackLanguageGroup.build([TrackOption(id: "en", displayName: "English", payload: .off), french])
+        XCTAssertEqual(before.first?.id, after.first { $0.id == "fr" }?.id)
+        XCTAssertEqual(before.first?.options.map(\.id), after.first { $0.id == "fr" }?.options.map(\.id))
+    }
+    func testNewSeasonIsDifferentFromBackCatalogueAndFutureEpisodes() {
+        func ep(_ season: Int, _ episode: Int, _ date: String) -> MetaVideo {
+            MetaVideo(id: "\(season):\(episode)", title: nil, season: season, episode: episode, released: date)
+        }
+        let started = ReleaseDateParser.parse("2025-01-01")!, today = ReleaseDateParser.parse("2025-06-01")!
+        let episodes = [ep(1,1,"2024-01-01"), ep(1,2,"2024-02-01"), ep(2,1,"2025-05-01"),
+                        ep(2,1,"2025-05-01"), ep(2,2,"2025-07-01")]
+        let result = NTVEpisodeReleaseStatus.resolve(episodes: episodes, startedAt: started,
+            reached: [SeasonEpisode(season: 1, episode: 1)], now: today)
+        XCTAssertEqual(result, NTVEpisodeReleaseStatus(count: 1, newSeason: 2), "Do not count duplicate specials, back catalogue or future episodes.")
+        XCTAssertEqual(result.label, "Nouvelle saison · S2")
+    }
+    func testFutureWatchedMarkersDoNotHideActuallyNewEpisodes() {
+        let first = MetaVideo(id: "1", title: nil, season: 1, episode: 1, released: "2024-01-01")
+        let next = MetaVideo(id: "2", title: nil, season: 1, episode: 2, released: "2025-05-01")
+        let future = MetaVideo(id: "3", title: nil, season: 1, episode: 3, released: "2028-01-01")
+        let result = NTVEpisodeReleaseStatus.resolve(episodes: [first,next,future], startedAt: ReleaseDateParser.parse("2025-01-01"),
+            reached: [SeasonEpisode(season: 1, episode: 1), SeasonEpisode(season: 1, episode: 3)],
+            now: ReleaseDateParser.parse("2025-06-01")!)
+        XCTAssertEqual(result, NTVEpisodeReleaseStatus(count: 1, newSeason: nil))
+        XCTAssertEqual(result.label, "Nouvel épisode")
+    }
+    func testUnknownAirDatesOrHistoryDoNotInventReleaseBadges() {
+        let unknown = MetaVideo(id: "unknown", title: nil, season: 2, episode: 1)
+        XCTAssertEqual(NTVEpisodeReleaseStatus.resolve(episodes: [unknown], startedAt: now,
+            reached: [SeasonEpisode(season: 1, episode: 1)], now: now), .none)
+        XCTAssertEqual(NTVEpisodeReleaseStatus.resolve(episodes: [], startedAt: nil, reached: [], now: now), .none)
+    }
+    func testAbsoluteEpisodeDisplayRequiresExplicitMetadataAndRoundTrips() throws {
+        let base = MetaVideo(id: "anime", title: nil, season: 2, episode: 2, originalEpisode: 26)
+        XCTAssertEqual(base.displayEpisodeCode, "S2:E2", "Linked-special numbering is not an absolute anime number.")
+        let data = Data(#"{"id":"anime","season":2,"episode":2,"absolute_number":26}"#.utf8)
+        let explicit = try JSONDecoder().decode(MetaVideo.self, from: data)
+        XCTAssertEqual(explicit.displayEpisodeCode, "S2:E2 · Ép. 26")
+        XCTAssertEqual(try JSONDecoder().decode(MetaVideo.self, from: JSONEncoder().encode(explicit)).absoluteEpisode, 26)
+        XCTAssertNil(MetaVideo(id: "bad", title: nil, season: 2, episode: 2, absoluteEpisode: -1).absoluteEpisode)
     }
 }

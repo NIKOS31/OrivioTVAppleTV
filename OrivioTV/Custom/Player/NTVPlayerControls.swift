@@ -433,61 +433,154 @@ private struct NTVTransportLabel: View {
     }
 }
 
+/// Value grouping is done outside the focus-owning leaf, never on clock ticks.
+struct NTVTrackLanguageGroup: Identifiable {
+    let id: String
+    let title: String
+    let options: [TrackOption]
+
+    static func build(_ options: [TrackOption]) -> [Self] {
+        var grouped: [String: [TrackOption]] = [:]
+        for option in options where option.id != "sub-off" {
+            let code: String
+            if let tag = option.languageCode, !tag.isEmpty, tag != "und" {
+                code = AudioLanguageMatch.normalizedCode(tag)
+            } else {
+                // Addon labels append their name after ·; that provider name
+                // is not evidence of a track's language.
+                let label = String(option.displayName.split(separator: "·", maxSplits: 1).first ?? "")
+                code = PlayerSettings.allAudioLanguageOptions.first {
+                    !$0.0.isEmpty && AudioLanguageMatch.matches(code: nil, label: label, preferred: $0.0)
+                }?.0 ?? "und"
+            }
+            grouped[code, default: []].append(option)
+        }
+        return grouped.keys.sorted { a, b in
+            if a == "und" { return false }
+            if b == "und" { return true }
+            return a < b
+        }.map { code in
+            Self(id: code, title: code == "und" ? "Langue non précisée" :
+                (AudioLanguageMatch.displayName(for: code) ?? code), options: grouped[code] ?? [])
+        }
+    }
+}
+
 private struct NTVPlayerTrackPicker: View {
     @ObservedObject var viewModel: PlayerViewModel
-    @FocusState private var selected: String?
     private var subtitles: Bool { viewModel.overlay == .subtitles }
-    private var options: [TrackOption] { subtitles ? viewModel.subtitleOptions : viewModel.audioOptions }
-    private var current: String? { subtitles ? viewModel.selectedSubtitleID : viewModel.selectedAudioID }
+    var body: some View {
+        let options = subtitles ? viewModel.subtitleOptions : viewModel.audioOptions
+        NTVTrackPickerContent(groups: subtitles ? viewModel.subtitleLanguageGroups : viewModel.audioLanguageGroups,
+            off: options.first { $0.id == "sub-off" }, subtitles: subtitles,
+            current: subtitles ? viewModel.selectedSubtitleID : viewModel.selectedAudioID,
+            language: $viewModel.trackPickerLanguage, delay: viewModel.subtitleDelay,
+            onSelect: { option in
+                viewModel.noteSelectPressed()
+                if subtitles { viewModel.selectSubtitle(option) } else { viewModel.selectAudio(option) }
+                viewModel.trackPickerLanguage = nil
+                viewModel.overlay = .controls
+                viewModel.restartHideTimer()
+            }, onDelay: { viewModel.nudgeSubtitleDelay(by: $0) },
+            onReset: { viewModel.resetSubtitleDelay() },
+            onSettings: { viewModel.showInfoPanel(initialTab: subtitles ? 3 : 2) },
+            onExit: { _ = viewModel.handleExit() })
+        .onAppear { viewModel.trackPickerLanguage = nil }
+    }
+}
+
+private struct NTVTrackPickerContent: View {
+    let groups: [NTVTrackLanguageGroup]
+    let off: TrackOption?
+    let subtitles: Bool
+    let current: String?
+    @Binding var language: String?
+    let delay: Double
+    let onSelect: (TrackOption) -> Void
+    let onDelay: (Double) -> Void
+    let onReset: () -> Void
+    let onSettings: () -> Void
+    let onExit: () -> Void
+    @FocusState private var selected: String?
+    private var group: NTVTrackLanguageGroup? { groups.first { $0.id == language } }
+    private var initialFocus: String {
+        if let group { return group.options.first { $0.id == current }?.id ?? group.options.first?.id ?? "languages" }
+        if current == "sub-off", off != nil { return "sub-off" }
+        let preferred = groups.first { $0.options.contains { $0.id == current } } ?? groups.first
+        return preferred.map { "language:" + $0.id } ?? (off == nil ? "settings" : "sub-off")
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             Text(subtitles ? "Sous-titres" : "Audio").font(.system(size: 30, weight: .semibold))
             ScrollView {
                 VStack(spacing: 8) {
-                    if options.isEmpty {
-                        Text(subtitles ? "Aucune piste disponible" : "Aucune piste audio disponible")
-                            .font(.system(size: 25)).foregroundStyle(.white.opacity(0.7))
-                    }
-                    ForEach(options) { option in
-                        Button {
-                            viewModel.noteSelectPressed()
-                            if subtitles { viewModel.selectSubtitle(option) } else { viewModel.selectAudio(option) }
-                            viewModel.overlay = .controls
-                        } label: {
-                            NTVTransportLabel(symbol: option.id == current ? "checkmark.circle.fill" : "circle",
-                                              title: option.id == "sub-off" ? "Désactivés" : option.displayName)
+                    if let group {
+                        Button { language = nil } label: {
+                            NTVTransportLabel(symbol: "chevron.left", title: group.title + " · Langues")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .buttonStyle(PlainCardButtonStyle())
-                        .focused($selected, equals: option.id)
+                        .buttonStyle(PlainCardButtonStyle()).focused($selected, equals: "languages")
+                        .accessibilityIdentifier("ntv.player.tracks.languages")
+                        ForEach(group.options) { option in trackButton(option) }
+                    } else {
+                        if let off { trackButton(off) }
+                        if groups.isEmpty {
+                            Text("Aucune piste disponible").font(.system(size: 25)).foregroundStyle(.white.opacity(0.7))
+                        }
+                        ForEach(groups) { group in
+                            Button { language = group.id } label: {
+                                NTVTransportLabel(symbol: group.options.contains { $0.id == current } ? "checkmark.circle.fill" : "globe",
+                                    title: "\(group.title) · \(group.options.count) piste\(group.options.count > 1 ? "s" : "")")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(PlainCardButtonStyle())
+                            .focused($selected, equals: "language:" + group.id)
+                            .accessibilityIdentifier("ntv.player.tracks.language." + group.id)
+                        }
                     }
-                }
-                .padding(6)
+                }.padding(6)
             }
-            .frame(height: min(CGFloat(max(options.count, 1)) * 72, 360))
-            Button {
-                viewModel.showInfoPanel(initialTab: subtitles ? 3 : 2)
-            } label: {
+            .frame(height: 264)
+            if subtitles {
+                HStack(spacing: 10) {
+                    delayButton("−0,5 s", id: "earlier") { onDelay(-0.5) }
+                    delayButton(PlayerViewModel.formatDelay(delay), id: "reset") { onReset() }
+                    delayButton("+0,5 s", id: "later") { onDelay(0.5) }
+                }
+                .accessibilityLabel("Décalage des sous-titres, valeur centrale pour remettre à zéro")
+            }
+            Button(action: onSettings) {
                 NTVTransportLabel(symbol: "slider.horizontal.3", title: subtitles ? "Réglages des sous-titres" : "Réglages audio")
             }
-            .buttonStyle(PlainCardButtonStyle())
-            .focused($selected, equals: "settings")
+            .buttonStyle(PlainCardButtonStyle()).focused($selected, equals: "settings")
             .accessibilityIdentifier("ntv.player.tracks.settings")
         }
-        .foregroundStyle(.white)
-        .padding(28)
-        .frame(width: 600)
+        .foregroundStyle(.white).padding(28).frame(width: 660)
         .background { NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24), emphasized: true) }
-        // Identify the whole panel, not the heading SwiftUI otherwise exports
-        // for an ungrouped stack. Children remain individually navigable.
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("ntv.player.trackPicker")
-        .focusSection()
-        .defaultFocus($selected, current ?? options.first?.id ?? "settings")
-        .onAppear { selected = current ?? options.first?.id ?? "settings" }
-        // Share the window catcher's Back handling so the same physical press
-        // cannot close this picker, then immediately hide the transport too.
-        .onExitCommand { _ = viewModel.handleExit() }
+        .accessibilityElement(children: .contain).accessibilityIdentifier("ntv.player.trackPicker")
+        .focusSection().defaultFocus($selected, initialFocus)
+        .task(id: language) { selected = initialFocus }
+        .onChange(of: groups.map(\.id)) { _, ids in
+            if let language, !ids.contains(language) { self.language = nil }
+        }
+        .onExitCommand(perform: onExit)
+    }
+    private func trackButton(_ option: TrackOption) -> some View {
+        Button { onSelect(option) } label: {
+            NTVTransportLabel(symbol: option.id == current ? "checkmark.circle.fill" : "circle",
+                title: option.id == "sub-off" ? "Désactivés" : option.displayName)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(PlainCardButtonStyle()).focused($selected, equals: option.id)
+    }
+    private func delayButton(_ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(.system(size: 24, weight: .medium)).monospacedDigit()
+                .frame(maxWidth: .infinity).frame(height: 58)
+        }
+        .buttonStyle(NTVActionButtonStyle()).focused($selected, equals: "delay:" + id)
+        .accessibilityLabel(id == "reset" ? "Remettre le décalage à zéro, \(label)" : "Décalage \(label)")
+        .accessibilityIdentifier("ntv.player.tracks.delay." + id)
     }
 }

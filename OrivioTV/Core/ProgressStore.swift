@@ -83,6 +83,8 @@ struct WatchProgress: Codable, Identifiable, Hashable {
     /// account, Trakt, SIMKL and Stremio) plus episode air dates, so every
     /// device arrives at the same number on its own.
     var newEpisodeCount: Int? = nil
+    /// Derived locally from dated episode metadata, never a promise of stream availability.
+    var newSeasonNumber: Int? = nil
 
     /// Whether to show the new-episode badge at all.
     var hasNewEpisode: Bool { (newEpisodeCount ?? 0) > 0 }

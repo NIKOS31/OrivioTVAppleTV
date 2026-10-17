@@ -1429,7 +1429,7 @@ struct HomeView: View {
     /// metaID → how many episodes have aired since the viewer started that
     /// show and are still unwatched. Drives the green "+N" badge. Covers shows
     /// with a real progress row too, not just the synthesised Next Up cards.
-    @State private var newEpisodeCounts: [String: Int] = [:]
+    @State private var episodeReleaseStatuses: [String: NTVEpisodeReleaseStatus] = [:]
 
     /// Drives the Apple TV hero's spotlight rotation. Ticks every 2s; the hero
     /// only advances when it's been idle for a few seconds (see rotateIfIdle).
@@ -2188,7 +2188,7 @@ struct HomeView: View {
         // open (or overnight) stayed absent until the next launch.
         let dayBucket = Int(clockTick.timeIntervalSince1970 / 86_400)
         return "\(watchedHash)#\(progressHash)#\(homeCatalogSettings.showUnairedNextUp)"
-            + "#\(dismissedHash)#\(dayBucket)"
+            + "#\(dismissedHash)#\(dayBucket)#\(progressStore.scopedProfileID)#\(homeCatalogSettings.nextUpFromFurthestEpisode)"
     }
 
     private func mergedContinueItems() -> [WatchProgress] {
@@ -2223,9 +2223,10 @@ struct HomeView: View {
         // passing the map down) keeps `ContinueWatchingCell`'s Equatable
         // comparison honest — the card re-renders when the number changes.
         let stamped = active.map { row -> WatchProgress in
-            guard let count = newEpisodeCounts[row.metaID] else { return row }
             var copy = row
-            copy.newEpisodeCount = count
+            let status = episodeReleaseStatuses[row.metaID] ?? .none
+            copy.newEpisodeCount = status.count
+            copy.newSeasonNumber = status.newSeason
             return copy
         }
         // Next Up cards take their place by recency — each is dated by the
@@ -2303,6 +2304,7 @@ struct HomeView: View {
     }
 
     private func refreshNextUpContinueItems() async {
+        let requestKey = nextUpRefreshKey
         let allActiveRows = progressStore.continueWatching(sortMode: homeCatalogSettings.continueWatchingSortMode)
         let superseded = Self.supersededContinueRows(allActiveRows, watched: Array(watched.items.values))
         // Published before any fetch below. A stale row that stayed up while
@@ -2372,20 +2374,21 @@ struct HomeView: View {
         let showUnaired = homeCatalogSettings.showUnairedNextUp
         let fromFurthest = homeCatalogSettings.nextUpFromFurthestEpisode
         let entries = fetched.compactMap { $0 }
-        let (rows, counts) = await Task.detached(priority: .userInitiated) {
+        let work = Task.detached(priority: .userInitiated) {
             var rows: [WatchProgress] = []
-            var counts: [String: Int] = [:]
+            var statuses: [String: NTVEpisodeReleaseStatus] = [:]
             for entry in entries {
+                if Task.isCancelled { break }
                 // Keyed by the CANONICAL id the watch/progress stores use, not
                 // the id the meta addon echoed back — a fallback meta addon can
                 // answer with its own scheme (tvdb:, anidb:…), and rows/badges
                 // keyed by that never matched the stores (badge missing) and
                 // resumed into a sources page no stream addon claims.
                 let contentID = entry.target.contentID
-                let count = Self.newEpisodeCount(in: entry.meta,
-                                                 startedAt: startedAt[contentID],
-                                                 reached: reached[contentID] ?? [])
-                if count > 0 { counts[contentID] = count }
+                let episodes = entry.meta.playbackSeasons.flatMap { entry.meta.episodesIncludingLinkedSpecials(season: $0) }
+                let status = NTVEpisodeReleaseStatus.resolve(episodes: episodes, startedAt: startedAt[contentID],
+                    reached: reached[contentID] ?? [], now: Date())
+                statuses[contentID] = status
                 guard entry.target.wantsCard,
                       let next = Self.nextUpEpisode(in: entry.meta, contentID: contentID,
                                                     watchedKeys: watchedKeys,
@@ -2393,14 +2396,16 @@ struct HomeView: View {
                                                     fromFurthest: fromFurthest) else { continue }
                 rows.append(Self.nextUpProgress(meta: entry.meta, contentID: contentID, episode: next,
                                                 lastWatchedAt: entry.target.lastWatchedAt,
-                                                newEpisodeCount: count))
+                                                status: status))
             }
-            return (rows, counts)
-        }.value
-        if !Task.isCancelled {
-            nextUpContinueItems = rows
-            newEpisodeCounts = counts
+            return (rows, statuses)
         }
+        let (rows, statuses) = await withTaskCancellationHandler {
+            await work.value
+        } onCancel: { work.cancel() }
+        guard !Task.isCancelled, requestKey == nextUpRefreshKey else { return }
+        if nextUpContinueItems != rows { nextUpContinueItems = rows }
+        if episodeReleaseStatuses != statuses { episodeReleaseStatuses = statuses }
     }
 
     /// metaID → when this viewer first watched anything of that title.
@@ -2442,53 +2447,6 @@ struct HomeView: View {
         return out
     }
 
-    /// How many episodes are waiting AHEAD of the viewer that aired after they
-    /// started the show.
-    ///
-    /// Two conditions, and both are load-bearing:
-    ///
-    /// * **After the furthest episode they have reached.** Counting every
-    ///   unwatched episode would include the one they are 60% of the way
-    ///   through, so a show you are actively keeping up with would claim you
-    ///   were behind on it.
-    /// * **Aired after they started the show.** Working through a back
-    ///   catalogue is not being behind, and without this a series that
-    ///   finished years ago would sit at a permanent "+49" from the moment
-    ///   someone started episode one.
-    ///
-    /// An episode with no known air date is skipped rather than assumed new.
-    private nonisolated static func newEpisodeCount(in meta: MetaItem, startedAt: Date?,
-                                                    reached: Set<SeasonEpisode>) -> Int {
-        guard let startedAt, !reached.isEmpty else { return 0 }
-        let all = meta.playbackSeasons.flatMap { meta.episodesIncludingLinkedSpecials(season: $0) }
-        guard !all.isEmpty else { return 0 }
-        let now = Date()
-
-        // The furthest episode reached that has ACTUALLY AIRED. Unaired
-        // episodes are excluded from this even when they carry a watched row:
-        // an episode that has not been broadcast cannot have been watched, and
-        // "Mark Season Watched" used to stamp every episode a season lists,
-        // including next month's finale. Taking those at face value pinned the
-        // furthest point at the end of the season, so the show could never
-        // report a new episode again.
-        var furthest: SeasonEpisode?
-        for episode in all {
-            guard let season = episode.season, let number = episode.episode else { continue }
-            guard let aired = episode.airedDate, aired <= now else { continue }
-            let point = SeasonEpisode(season: season, episode: number)
-            guard reached.contains(point) else { continue }
-            if furthest == nil || point > furthest! { furthest = point }
-        }
-        guard let furthest else { return 0 }
-
-        return all.reduce(into: 0) { total, episode in
-            guard let season = episode.season, let number = episode.episode else { return }
-            guard SeasonEpisode(season: season, episode: number) > furthest else { return }
-            guard let aired = episode.airedDate, aired > startedAt, aired <= now else { return }
-            total += 1
-        }
-    }
-
     private nonisolated static func nextUpEpisode(in meta: MetaItem, contentID: String,
                                                   watchedKeys: Set<String>,
                                                   showUnaired: Bool,
@@ -2523,7 +2481,7 @@ struct HomeView: View {
     }
 
     private nonisolated static func nextUpProgress(meta: MetaItem, contentID: String, episode: MetaVideo,
-                                                   lastWatchedAt: Date, newEpisodeCount: Int) -> WatchProgress {
+                                                   lastWatchedAt: Date, status: NTVEpisodeReleaseStatus) -> WatchProgress {
         // The canonical show id + a canonical episode key under it. Using the
         // addon-echoed `meta.id`/`episode.id` made the synthesised row an
         // identity no other store row (or stream addon) matched. Only tt ids
@@ -2561,7 +2519,8 @@ struct HomeView: View {
             durationSeconds: 1,
             streamURL: nil,
             updatedAt: availableAt,
-            newEpisodeCount: newEpisodeCount
+            newEpisodeCount: status.count,
+            newSeasonNumber: status.newSeason
         )
     }
 
@@ -3361,6 +3320,7 @@ private struct ContinueWatchingCell: View, Equatable {
                     progress: progress.fraction,
                     remainingText: progress.remainingTimeText,
                     newEpisodeCount: progress.newEpisodeCount ?? 0,
+                    newSeasonNumber: progress.newSeasonNumber,
                     blurImage: blur,
                     // Caption goes BELOW the platter (see below) so it isn't
                     // bridged to the still by the slab.

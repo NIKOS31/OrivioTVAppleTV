@@ -120,6 +120,13 @@ final class VLCEngine: NSObject {
     /// `-1` disables subtitles in VLC.
     func selectSubtitle(_ id: Int32) { player.currentVideoSubTitleIndex = id }
 
+    /// VLCKit expresses subtitle delay in microseconds, with positive = later.
+    func setSubtitleDelay(seconds: Double) {
+        guard seconds.isFinite else { return }
+        let microseconds = Int((min(30, max(-30, seconds)) * 1_000_000).rounded())
+        if player.currentVideoSubTitleDelay != microseconds { player.currentVideoSubTitleDelay = microseconds }
+    }
+
     func addExternalSubtitle(_ url: URL) {
         // `enforce` is libvlc's "select this slave now" flag. The view model
         // adds up to 25 addon tracks in a loop expecting them merely LISTED

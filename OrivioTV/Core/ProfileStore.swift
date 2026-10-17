@@ -364,6 +364,7 @@ final class ProfileStore: ObservableObject {
     private func purgeProfileData(id: Int) {
         guard id != 1 else { return }
         NTVAnimeFollows.shared.forget(profile: id)
+        NTVResumeSuggestion.shared.purge(profile: id)
         let suffix = ".p\(id)"
         let defaults = UserDefaults.standard
         var removed = 0

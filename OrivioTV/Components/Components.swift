@@ -1055,6 +1055,7 @@ struct LandscapeCard: View {
     /// Episodes that have aired since the viewer started the show and are
     /// still unwatched. 0 hides the badge.
     var newEpisodeCount: Int = 0
+    var newSeasonNumber: Int? = nil
     /// Spoiler-blur the still until the card is focused (then it reveals).
     var blurImage: Bool = false
     /// When false, the title/subtitle caption is omitted — the Apple TV theme
@@ -1089,7 +1090,7 @@ struct LandscapeCard: View {
             }
             .overlay(alignment: .topTrailing) {
                 if newEpisodeCount > 0 {
-                    NewEpisodeBadge(count: newEpisodeCount).padding(10)
+                    NewEpisodeBadge(count: newEpisodeCount, season: newSeasonNumber).padding(10)
                 } else if watched {
                     WatchedBadge().padding(10)
                 }
@@ -1270,8 +1271,9 @@ private struct RemainingTimeBadge: View {
 /// The underlying count still comes from aired, unwatched episode metadata.
 private struct NewEpisodeBadge: View {
     let count: Int
+    let season: Int?
 
-    private var label: String { count == 1 ? "Nouvel épisode" : "\(min(count, 99)) nouveaux épisodes" }
+    private var label: String { NTVEpisodeReleaseStatus(count: count, newSeason: season).label ?? "" }
 
     var body: some View {
         Text(label)
@@ -1286,7 +1288,7 @@ private struct NewEpisodeBadge: View {
                 Capsule(style: .continuous)
                     .strokeBorder(.white.opacity(0.22), lineWidth: 1)
             )
-            .accessibilityLabel(count == 1 ? "Nouvel épisode" : "\(count) nouveaux épisodes")
+            .accessibilityLabel(label)
     }
 }
 

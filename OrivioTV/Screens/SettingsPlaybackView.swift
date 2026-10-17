@@ -7,6 +7,8 @@ import SwiftUI
 struct PlaybackSettingsDetail: View {
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var store: PlayerSettingsStore
+    @EnvironmentObject private var profiles: ProfileStore
+    @ObservedObject private var resumeSuggestions = NTVResumeSuggestion.shared
     @State private var showAudioLanguages = false
     @State private var showSubtitleLanguages = false
 
@@ -26,6 +28,16 @@ struct PlaybackSettingsDetail: View {
     @ViewBuilder
     private var settingsScaffold: some View {
         DetailScaffold(title: SettingsCategory.playback.title, subtitle: SettingsCategory.playback.subtitle) {
+            SettingsGroupCard(title: "Reprise au lancement", subtitle: "Suggestion sur l’accueil, pour ce profil uniquement. La rangée Continuer à regarder reste disponible.") {
+                OrivioDropdown(title: "Carte de reprise", subtitle: "Une sortie volontaire du lecteur ne compte pas comme une interruption", icon: "play.rectangle",
+                    selection: resumeSuggestions.mode(profile: profiles.activeProfileID).rawValue,
+                    options: NTVResumePromptMode.allCases.map { OrivioDropdownOption($0.rawValue, $0.title) }) {
+                        if let mode = NTVResumePromptMode(rawValue: $0) {
+                            resumeSuggestions.setMode(mode, profile: profiles.activeProfileID)
+                        }
+                    }
+                    .accessibilityIdentifier("ntv.settings.resumePrompt")
+            }
             SettingsGroupCard(title: "Langues des animés", subtitle: "Préférences distinctes des films et séries, appliquées à la prochaine lecture") {
                 PlaybackToggleRow(icon: "sparkles.tv", title: "Réglages propres aux animés",
                     subtitle: "Utiliser une langue audio et des sous-titres différents pour les contenus reconnus comme animés",

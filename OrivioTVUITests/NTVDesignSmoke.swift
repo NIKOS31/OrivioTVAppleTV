@@ -1253,6 +1253,12 @@ final class NTVDesignSmoke: XCTestCase {
             XCTAssertTrue(app.windows.firstMatch.frame.contains(trackPicker.frame),
                           "The menu must remain entirely on screen.")
         }
+        for identifier in ["earlier", "reset", "later"] {
+            let delay = app.buttons["ntv.player.tracks.delay." + identifier]
+            XCTAssertTrue(delay.exists, "Quick subtitle timing must be available even without embedded tracks.")
+            XCTAssertTrue(trackPicker.frame.contains(delay.frame))
+            XCTAssertFalse(delay.frame.intersects(transport.frame))
+        }
         capture("ntv-player-subtitle-menu-near-actions")
         assertTrackMenuClearsTransport()
         remote.press(.menu)

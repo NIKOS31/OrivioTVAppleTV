@@ -228,6 +228,12 @@ enum AspectMode: String, CaseIterable {
 
 /// Engine-agnostic track descriptor covering embedded audio/subtitle tracks
 /// (both the AVPlayer- and FFmpeg-backed engines) and addon subtitles.
+enum NTVTransportIdlePolicy {
+    static func canHide(playing: Bool, buffering: Bool, switching: Bool, scrubbing: Bool, seeking: Bool) -> Bool {
+        playing && !buffering && !switching && !scrubbing && !seeking
+    }
+}
+
 struct TrackOption: Identifiable, Equatable {
     enum Payload {
         case off
@@ -241,8 +247,11 @@ struct TrackOption: Identifiable, Equatable {
     let id: String
     let displayName: String
     let payload: Payload
+    var languageCode: String? = nil
 
-    static func == (lhs: TrackOption, rhs: TrackOption) -> Bool { lhs.id == rhs.id }
+    static func == (lhs: TrackOption, rhs: TrackOption) -> Bool {
+        lhs.id == rhs.id && lhs.displayName == rhs.displayName && lhs.languageCode == rhs.languageCode
+    }
 }
 
 /// KSOptions that adapts frame pacing to whether the display could actually
@@ -921,6 +930,7 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var isPlaying = false {
         didSet {
             guard isPlaying != oldValue else { return }
+            if isPlaying, overlay == .controls { restartHideTimer() }
             // Keep the screen awake ONLY while actually playing. When paused,
             // browsing, or after the player closes, the idle timer must be
             // re-enabled or the Apple TV never shows its screensaver or sleeps
@@ -944,6 +954,7 @@ final class PlayerViewModel: ObservableObject {
         // publish itself still fires per write; the setters guard upstream.)
         didSet {
             guard oldValue != isBuffering else { return }
+            if !isBuffering, overlay == .controls { restartHideTimer() }
             // Rebuffer accounting. A single stall is nothing; forty of them, or
             // ninety seconds of them across a film, is the complaint — and
             // neither is visible from a scrolling event tail. Only counted once
@@ -1106,6 +1117,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var overlay: PlayerOverlay = .none {
         didSet {
             guard overlay != oldValue else { return }
+            trackPickerLanguage = nil
             if overlay.showsTransport, !oldValue.showsTransport {
                 controlsSession &+= 1
             }
@@ -1132,8 +1144,16 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var videoRefreshID = UUID()
 
     // Tracks & modes
-    @Published private(set) var audioOptions: [TrackOption] = []
-    @Published private(set) var subtitleOptions: [TrackOption] = []
+    @Published private(set) var audioOptions: [TrackOption] = [] {
+        didSet { if oldValue != audioOptions { audioLanguageGroups = NTVTrackLanguageGroup.build(audioOptions) } }
+    }
+    @Published private(set) var subtitleOptions: [TrackOption] = [] {
+        didSet { if oldValue != subtitleOptions { subtitleLanguageGroups = NTVTrackLanguageGroup.build(subtitleOptions) } }
+    }
+    // These snapshots ride the options' existing publication. Focus, timing
+    // labels and subtitle-delay adjustments do not rebuild language groups.
+    private(set) var audioLanguageGroups: [NTVTrackLanguageGroup] = []
+    private(set) var subtitleLanguageGroups: [NTVTrackLanguageGroup] = []
     @Published var selectedAudioID: String?
     @Published var selectedSubtitleID: String?
     @Published var aspectMode: AspectMode = .fit
@@ -1214,6 +1234,7 @@ final class PlayerViewModel: ObservableObject {
             // the end exactly once, so a swallowed one froze the session on
             // the last frame with no post-play and no Up Next. A switch that
             // DID load cleared the note in resetPerLoadSessionState first.
+            if !isSwitchingSource, oldValue, overlay == .controls { restartHideTimer() }
             if !isSwitchingSource, oldValue, pendingEndAfterSwitch {
                 pendingEndAfterSwitch = false
                 handlePlayedToEnd()
@@ -2801,6 +2822,9 @@ final class PlayerViewModel: ObservableObject {
 
     private let addonManager: AddonManager
     private let progressStore: ProgressStore
+    private let resumeSuggestionProfile = ProfileScopedDefaults.activeProfileID
+    private let resumeSuggestionSession = UUID()
+    @Published var trackPickerLanguage: String?
     private var hideControlsTask: Task<Void, Never>?
     private var scrubTimeoutTask: Task<Void, Never>?
     private var seekDebounceTask: Task<Void, Never>?
@@ -2836,7 +2860,9 @@ final class PlayerViewModel: ObservableObject {
     /// install) — 20s there halves that CPU for a loss bound nobody notices.
     private static let progressSaveInterval: TimeInterval = PerformanceProfile.isLowPower ? 20 : 10
     private var lastSubtitleSearchAt: Double = -1
-    private var pendingResume: Double?
+    private var pendingResume: Double? {
+        didSet { if pendingResume == nil, oldValue != nil, overlay == .controls { restartHideTimer() } }
+    }
     /// Where this session picked the film up, so the exit can tell a viewer who
     /// watched from one who bailed out.
     private var sessionStartPosition: Double = 0
@@ -5082,6 +5108,7 @@ final class PlayerViewModel: ObservableObject {
     /// Build the audio/subtitle pickers from VLC's track lists.
     private func loadVLCTracks() {
         guard let engine = vlcEngine else { return }
+        engine.setSubtitleDelay(seconds: subtitleDelay)
         let engineAudio = engine.audioTracks
         vlcKnownAudioTrackCount = engineAudio.count
         audioOptions = engineAudio.map {
@@ -5244,7 +5271,8 @@ final class PlayerViewModel: ObservableObject {
             TrackOption(
                 id: "audio-\(track.trackID)",
                 displayName: trackLabel(track),
-                payload: .track(track)
+                payload: .track(track),
+                languageCode: track.languageCode
             )
         }
         selectedAudioID = player.tracks(mediaType: .audio)
@@ -7156,38 +7184,14 @@ final class PlayerViewModel: ObservableObject {
     func restartHideTimer() {
         hideControlsTask?.cancel()
         hideControlsTask = Task { [weak self] in
-            // Idle time before the controls go away. Every remote interaction
-            // (focus moves included) restarts this, so they never vanish
-            // mid-navigation.
-            //
-            // Was 3s, which is fine when the transport is a row of buttons you
-            // are stepping through — each move resets the clock. Fusion's whole
-            // transport is ONE bar: you look at it, decide, and press, with no
-            // intervening input to restart the timer. Three seconds of that is
-            // easy to exceed, and then the press lands on hidden controls and
-            // merely brings them back rather than starting a scrub — which
-            // reads as "half the time Select does nothing".
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard !Task.isCancelled, let self else { return }
-            // Keep the transport up while a fast-forward/rewind preview is
-            // active (so the moving playhead stays visible); otherwise hide once
-            // idle + playing.
-            // ...and never while PAUSED. Infuse keeps the bar up for as long as
-            // the picture is stopped, which is what both `togglePlayPause` and
-            // the `.pauseInfo` transitions have always claimed happens here —
-            // but the timer never checked, so five idle seconds after a pause
-            // took the transport away and left a frozen frame with no UI on it
-            // at all. (A pause is not idleness; it is a state the viewer is
-            // sitting in, and the bar is the only thing saying so.) Re-armed
-            // rather than dropped, so playback that resumes without going
-            // through a transport press — a seek autoplaying, a buffer
-            // refilling — still gets its auto-hide back.
-            guard overlay == .controls else { return }
-            guard isPlaying else {
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            guard !Task.isCancelled, let self, !isExiting, overlay == .controls else { return }
+            guard NTVTransportIdlePolicy.canHide(playing: isPlaying, buffering: isBuffering,
+                switching: isSwitchingSource, scrubbing: isScrubbing,
+                seeking: pendingSeekDelta != 0 || pendingResume != nil) else {
                 restartHideTimer()
                 return
             }
-            PlayerProbe.event("ui", "controls auto-hid after 5s idle")
             overlay = .none
         }
     }
@@ -7230,6 +7234,10 @@ final class PlayerViewModel: ObservableObject {
         }
         switch overlay {
         case .episodes, .sources, .audio, .subtitles, .speed, .engine:
+            if (overlay == .audio || overlay == .subtitles), trackPickerLanguage != nil {
+                trackPickerLanguage = nil
+                return true
+            }
             // A sub-menu opened from a DEAD-END overlay goes back to it, not
             // to the transport: "Other Sources" on the error screen, then
             // Back, used to land the viewer on a transport bar over a stream
@@ -7991,16 +7999,19 @@ final class PlayerViewModel: ObservableObject {
     /// Live subtitle-timing adjustment during playback (+ later, − earlier).
     /// Clamped to ±30 s and applied straight to the subtitle renderer.
     func nudgeSubtitleDelay(by delta: Double) {
+        guard delta.isFinite else { return }
         let value = min(30, max(-30, subtitleDelay + delta))
         // Kill −0.0 so the label reads a clean "0.0 s".
         subtitleDelay = value == 0 ? 0 : (value * 10).rounded() / 10
         subtitleModel.subtitleDelay = subtitleDelay
+        vlcEngine?.setSubtitleDelay(seconds: subtitleDelay)
         showToast("Subtitle delay \(Self.formatDelay(subtitleDelay))")
     }
 
     func resetSubtitleDelay() {
         subtitleDelay = 0
         subtitleModel.subtitleDelay = 0
+        vlcEngine?.setSubtitleDelay(seconds: 0)
         showToast("Subtitle delay 0.0 s")
     }
 
@@ -9972,6 +9983,14 @@ final class PlayerViewModel: ObservableObject {
         bufferAhead.wrappedValue = max(buffered - position, 0)
     }
 
+    private func recordInterruptionHint() {
+        guard !isExiting, !currentSourceIsNoticeClip, episodeSwitchTargetID == nil,
+              !retiredEpisodeOnExit, hasStartedPlayback else { return }
+        NTVResumeSuggestion.shared.record(id: ProgressStore.key(metaID: meta.id, video: currentVideo),
+            profile: resumeSuggestionProfile, session: resumeSuggestionSession,
+            position: max(max(position, pendingResume ?? 0), sessionResumeFloor), duration: duration)
+    }
+
     private func saveProgressThrottled() {
         publishBufferHealth()
         // Same two gates as `saveProgress`: mid-switch the clock and the
@@ -9993,6 +10012,7 @@ final class PlayerViewModel: ObservableObject {
         // it lands in Continue Watching as a title watched to the end.
         guard !currentSourceIsNoticeClip else { return }
         lastProgressSave = Date()
+        recordInterruptionHint()
         // The FIRST save and then every 3rd (~30s) also nudge the account
         // push, so another device sees the film in progress within seconds of
         // it starting and follows the position as you watch — instead of the
@@ -10030,6 +10050,7 @@ final class PlayerViewModel: ObservableObject {
             PlayerProbe.event("progress", "SAVE SUPPRESSED — the exit retired this episode as finished")
             return
         }
+        recordInterruptionHint()
         let saved = max(max(position, pendingResume ?? 0), sessionResumeFloor)
         PlayerProbe.event("progress", String(
             format: "SAVE %.1f of %.1f (position=%.1f pendingResume=%@ floor=%.1f)",
@@ -10086,6 +10107,7 @@ final class PlayerViewModel: ObservableObject {
     /// criteria are released separately by `releaseDisplayForExit()`, after the
     /// black cover and the detached surface have had a run-loop turn to settle.
     func prepareForExit() {
+        NTVResumeSuggestion.shared.clear(profile: resumeSuggestionProfile, session: resumeSuggestionSession)
         guard !isExiting else { return }
         isExiting = true
         endAdvanceLadder()
@@ -10193,6 +10215,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func teardown() {
+        NTVResumeSuggestion.shared.clear(profile: resumeSuggestionProfile, session: resumeSuggestionSession)
         // This teardown can arrive LATE — `PiPHandoff.finish()` runs it from
         // AVKit's `didStop`, at an arbitrary moment, possibly long after the
         // viewer started a different film. So every line below that touches
@@ -10340,7 +10363,7 @@ final class PlayerViewModel: ObservableObject {
 
     var episodeLine: String? {
         guard let video = currentVideo, video.season != nil else { return nil }
-        var line = video.seasonEpisodeCode
+        var line = video.displayEpisodeCode
         if let title = video.title { line += " • \(title)" }
         return line
     }

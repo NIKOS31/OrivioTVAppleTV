@@ -131,6 +131,7 @@ struct NTVCatalogView: View {
     @Environment(\.navigationIsTop) private var navigationIsTop
     @EnvironmentObject private var addons: AddonManager
     @EnvironmentObject private var profiles: ProfileStore
+    @ObservedObject private var iptv = LiveTVSettingsStore.shared
     @ObservedObject var viewModel: NTVCatalogBrowserModel
     let mediaType: String
     let title: String
@@ -155,7 +156,7 @@ struct NTVCatalogView: View {
     @FocusState private var categoryTriggerFocused: Bool
     private var routerID: String { "ntv.catalog.\(mediaType).entry" }
     private var loadKey: String {
-        String(profiles.activeProfileID) + "#" + addons.catalogAddons.map { "\($0.id)#\($0.manifest.catalogs?.hashValue ?? 0)" }.joined(separator: "#")
+        String(profiles.activeProfileID) + "#" + iptv.routingFingerprint + "#" + addons.catalogAddons.map { "\($0.id)#\($0.manifest.catalogs?.hashValue ?? 0)" }.joined(separator: "#")
     }
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.catalog)
@@ -279,7 +280,7 @@ struct NTVCatalogView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task(id: loadKey) {
             hero.layout = .pinnedFocus
-            viewModel.configure(addons: addons.catalogAddons, type: mediaType, scope: String(profiles.activeProfileID))
+            viewModel.configure(addons: addons.catalogAddons, type: mediaType, scope: String(profiles.activeProfileID) + "#" + iptv.routingFingerprint)
             if let first = viewModel.sources.first {
                 let shelf = viewModel.shelf(first)
                 await shelf.load()

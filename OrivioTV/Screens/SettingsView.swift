@@ -942,16 +942,16 @@ struct ContentDiscoveryDetail: View {
                     ]
                 ) { homeCatalogSettings.autoRefreshMinutes = Int($0) ?? 0 }
             }
-            SettingsGroupCard(title: "TV en direct", subtitle: "Affichage et sources des chaînes en direct") {
+            SettingsGroupCard(title: "IPTV et TV en direct", subtitle: "Choisir où utiliser votre source personnelle") {
                 SettingsToggleCard(
                     title: "Onglet TV en direct",
                     subtitle: "Afficher l’onglet TV en direct dans le menu",
                     isOn: $liveTV.enabled
                 )
 
-                if liveTV.enabled {
-                    iptvPlaylistControls
+                iptvPlaylistControls
 
+                if liveTV.enabled {
                     // Location/language are paths into iptv-org's playlist
                     // tree — meaningless against a custom playlist, so they
                     // hide rather than sit there doing nothing.
@@ -1004,7 +1004,7 @@ struct ContentDiscoveryDetail: View {
                     .font(.system(size: 28))
                     .foregroundStyle(theme.palette.secondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Liste personnalisée active")
+                    Text("Source IPTV configurée")
                         .font(.system(size: 24, weight: .medium))
                         .foregroundStyle(theme.palette.textPrimary)
                     Text(liveTV.customPlaylistDisplayURL)
@@ -1020,9 +1020,7 @@ struct ContentDiscoveryDetail: View {
                 .font(.system(size: 22, weight: .semibold))
             }
             .padding(.vertical, 4)
-            Text("La TV en direct utilise votre liste personnalisée. Supprimez-la pour retrouver la liste intégrée.")
-                .font(.system(size: 18))
-                .foregroundStyle(theme.palette.textTertiary)
+            iptvDestinationsControls
         } else {
             // Playlist URLs are long; the QR page (the add-ons phone-paste
             // server, re-worded) is the comfortable way in. The field below
@@ -1048,6 +1046,10 @@ struct ContentDiscoveryDetail: View {
                     var url = iptvURLInput.trimmingCharacters(in: .whitespaces)
                     guard !url.isEmpty else { return }
                     if !url.contains("://") { url = "https://" + url }
+                    guard let target = URL(string: url), NTVIPTVConfiguration.secure(target) else {
+                        iptvStatus = "Utilisez le lien HTTPS fourni par votre service pour protéger vos identifiants."
+                        return
+                    }
                     iptvImporting = true
                     iptvStatus = nil
                     Task {
@@ -1089,11 +1091,11 @@ struct ContentDiscoveryDetail: View {
     /// exactly like a pasted one, so nothing downstream changes.
     @ViewBuilder
     private var iptvProviderLogin: some View {
-        Text("Ou connecter votre fournisseur de chaînes")
+        Text("Ou connecter votre fournisseur IPTV")
             .font(.system(size: 24, weight: .medium))
             .foregroundStyle(theme.palette.textPrimary)
             .padding(.top, OrivioSpacing.sm)
-        TextField("Adresse du serveur, par exemple http://provider.tv:8080", text: $providerServer)
+        TextField("Adresse HTTPS du serveur", text: $providerServer)
             .font(.system(size: 22))
             .textContentType(.URL)
             .autocorrectionDisabled()
@@ -1112,21 +1114,22 @@ struct ContentDiscoveryDetail: View {
                       let url = LiveTVSettingsStore.providerPlaylistURL(
                           server: providerServer, username: providerUsername,
                           password: providerPassword) else {
-                    providerStatus = "Saisissez l’adresse du serveur et les identifiants fournis par votre service."
+                    providerStatus = "Saisissez une adresse HTTPS et les identifiants fournis par votre service."
                     return
                 }
                 providerImporting = true
                 providerStatus = nil
                 Task {
-                    let channels = await M3UService.channels(from: url)
-                    if channels.isEmpty {
-                        providerStatus = "Chargement des chaînes impossible. Vérifiez le serveur et vos identifiants."
-                    } else {
+                    do {
+                        guard let config = NTVIPTVConfiguration(playlist: url, destinations: [.tv], untyped: .tv) else {
+                            throw StremioAPIError.invalidResponse
+                        }
+                        try await NTVIPTVCatalogService.shared.validateAccount(config: config)
                         liveTV.customPlaylistURL = url
                         providerStatus = nil
-                        providerServer = ""
-                        providerUsername = ""
-                        providerPassword = ""
+                        providerServer = ""; providerUsername = ""; providerPassword = ""
+                    } catch {
+                        providerStatus = "Connexion impossible. Vérifiez l’adresse HTTPS, les identifiants et l’état de votre abonnement."
                     }
                     providerImporting = false
                 }
@@ -1144,9 +1147,39 @@ struct ContentDiscoveryDetail: View {
                 .font(.system(size: 19))
                 .foregroundStyle(theme.palette.textSecondary)
         }
-        Text("Pour les services utilisant une adresse de serveur et des identifiants Xtream Codes. Vos chaînes remplacent la liste intégrée.")
+        Text("Connexion Xtream Codes. Après ajout, choisissez TV, Films, Séries ou plusieurs destinations.")
             .font(.system(size: 18))
             .foregroundStyle(theme.palette.textTertiary)
+    }
+
+    @ViewBuilder
+    private var iptvDestinationsControls: some View {
+        if liveTV.configuration == nil {
+            Text("Cette source nécessite une adresse HTTPS. Remplacez son lien pour protéger vos identifiants.")
+                .font(.system(size: 24)).foregroundStyle(theme.palette.textSecondary)
+        }
+        ForEach(NTVIPTVSection.allCases, id: \.self) { section in
+            SettingsToggleCard(title: "Utiliser dans " + section.title,
+                subtitle: section == .tv ? "Chaînes en direct" : "Afficher le catalogue dans " + section.title,
+                isOn: Binding(get: { liveTV.destinations.contains(section) }, set: { enabled in
+                    if enabled { liveTV.destinations.insert(section) }
+                    else { liveTV.destinations.remove(section) }
+                }))
+                .accessibilityIdentifier("ntv.settings.iptv.destination." + section.rawValue)
+        }
+        if liveTV.destinations.isEmpty {
+            Text("Source conservée, sans destination active.").font(.system(size: 24)).foregroundStyle(theme.palette.textSecondary)
+        }
+        if liveTV.configuration?.isXtream == false {
+            OrivioDropdown(title: "Liens M3U sans type", subtitle: "Destination des liens qui ne précisent pas s’il s’agit de TV, films ou séries",
+                icon: "line.3.horizontal.decrease", selection: liveTV.untypedM3USection.rawValue,
+                options: NTVIPTVSection.allCases.map { OrivioDropdownOption($0.rawValue, $0.title) }) {
+                    if let section = NTVIPTVSection(rawValue: $0) { liveTV.untypedM3USection = section }
+                }
+                .accessibilityIdentifier("ntv.settings.iptv.untyped")
+            Text("Pour les séries M3U, les titres d’épisodes doivent préciser S01E01, S01E02… La présence de films et séries dépend de votre source.")
+                .font(.system(size: 24)).foregroundStyle(theme.palette.textSecondary)
+        }
     }
 
     /// Badger badge-pack import: paste a config URL (from the Badger editor's

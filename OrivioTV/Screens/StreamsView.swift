@@ -177,6 +177,7 @@ final class StreamsViewModel: ObservableObject {
     /// The last played source for this title if still within `hours`, else nil.
     func freshLastLink(hours: Int) async -> StreamEntry? {
         let id = await effectiveStreamID()
+        guard !id.hasPrefix(NTVIPTVConfiguration.idPrefix) else { return nil }
         guard let cached = await Self.lastLinkCache.value(
             for: id, ttl: TimeInterval(max(1, hours)) * 3600
         ) else { return nil }
@@ -185,7 +186,7 @@ final class StreamsViewModel: ObservableObject {
 
     /// Record a resolved, directly-playable source as this title's last link.
     func recordLastLink(_ entry: StreamEntry) {
-        guard entry.stream.isPlayable, let id = resolvedID else { return }
+        guard entry.stream.isPlayable, let id = resolvedID, !id.hasPrefix(NTVIPTVConfiguration.idPrefix) else { return }
         let cached = CachedStreamSource(addonName: entry.addonName, stream: entry.stream)
         Task { await Self.lastLinkCache.store(cached, for: id) }
     }
@@ -658,7 +659,7 @@ final class StreamsViewModel: ObservableObject {
 
         // Instant path: a fresh cached source list rebuilds the whole page with
         // no addon sweep at all.
-        if !forceRefresh,
+        if !forceRefresh, !fetchID.hasPrefix(NTVIPTVConfiguration.idPrefix),
            let cached = await Self.sourceCache.value(for: fetchID, ttl: Self.sourceCacheTTL),
            !cached.isEmpty {
             pool = cached.map { StreamEntry(addonName: $0.addonName, stream: $0.stream) }
@@ -783,7 +784,7 @@ final class StreamsViewModel: ObservableObject {
         // two seconds persisted a one-addon snapshot that the next open then
         // showed as the complete list for the full cache TTL.
         let snapshot = pool.map { CachedStreamSource(addonName: $0.addonName, stream: $0.stream) }
-        if !snapshot.isEmpty, !Task.isCancelled, finishedAddons >= totalAddons {
+        if !fetchID.hasPrefix(NTVIPTVConfiguration.idPrefix), !snapshot.isEmpty, !Task.isCancelled, finishedAddons >= totalAddons {
             await Self.sourceCache.store(snapshot, for: fetchID)
         }
     }

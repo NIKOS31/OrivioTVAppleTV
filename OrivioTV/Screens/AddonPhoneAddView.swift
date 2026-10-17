@@ -137,7 +137,7 @@ struct IPTVPhoneAddView: View {
 
     private struct PlaylistImportError: LocalizedError {
         var errorDescription: String? {
-            "Aucune chaîne trouvée. Vérifiez que le lien correspond à une liste M3U ou M3U8."
+            "Liste indisponible. Utilisez le lien HTTPS M3U fourni par votre service."
         }
     }
 
@@ -200,6 +200,9 @@ struct IPTVPhoneAddView: View {
                 if !normalized.contains("://") { normalized = "https://" + normalized }
                 // Same validation as the on-TV field: actually fetch and
                 // parse — storing a dud would just blank the Live TV tab.
+                guard let target = URL(string: normalized), NTVIPTVConfiguration.secure(target) else {
+                    return .failure(PlaylistImportError())
+                }
                 let channels = await M3UService.channels(from: normalized)
                 guard !channels.isEmpty else { return .failure(PlaylistImportError()) }
                 LiveTVSettingsStore.shared.customPlaylistURL = normalized

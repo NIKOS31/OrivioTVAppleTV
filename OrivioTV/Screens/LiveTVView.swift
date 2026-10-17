@@ -144,16 +144,21 @@ final class LiveTVViewModel: ObservableObject {
 
         // Optional explicit playlist. Installed TV add-ons stand on their own.
         let settings = LiveTVSettingsStore.shared
-        guard settings.usesCustomPlaylist else {
+        guard settings.usesCustomPlaylist, settings.destinations.contains(.tv) else {
             loadingIPTV = false
             isLoading = false
             return
         }
         loadingIPTV = true
-        let m3u = await M3UService.channels(from: settings.primaryPlaylistURL)
+        let config = settings.configuration
+        let playlist = settings.primaryPlaylistURL
+        let m3u = await M3UService.channels(from: playlist)
 
-        guard generation == loadGeneration else { return }
-        sections = addonSections + m3uSections(m3u)
+        guard generation == loadGeneration, !Task.isCancelled else { return }
+        sections = addonSections + m3uSections(m3u.filter {
+            guard let url = URL(string: $0.url), NTVIPTVConfiguration.secure(url) else { return false }
+            return config?.section(for: $0) == .tv
+        })
         loadingIPTV = false
         isLoading = false
     }
@@ -280,7 +285,7 @@ struct LiveTVView: View {
     @State private var selectedGroupID = ""
 
     private var settingsKey: String {
-        "\(liveSettings.countryCode)|\(liveSettings.languageCode)|\(liveSettings.customPlaylistURL)"
+        "\(liveSettings.countryCode)|\(liveSettings.languageCode)|\(liveSettings.routingFingerprint)"
     }
 
     private var addonKey: String {

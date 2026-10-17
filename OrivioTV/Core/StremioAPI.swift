@@ -284,6 +284,13 @@ enum StremioAPI {
         genre: String? = nil,
         skip: Int? = nil
     ) async throws -> [MetaItem] {
+        if NTVIPTVConfiguration.isBridge(addon) {
+            let config = try await NTVIPTVConfiguration.current(for: addon)
+            let value = try await NTVIPTVCatalogService.shared.catalog(config: config, type: catalog.type, search: search, skip: skip)
+            try Task.checkCancellation()
+            guard await config.isCurrent else { throw CancellationError() }
+            return value
+        }
         let type = try encodePathComponent(catalog.type)
         let id = try encodePathComponent(catalog.id)
         var path = "/catalog/\(type)/\(id)"
@@ -314,6 +321,14 @@ enum StremioAPI {
     }
 
     static func meta(addon: InstalledAddon, type: String, id: String) async throws -> MetaItem {
+        if NTVIPTVConfiguration.isBridge(addon) {
+            let config = try await NTVIPTVConfiguration.current(for: addon)
+            let value = try await NTVIPTVCatalogService.shared.meta(config: config, type: type, id: id)
+            try Task.checkCancellation()
+            guard await config.isCurrent else { throw CancellationError() }
+            return value
+        }
+        guard !id.hasPrefix(NTVIPTVConfiguration.idPrefix) else { throw StremioAPIError.invalidResponse }
         // Via `resourceURL` so a configured addon's manifest query (its
         // token) rides along after `.json` instead of being dropped.
         let url = try addon.resourceURL("/meta/\(encodePathComponent(type))/\(encodePathComponent(id)).json")
@@ -329,6 +344,14 @@ enum StremioAPI {
 
     static func streams(addon: InstalledAddon, type: String, id: String,
                         timeout: TimeInterval = 45) async throws -> [Stream] {
+        if NTVIPTVConfiguration.isBridge(addon) {
+            let config = try await NTVIPTVConfiguration.current(for: addon)
+            let value = try await NTVIPTVCatalogService.shared.streams(config: config, type: type, id: id)
+            try Task.checkCancellation()
+            guard await config.isCurrent else { throw CancellationError() }
+            return value
+        }
+        guard !id.hasPrefix(NTVIPTVConfiguration.idPrefix) else { throw StremioAPIError.invalidResponse }
         // Via `resourceURL` so a configured addon's manifest query (its
         // token) rides along after `.json` instead of being dropped.
         let url = try addon.resourceURL("/stream/\(encodePathComponent(type))/\(encodePathComponent(id)).json")
@@ -360,6 +383,8 @@ enum StremioAPI {
     }
 
     static func streamsForAvailability(addon: InstalledAddon, type: String, id: String) async throws -> [Stream] {
+        if NTVIPTVConfiguration.isBridge(addon) { return try await streams(addon: addon, type: type, id: id, timeout: 20) }
+        guard !id.hasPrefix(NTVIPTVConfiguration.idPrefix) else { throw StremioAPIError.invalidResponse }
         let url = try addon.resourceURL("/stream/\(encodePathComponent(type))/\(encodePathComponent(id)).json")
         // Keep the ordinary Sources screen's tolerant decoder. A probe needs
         // strict evidence: discarded malformed/null entries are not an empty list.
@@ -373,6 +398,7 @@ enum StremioAPI {
 
     /// Stremio subtitle addons (e.g. OpenSubtitles): `/subtitles/{type}/{id}.json`.
     static func subtitles(addon: InstalledAddon, type: String, id: String) async throws -> [AddonSubtitle] {
+        guard !id.hasPrefix(NTVIPTVConfiguration.idPrefix) else { throw StremioAPIError.invalidResponse }
         // Via `resourceURL` so a configured addon's manifest query (its
         // token) rides along after `.json` instead of being dropped.
         let url = try addon.resourceURL("/subtitles/\(encodePathComponent(type))/\(encodePathComponent(id)).json")

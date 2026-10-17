@@ -338,6 +338,7 @@ struct InstalledAddon: Codable, Identifiable, Hashable {
     /// entry ({"name":"stream","idPrefixes":[…]}) — union both; an addon that
     /// declares neither is assumed to handle everything.
     func handles(id contentID: String) -> Bool {
+        if contentID.hasPrefix(NTVIPTVConfiguration.idPrefix), !NTVIPTVConfiguration.isBridge(self) { return false }
         var prefixes = manifest.idPrefixes ?? []
         for resource in manifest.resources ?? [] {
             if case .detailed(_, _, let resourcePrefixes) = resource {

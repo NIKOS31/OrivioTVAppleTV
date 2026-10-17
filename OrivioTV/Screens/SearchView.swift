@@ -45,6 +45,7 @@ final class SearchViewModel: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var loadedTrending = false
     private var completedQuery: String?
+    private var sourceConfiguration: String?
     private var searchRevision = UUID()
     private struct Batch { let items: [MetaItem]; let succeeded: Bool }
     private let requestLimit: Int
@@ -75,6 +76,14 @@ final class SearchViewModel: ObservableObject {
         suspendSearch()
         query = ""; results = []; trending = []
         loadedTrending = false; completedQuery = nil
+        outcome = .idle
+    }
+
+    func updateSourceConfiguration(_ fingerprint: String) {
+        guard sourceConfiguration != fingerprint else { return }
+        sourceConfiguration = fingerprint
+        suspendSearch()
+        completedQuery = nil; loadedTrending = false; results = []; trending = []
         outcome = .idle
     }
 
@@ -206,6 +215,7 @@ final class SearchViewModel: ObservableObject {
     func loadTrendingIfNeeded(addonManager: AddonManager) async {
         guard !loadedTrending else { return }
         loadedTrending = true
+        let revision = searchRevision
         // Same ordering problem as search: "the first add-on with an
         // extra-free catalog" made a torrent aggregator's release listing the
         // Trending shelf whenever one happened to be installed above Cinemeta.
@@ -217,11 +227,13 @@ final class SearchViewModel: ObservableObject {
             }
             .map(\.element)
         for addon in ranked {
+            guard searchRevision == revision else { return }
             guard !Task.isCancelled else { loadedTrending = false; return }
             guard let catalog = (addon.manifest.catalogs ?? []).first(where: { !$0.requiresExtra && NTVAnimeDomain.contains($0) == includesAnime })
             else { continue }
             if let items = try? await StremioAPI.catalog(addon: addon, catalog: catalog),
                !items.isEmpty {
+                guard searchRevision == revision else { return }
                 guard !Task.isCancelled else { loadedTrending = false; return }
                 trending = Array(items.deduplicatedByID().filter { includesAnime || !NTVAnimeLibrary.shared.contains($0) }.prefix(18))
                 return
@@ -234,6 +246,7 @@ struct SearchView: View {
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var posterLayout: HomeCatalogSettingsStore
     @EnvironmentObject private var addonManager: AddonManager
+    @ObservedObject private var iptv = LiveTVSettingsStore.shared
     // Owned by RootView so the query + results PERSIST across tab switches.
     // A local @StateObject would be rebuilt (and cleared) every time the Search
     // tab is re-entered.
@@ -261,7 +274,8 @@ struct SearchView: View {
                     .ignoresSafeArea(edges: .horizontal)
             } else { searchContent(availableWidth: nil) }
         }
-        .task {
+        .task(id: iptv.routingFingerprint) {
+            viewModel.updateSourceConfiguration(iptv.routingFingerprint)
             if viewModel.query.trimmingCharacters(in: .whitespaces).count >= 2 {
                 viewModel.resumeSearchIfNeeded(addonManager: addonManager)
             } else {

@@ -14,6 +14,7 @@ struct M3UChannel: Identifiable, Hashable {
     /// See `LiveStreamOptions` — these used to be parsed and thrown away.
     var options: LiveStreamOptions = LiveStreamOptions()
     var id_: String { id }
+    var declaredSection: NTVIPTVSection? = nil
 }
 
 /// Parses an M3U playlist (e.g. the embedded iptv-org global list) into channels
@@ -36,6 +37,7 @@ enum M3UService {
     private static var cacheOrder: [String] = []
     private static let cacheLimit = 2
     private static let lock = NSLock()
+    private static let session = NTVAddonTransportPolicy.makeSession(configuration: .ephemeral)
 
     private static let purgeObserver: NSObjectProtocol = NotificationCenter.default.addObserver(
         forName: UIApplication.didReceiveMemoryWarningNotification,
@@ -49,6 +51,7 @@ enum M3UService {
 
     static func channels(from urlString: String) async -> [M3UChannel] {
         _ = purgeObserver
+        guard let url = URL(string: urlString), NTVIPTVConfiguration.secure(url) else { return [] }
         let hit = lock.withLock { () -> [M3UChannel]? in
             guard let hit = cache[urlString] else { return nil }
             // Refresh LRU position.
@@ -56,25 +59,27 @@ enum M3UService {
             cacheOrder.append(urlString)
             return hit
         }
+        guard !Task.isCancelled else { return [] }
         if let hit { return hit }
 
-        guard let url = URL(string: urlString) else { return [] }
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await NTVBoundedResponse.data(for: request, session: session, maximumBytes: 16 << 20),
               let text = String(data: data, encoding: .utf8) else { return [] }
         // A captive portal (or any error page) answers 200 with HTML. Without
         // a status check that parsed to zero channels and was CACHED for the
         // process lifetime, so Live TV stayed empty until the app was killed
         // even after the network came good.
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            NSLog("[OrivioM3U] playlist request returned HTTP %d — not caching", http.statusCode)
+        if !(200..<300).contains(response.statusCode) {
+            NSLog("[OrivioM3U] playlist request returned HTTP %d — not caching", response.statusCode)
             return []
         }
-        let parsed = await Task.detached(priority: .userInitiated) { parse(text) }.value
+        guard text.contains("#EXTINF"), !Task.isCancelled else { return [] }
+        let task = Task.detached(priority: .userInitiated) { parse(text) }
+        let parsed = await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
         // Only cache a real playlist. An empty parse is either an error page
         // or a truncated download; caching it makes the failure permanent.
-        guard !parsed.isEmpty else { return [] }
+        guard !parsed.isEmpty, parsed.count <= 50_000, !Task.isCancelled else { return [] }
         lock.withLock {
             if cache[urlString] == nil { cacheOrder.append(urlString) }
             cache[urlString] = parsed
@@ -93,10 +98,13 @@ enum M3UService {
         var pendingLogo: String?
         var pendingGroup: String?
         var pendingCountry: String?
+        var pendingSection: NTVIPTVSection?
         var pendingOptions = LiveStreamOptions()
 
-        text.enumerateLines { line, _ in
+        text.enumerateLines { line, stop in
+            if Task.isCancelled || channels.count > 50_000 { stop = true; return }
             if line.hasPrefix("#EXTINF") {
+                pendingSection = NTVIPTVSection.declared(attribute("media-type", in: line) ?? attribute("tvg-type", in: line))
                 pendingName = name(from: line)
                 pendingLogo = attribute("tvg-logo", in: line)
                 pendingGroup = attribute("group-title", in: line)
@@ -129,10 +137,11 @@ enum M3UService {
                         logo: pendingLogo?.isEmpty == false ? pendingLogo : nil,
                         group: (pendingGroup?.isEmpty == false ? pendingGroup! : "Other"),
                         country: pendingCountry,
-                        options: options
+                        options: options,
+                        declaredSection: pendingSection
                     ))
                 }
-                pendingName = nil; pendingLogo = nil; pendingGroup = nil; pendingCountry = nil
+                pendingName = nil; pendingLogo = nil; pendingGroup = nil; pendingCountry = nil; pendingSection = nil
                 pendingOptions = LiveStreamOptions()
             }
         }

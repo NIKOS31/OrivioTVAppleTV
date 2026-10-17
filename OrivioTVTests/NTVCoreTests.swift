@@ -2,6 +2,250 @@ import XCTest
 import UIKit
 @testable import OrivioTV
 
+final class NTVIPTVRoutingTests: XCTestCase {
+    private func config(_ destinations: Set<NTVIPTVSection> = [.tv, .movie, .series],
+                        playlist: String = "https://provider.example/get.php?username=demo&password=demo",
+                        untyped: NTVIPTVSection = .tv) throws -> NTVIPTVConfiguration {
+        try XCTUnwrap(NTVIPTVConfiguration(playlist: playlist, destinations: destinations, untyped: untyped))
+    }
+
+    func testCredentialsRequireTLSAndNeverEnterInternalAddonOrContentIDs() throws {
+        for raw in ["http://provider.example/list.m3u", "file:///tmp/list.m3u", "https://user:pass@provider.example/list", "https://provider.example/list#secret"] {
+            XCTAssertNil(NTVIPTVConfiguration(playlist: raw, destinations: [.movie], untyped: .movie))
+        }
+        let config = try config()
+        let addon = try XCTUnwrap(config.catalogAddon)
+        XCTAssertEqual(addon.manifestURL, "ntv-iptv://local")
+        XCTAssertFalse(addon.manifestURL.contains("demo"))
+        XCTAssertFalse(config.prefix.contains("demo"))
+        XCTAssertEqual(Set(addon.manifest.catalogs?.map(\.type) ?? []), Set(["movie", "series"]))
+        XCTAssertTrue(addon.handles(id: config.prefix + "movie.1"))
+        XCTAssertNil(try self.config([.tv]).catalogAddon)
+        XCTAssertNil(try self.config([]).catalogAddon)
+    }
+
+    func testProviderURLKeepsSubpathsAndEncodesCredentialsInQueryAndMediaSegments() throws {
+        let url = try XCTUnwrap(LiveTVSettingsStore.providerPlaylistURL(server: "provider.example/service/", username: "u/+", password: "p +&/"))
+        let config = try self.config(playlist: url)
+        let api = try config.apiURL(action: "get_series_info", seriesID: "12")
+        let query = try XCTUnwrap(URLComponents(url: api, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(api.path, "/service/player_api.php")
+        XCTAssertEqual(query.first { $0.name == "username" }?.value, "u/+")
+        XCTAssertEqual(query.first { $0.name == "password" }?.value, "p +&/")
+        let media = try XCTUnwrap(config.mediaURL(section: .movie, id: "12", ext: "MKV"))
+        XCTAssertTrue(media.hasSuffix("/movie/u%2F%2B/p%20%2B%26%2F/12.mkv"))
+        XCTAssertNil(config.mediaURL(section: .movie, id: "../12", ext: "mkv"))
+        XCTAssertNil(config.mediaURL(section: .movie, id: "12", ext: "mkv/../../"))
+        XCTAssertNil(config.mediaURL(section: .tv, id: "12", ext: "ts"))
+        XCTAssertThrowsError(try config.apiURL(action: "delete_user"))
+        XCTAssertThrowsError(try config.apiURL(action: "get_series_info", seriesID: "١٢"))
+        let endpoint = try XCTUnwrap(LiveTVSettingsStore.providerPlaylistURL(server: "https://provider.example/service/get.php", username: "demo", password: "demo"))
+        XCTAssertEqual(URL(string: endpoint)?.path, "/service/get.php")
+        XCTAssertNil(LiveTVSettingsStore.providerPlaylistURL(server: "http://provider.example", username: "demo", password: "demo"))
+        XCTAssertNil(LiveTVSettingsStore.providerPlaylistURL(server: "https://provider.example/?token=x", username: "demo", password: "demo"))
+    }
+
+    func testM3UTypesAreExplicitOrPathBasedAndUntypedLinksHaveOneFallback() throws {
+        let text = """
+        #EXTM3U
+        #EXTINF:-1 media-type="movie",Film
+        https://provider.example/plain/1
+        #EXTINF:-1 tvg-type="series",Show S01E01
+        https://provider.example/plain/2
+        #EXTINF:-1,Live
+        https://provider.example/live/movie/demo/3.ts
+        #EXTINF:-1,Unknown
+        https://provider.example/plain/4
+        """
+        let channels = M3UService.parse(text)
+        let config = try self.config(playlist: "https://provider.example/list.m3u", untyped: .movie)
+        XCTAssertEqual(channels.count, 4)
+        XCTAssertEqual(channels.map { config.section(for: $0) }, [.movie, .series, .tv, .movie])
+        XCTAssertNil(channels[3].declaredSection, "The previous entry's declaration must not leak.")
+    }
+
+    func testXtreamMoviesAreSearchablePaginatedAndResolvedWithoutAnotherProvider() async throws {
+        let rows = (0..<105).map { ["stream_id": String($0), "name": "Film \($0)", "container_extension": "mkv"] }
+        let data = try JSONSerialization.data(withJSONObject: rows + [rows[0]])
+        let config = try self.config()
+        let service = NTVIPTVCatalogService { url in
+            XCTAssertTrue(url.absoluteString.contains("action=get_vod_streams"))
+            return data
+        }
+        let page = try await service.catalog(config: config, type: "movie", search: nil, skip: nil)
+        let next = try await service.catalog(config: config, type: "movie", search: nil, skip: 100)
+        let search = try await service.catalog(config: config, type: "movie", search: "Film 104", skip: nil)
+        XCTAssertEqual(page.count, 100)
+        XCTAssertEqual(next.count, 5)
+        XCTAssertEqual(search.map(\.id), [config.prefix + "movie.104"])
+        let streams = try await service.streams(config: config, type: "movie", id: search[0].id)
+        XCTAssertEqual(streams.first?.url, "https://provider.example/movie/demo/demo/104.mkv")
+    }
+
+    func testDisabledDestinationMakesNoProviderRequest() async throws {
+        let service = NTVIPTVCatalogService { _ in XCTFail("A disabled section must not fetch."); return Data() }
+        let results = try await service.catalog(config: config([.tv]), type: "movie", search: nil, skip: nil)
+        XCTAssertTrue(results.isEmpty)
+    }
+
+    func testXtreamEpisodesUseDeclaredSeasonAndEpisodeAndSortBeforePlayback() async throws {
+        let list = Data(#"[{"series_id":7,"name":"Show","cover":"https://images.example/show.jpg"}]"#.utf8)
+        let info = Data(#"{"episodes":{"2":[{"id":"72","episode_num":2,"title":"Second","container_extension":"mkv"},{"id":"71","episode_num":1,"title":"First","container_extension":"mp4"},{"id":"71","episode_num":1},{"id":"73","title":"No number"}]}}"#.utf8)
+        let service = NTVIPTVCatalogService { url in url.query?.contains("get_series_info") == true ? info : list }
+        let config = try config()
+        let meta = try await service.meta(config: config, type: "series", id: config.prefix + "series.7")
+        XCTAssertEqual(meta.videos?.map(\.episode), [1, 2])
+        XCTAssertEqual(meta.videos?.map(\.season), [2, 2])
+        let episode = try XCTUnwrap(meta.videos?.first)
+        let streams = try await service.streams(config: config, type: "series", id: episode.id)
+        XCTAssertEqual(streams.first?.url, "https://provider.example/series/demo/demo/71.mp4")
+    }
+
+    func testXtreamFlatEpisodeVariantKeepsOnlyUsableEntries() async throws {
+        let list = Data(#"[{"series_id":"1","name":"Show"}]"#.utf8)
+        let info = Data(#"{"episodes":[{"id":11,"season":1,"episode_num":1},{"id":12,"episode_num":2},{"id":13,"season":1,"episode_num":3,"container_extension":"exe"}]}"#.utf8)
+        let service = NTVIPTVCatalogService { url in url.query?.contains("get_series_info") == true ? info : list }
+        let config = try config()
+        let meta = try await service.meta(config: config, type: "series", id: config.prefix + "series.1")
+        XCTAssertEqual(meta.videos?.count, 1)
+        XCTAssertEqual(meta.videos?.first?.episode, 1)
+    }
+
+    func testM3USeriesGroupOnlyExplicitEpisodeNumbersAndRetainPlaybackHeaders() async throws {
+        let text = """
+        #EXTM3U
+        #EXTINF:-1 media-type="series",Show S01E02
+        https://provider.example/series/two.mkv
+        #EXTINF:-1 media-type="series",Show S01E01
+        #EXTVLCOPT:http-user-agent=nTV-test
+        https://provider.example/series/one.mkv
+        #EXTINF:-1 media-type="series",Show unknown
+        https://provider.example/series/unknown.mkv
+        #EXTINF:-1 media-type="series",Show S01E03
+        http://provider.example/series/cleartext.mkv
+        """
+        let service = NTVIPTVCatalogService { _ in Data(text.utf8) }
+        let config = try self.config(playlist: "https://provider.example/list.m3u")
+        let page = try await service.catalog(config: config, type: "series", search: nil, skip: nil)
+        XCTAssertEqual(page.count, 1)
+        let meta = try await service.meta(config: config, type: "series", id: page[0].id)
+        XCTAssertEqual(meta.videos?.map(\.episode), [1, 2])
+        let streams = try await service.streams(config: config, type: "series", id: XCTUnwrap(meta.videos?.first?.id))
+        XCTAssertEqual(streams.first?.behaviorHints?.proxyHeaders?.request?["User-Agent"], "nTV-test")
+    }
+
+    func testM3UMovieRoutingExcludesTVUnsafeURLsAndUnsupportedDRM() async throws {
+        let text = """
+        #EXTM3U
+        #EXTINF:-1 media-type="movie",Film
+        https://provider.example/movie/1.mkv
+        #EXTINF:-1 media-type="tv",Live
+        https://provider.example/live/1.m3u8
+        #EXTINF:-1 media-type="movie",Insecure
+        http://provider.example/movie/2.mkv
+        #EXTINF:-1 media-type="movie",DRM
+        #KODIPROP:inputstream.adaptive.license_type=com.widevine.alpha
+        https://provider.example/movie/3.mpd
+        """
+        let service = NTVIPTVCatalogService { _ in Data(text.utf8) }
+        let page = try await service.catalog(config: config(playlist: "https://provider.example/list.m3u"), type: "movie", search: nil, skip: nil)
+        XCTAssertEqual(page.map(\.name), ["Film"])
+    }
+
+    func testProviderFailuresAndHTMLAreErrorsRatherThanEmptyCatalogEvidence() async throws {
+        for data in [Data("<html>Login</html>".utf8), Data(#"{"error":"denied"}"#.utf8)] {
+            let service = NTVIPTVCatalogService { _ in data }
+            do {
+                _ = try await service.catalog(config: config(), type: "movie", search: nil, skip: nil)
+                XCTFail("Malformed provider payload must fail.")
+            } catch { XCTAssertFalse(error is CancellationError) }
+        }
+    }
+
+    func testProviderCatalogCountIsBounded() async throws {
+        let data = try JSONSerialization.data(withJSONObject: Array(repeating: ["stream_id": 1, "name": "Film"], count: 10_001))
+        let service = NTVIPTVCatalogService { _ in data }
+        do {
+            _ = try await service.catalog(config: config(), type: "movie", search: nil, skip: nil)
+            XCTFail("Oversized catalogs must fail.")
+        } catch StremioAPIError.responseTooLarge { } catch { XCTFail("Unexpected error type.") }
+    }
+
+    func testAccountValidationAcceptsVODOnlyAccountsAndRejectsExpiredOrDeniedAccounts() async throws {
+        let config = try config()
+        let active = NTVIPTVCatalogService { url in
+            XCTAssertNil(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "action" })
+            return Data(#"{"user_info":{"auth":1,"status":"Active"}}"#.utf8)
+        }
+        try await active.validateAccount(config: config)
+        for info in [#"{"auth":0,"status":"Active"}"#, #"{"auth":1,"status":"Expired"}"#] {
+            let rejected = NTVIPTVCatalogService { _ in Data(("{\"user_info\":" + info + "}").utf8) }
+            do { try await rejected.validateAccount(config: config); XCTFail("Account must be refused.") }
+            catch StremioAPIError.invalidResponse { } catch { XCTFail("Unexpected error type.") }
+        }
+    }
+
+    func testInternalIPTVIDsCannotFallThroughToAnExternalAddon() async throws {
+        let config = try config()
+        let addon = InstalledAddon(manifestURL: "https://external.example/manifest.json",
+            manifest: AddonManifest(id: "external", name: "External", version: nil, description: nil, logo: nil, types: ["movie"], idPrefixes: nil, catalogs: nil, resources: [.simple("stream")]))
+        XCTAssertFalse(addon.handles(id: config.prefix + "movie.1"))
+        do {
+            _ = try await StremioAPI.streams(addon: addon, type: "movie", id: config.prefix + "movie.1")
+            XCTFail("Internal IDs must be rejected before network access.")
+        } catch StremioAPIError.invalidResponse { } catch { XCTFail("Unexpected error type.") }
+        let service = NTVIPTVCatalogService { _ in XCTFail("Foreign IDs must not fetch."); return Data() }
+        do {
+            _ = try await service.streams(config: config, type: "movie", id: "ntv.iptv.foreign.movie.1")
+            XCTFail("A different source must not resolve.")
+        } catch StremioAPIError.invalidResponse { } catch { XCTFail("Unexpected error type.") }
+    }
+
+    @MainActor
+    func testRoutingChangesInvalidateSearchResultsButAnUnchangedRoutingDoesNot() {
+        let model = SearchViewModel()
+        model.updateSourceConfiguration("source-A.tv")
+        model.query = "Film"
+        let item = MetaItem(id: "local", type: "movie", name: "Film")
+        model.results = [item]; model.trending = [item]
+        model.updateSourceConfiguration("source-A.tv")
+        XCTAssertEqual(model.results.map(\.id), ["local"])
+        model.updateSourceConfiguration("source-A.movie")
+        XCTAssertTrue(model.results.isEmpty)
+        XCTAssertTrue(model.trending.isEmpty)
+        XCTAssertEqual(model.query, "Film")
+    }
+
+    func testAnOlderProviderResponseCannotReplaceTheNewSourcesCache() async throws {
+        let started = expectation(description: "Old provider request is suspended")
+        let probe = NTVIPTVDelayedReply(started: started)
+        let service = NTVIPTVCatalogService { url in await probe.load(url) }
+        let old = try config(playlist: "https://old.example/get.php?username=demo&password=demo")
+        let new = try config(playlist: "https://new.example/get.php?username=demo&password=demo")
+        let pending = Task { try await service.catalog(config: old, type: "movie", search: nil, skip: nil) }
+        await fulfillment(of: [started], timeout: 2)
+        let current = try await service.catalog(config: new, type: "movie", search: nil, skip: nil)
+        await probe.finish()
+        do { _ = try await pending.value; XCTFail("Stale source reply must be rejected.") }
+        catch is CancellationError { } catch { XCTFail("Unexpected error type.") }
+        XCTAssertTrue(current.first?.id.hasPrefix(new.prefix) == true)
+        let repeated = try await service.catalog(config: new, type: "movie", search: nil, skip: nil)
+        XCTAssertEqual(repeated.map(\.id), current.map(\.id))
+    }
+}
+
+private actor NTVIPTVDelayedReply {
+    private var pending: CheckedContinuation<Data, Never>?
+    private let started: XCTestExpectation
+    init(started: XCTestExpectation) { self.started = started }
+    private let data = Data(#"[{"stream_id":1,"name":"Film"}]"#.utf8)
+    func load(_ url: URL) async -> Data {
+        if url.host == "old.example" { return await withCheckedContinuation { pending = $0; started.fulfill() } }
+        return data
+    }
+    func finish() { pending?.resume(returning: data); pending = nil }
+}
+
 final class NTVCoreTests: XCTestCase {
     func testSeanimeNavigationStartsOnTheLeftWithoutReplacingReferencePreferences() throws {
         let suite = "ntv.seanime.navigation.tests." + UUID().uuidString

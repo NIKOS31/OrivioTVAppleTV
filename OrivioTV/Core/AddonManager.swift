@@ -340,11 +340,11 @@ final class AddonManager: ObservableObject {
     }
 
     var streamAddons: [InstalledAddon] {
-        addons.filter { $0.enabled && $0.manifest.providesStreams }
+        addons.filter { $0.enabled && $0.manifest.providesStreams } + [LiveTVSettingsStore.shared.localCatalogAddon].compactMap { $0 }
     }
 
     var catalogAddons: [InstalledAddon] {
-        addons.filter { $0.enabled && $0.manifest.providesCatalogs }
+        addons.filter { $0.enabled && $0.manifest.providesCatalogs } + [LiveTVSettingsStore.shared.localCatalogAddon].compactMap { $0 }
     }
 
     var subtitleAddons: [InstalledAddon] {
@@ -368,6 +368,9 @@ final class AddonManager: ObservableObject {
     /// Ordered: add-ons that declare the id prefix first, then the rest as a
     /// long shot — the same two-tier logic `metaAddon` had, spelled out.
     func metaAddons(for type: String, id: String) -> [InstalledAddon] {
+        if id.hasPrefix(NTVIPTVConfiguration.idPrefix) {
+            return [LiveTVSettingsStore.shared.localCatalogAddon].compactMap { $0 }.filter { $0.handles(id: id) }
+        }
         // Honour `enabled`, as every other capability lookup does: a disabled
         // meta addon stopped serving catalogs and streams but still answered
         // episode lists, Continue Watching enrichment and next-episode lookups.

@@ -6,12 +6,15 @@ import Foundation
 /// stops, including decoders that cannot interrupt an ImageIO call.
 actor NTVSharedWorkPool<Value: Sendable> {
     enum Priority: Int, Sendable { case background, visible }
+    typealias Delivery = @Sendable (Value) async -> Void
+    private struct Output { let value: Value }
     private struct Entry {
         let generation: UUID
-        let work: @Sendable () async throws -> Value
+        let work: @Sendable (@escaping Delivery) async throws -> Value
         var priority: Priority
         var waiters: [UUID: CheckedContinuation<Value, Error>]
         var task: Task<Void, Never>?
+        var output: Output?
     }
     private let limit: Int
     private var entries: [String: Entry] = [:]
@@ -22,11 +25,25 @@ actor NTVSharedWorkPool<Value: Sendable> {
 
     func value(for key: String, priority: Priority = .visible,
                _ work: @escaping @Sendable () async throws -> Value) async throws -> Value {
+        try await valueBeforeFinishing(for: key, priority: priority) { _ in try await work() }
+    }
+
+    /// Deliver a ready value while keeping its work slot through bounded
+    /// follow-up work (artwork persistence). No extra detached write queue.
+    /// Late consumers share the delivered value until that work finishes.
+    /// Before delivery, cancelling the last waiter still cancels the operation.
+    /// After delivery the follow-up owns its slot and completes independently.
+    func valueBeforeFinishing(for key: String, priority: Priority = .visible,
+               _ work: @escaping @Sendable (@escaping Delivery) async throws -> Value) async throws -> Value {
         let waiter = UUID()
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
                 if var entry = entries[key] {
+                    if let output = entry.output {
+                        continuation.resume(returning: output.value)
+                        return
+                    }
                     entry.waiters[waiter] = continuation
                     if priority.rawValue > entry.priority.rawValue { entry.priority = priority }
                     entries[key] = entry
@@ -69,12 +86,23 @@ actor NTVSharedWorkPool<Value: Sendable> {
                 let result: Result<Value, Error>
                 do {
                     try Task.checkCancellation()
-                    result = .success(try await work())
+                    result = .success(try await work { value in
+                        await self.produced(key: key, generation: generation, value: value)
+                    })
                 } catch { result = .failure(error) }
                 self.finished(key: key, generation: generation, result: result)
             }
             entries[key] = entry
         }
+    }
+
+    private func produced(key: String, generation: UUID, value: Value) {
+        guard var entry = entries[key], entry.generation == generation, entry.output == nil else { return }
+        entry.output = Output(value: value)
+        let waiters = entry.waiters
+        entry.waiters.removeAll()
+        entries[key] = entry
+        for waiter in waiters.values { waiter.resume(returning: value) }
     }
 
     private func finished(key: String, generation: UUID, result: Result<Value, Error>) {

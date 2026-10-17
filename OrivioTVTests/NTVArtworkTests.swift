@@ -4,6 +4,21 @@ import CryptoKit
 @testable import OrivioTV
 
 final class NTVArtworkTests: XCTestCase {
+    private actor PersistenceGate {
+        private(set) var entries = 0
+        private var open = false
+        private var held: [CheckedContinuation<Void, Never>] = []
+        func hold() async {
+            entries += 1
+            if open { return }
+            await withCheckedContinuation { held.append($0) }
+        }
+        func releaseAll() {
+            open = true
+            let pending = held; held.removeAll()
+            for waiter in pending { waiter.resume() }
+        }
+    }
     private enum FixtureFailure: Error { case timeout }
     private func until(_ condition: () async -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
@@ -142,6 +157,7 @@ final class NTVArtworkTests: XCTestCase {
         let first = try await cache.loadImage(for: key, budget: 340, memoryKey: rendition)
         let same = try await cache.loadImage(for: key, budget: 340, memoryKey: rendition)
         XCTAssertTrue(first === same)
+        try await until { await cache.loadActivity.running == 0 }
         cache.dropDecoded()
         let reread = try await cache.loadImage(for: key, budget: 340, memoryKey: rendition)
         XCTAssertEqual(reread?.cgImage?.width, 32)
@@ -163,6 +179,7 @@ final class NTVArtworkTests: XCTestCase {
         XCTAssertNotNil(first)
         XCTAssertTrue(first === second)
         XCTAssertEqual(probe.requestsReceived, 1)
+        try await until { await cache.loadActivity.running == 0 }
     }
 
     func testCancellingTheActualImageLoadStopsItsHTTPTaskAndDoesNotPersist() async throws {
@@ -196,9 +213,120 @@ final class NTVArtworkTests: XCTestCase {
             let image = try await cache.loadImage(for: key, budget: 340, memoryKey: ImageCache.artworkKey(key, budget: 340))
             XCTAssertEqual(image?.cgImage?.width, 32)
             XCTAssertEqual(probe.requestsReceived, 1)
+            try await until { await cache.loadActivity.running == 0 }
             let replaced = await cache.diskData(for: key)
             XCTAssertEqual(replaced, body)
         }
+    }
+
+    func testActualDecodedArtworkReachesTheCallerBeforePersistenceCompletes() async throws {
+        let body = try await png(), probe = NTVBoundedHTTPProbe(body: body), gate = PersistenceGate()
+        let (session, request) = NTVBoundedHTTPFixture.register(probe), dir = try directory()
+        let cache = ImageCache(directory: dir, session: session, loadLimit: 1, beforePersist: { await gate.hold() })
+        defer {
+            Task { await gate.releaseAll() }
+            session.invalidateAndCancel(); NTVBoundedHTTPFixture.remove(probe.id)
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let key = request.url!.absoluteString, rendition = ImageCache.artworkKey(key, budget: 340)
+        let delivered = expectation(description: "Decoded image delivered before disk write")
+        let task = Task {
+            let image = try await cache.loadImage(for: key, budget: 340, memoryKey: rendition)
+            let valid = image?.cgImage?.width == 32 && image?.cgImage?.height == 16
+            delivered.fulfill()
+            return valid
+        }
+        try await until { await gate.entries == 1 }
+        await fulfillment(of: [delivered], timeout: 3)
+        let activity = await cache.loadActivity
+        XCTAssertEqual(activity.running, 1)
+        XCTAssertEqual(activity.waiters, 0)
+        let before = await cache.diskData(for: key)
+        XCTAssertNil(before, "The test must hold the actual write, not merely a UI mock.")
+        XCTAssertNotNil(cache.image(for: rendition))
+        await gate.releaseAll()
+        let valid = try await task.value
+        XCTAssertTrue(valid)
+        try await until { await cache.loadActivity.running == 0 }
+        let persisted = await cache.diskData(for: key)
+        XCTAssertEqual(persisted, body)
+    }
+
+    func testEarlyArtworkDeliveryDoesNotCreateAnUnboundedPersistenceBacklog() async throws {
+        let body = try await png(), gate = PersistenceGate()
+        let probes = (0..<4).map { _ in NTVBoundedHTTPProbe(body: body) }
+        let bindings = probes.map { NTVBoundedHTTPFixture.register($0) }, dir = try directory()
+        let session = bindings[0].0
+        let cache = ImageCache(directory: dir, session: session, loadLimit: 2, beforePersist: { await gate.hold() })
+        defer {
+            Task { await gate.releaseAll() }
+            for binding in bindings { binding.0.invalidateAndCancel() }
+            for probe in probes { NTVBoundedHTTPFixture.remove(probe.id) }
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let delivered = Atomic<Int>(wrappedValue: 0)
+        let tasks = bindings.map { binding in
+            Task {
+                let key = binding.1.url!.absoluteString
+                let image = try await cache.loadImage(for: key, budget: 340, memoryKey: ImageCache.artworkKey(key, budget: 340))
+                delivered.mutate { $0 += 1 }
+                return image != nil
+            }
+        }
+        try await until { await gate.entries == 2 }
+        try await until { delivered.wrappedValue == 2 }
+        let activity = await cache.loadActivity
+        XCTAssertEqual(activity.running, 2)
+        XCTAssertEqual(activity.queued, 2)
+        XCTAssertEqual(probes.reduce(0) { $0 + $1.requestsReceived }, 2,
+                       "A slow disk must not accumulate full downloaded bodies outside the existing window.")
+        await gate.releaseAll()
+        for task in tasks { let valid = try await task.value; XCTAssertTrue(valid) }
+        try await until { await cache.loadActivity.running == 0 }
+        XCTAssertEqual(probes.reduce(0) { $0 + $1.requestsReceived }, 4)
+        for binding in bindings {
+            let disk = await cache.diskData(for: binding.1.url!.absoluteString)
+            XCTAssertEqual(disk, body)
+        }
+    }
+
+    func testClearCacheRejectsAnOldDelayedWriteAndDoesNotShareItsDeliveredResult() async throws {
+        let body = try await png(), probe = NTVBoundedHTTPProbe(body: body), gate = PersistenceGate()
+        let (session, request) = NTVBoundedHTTPFixture.register(probe), dir = try directory()
+        let cache = ImageCache(directory: dir, session: session, loadLimit: 1, beforePersist: { await gate.hold() })
+        defer {
+            Task { await gate.releaseAll() }
+            session.invalidateAndCancel(); NTVBoundedHTTPFixture.remove(probe.id)
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let key = request.url!.absoluteString, rendition = ImageCache.artworkKey(key, budget: 340)
+        let first = try await cache.loadImage(for: key, budget: 340, memoryKey: rendition)
+        XCTAssertNotNil(first)
+        try await until { await gate.entries == 1 }
+        await Task.detached { cache.clearDisk() }.value
+        XCTAssertNil(cache.image(for: rendition))
+        let next = Task { try await cache.loadImage(for: key, budget: 340, memoryKey: rendition) != nil }
+        try await until { await cache.loadActivity.queued == 1 }
+        await gate.releaseAll()
+        let valid = try await next.value
+        XCTAssertTrue(valid)
+        try await until { await cache.loadActivity.running == 0 }
+        XCTAssertEqual(probe.requestsReceived, 2, "A post-purge load must not reuse the old generation's delivered image.")
+        let fresh = await cache.diskData(for: key)
+        XCTAssertEqual(fresh, body)
+
+        // Hold another old-generation write, clear it, then finish with no new
+        // download: old encoded bytes must not refill the purged directory.
+        let otherGate = PersistenceGate(), otherDir = try directory()
+        let other = ImageCache(directory: otherDir, session: session, beforePersist: { await otherGate.hold() })
+        defer { Task { await otherGate.releaseAll() }; try? FileManager.default.removeItem(at: otherDir) }
+        _ = try await other.loadImage(for: key, budget: 340, memoryKey: rendition)
+        try await until { await otherGate.entries == 1 }
+        await Task.detached { other.clearDisk() }.value
+        await otherGate.releaseAll()
+        try await until { await other.loadActivity.running == 0 }
+        let absent = await other.diskData(for: key)
+        XCTAssertNil(absent)
     }
 
     func testArtworkKeysSeparateURLFragmentsSizesAndBlurRecipes() {

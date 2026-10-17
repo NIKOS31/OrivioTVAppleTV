@@ -401,6 +401,106 @@ final class NTVPerformanceTests: XCTestCase {
         XCTAssertEqual(ended.waiters, 0)
     }
 
+    func testEarlyDeliveryKeepsItsSlotAndSharesItsValueUntilFollowUpFinishes() async throws {
+        let pool = NTVSharedWorkPool<Int>(limit: 1), gate = Gate()
+        let ready = expectation(description: "Value delivered while follow-up is held")
+        let shared = expectation(description: "Late consumer shares the early value")
+        let first = Task {
+            let value = try await pool.valueBeforeFinishing(for: "artwork") { deliver in
+                await deliver(7)
+                _ = try await gate.run("persist")
+                return 7
+            }
+            ready.fulfill(); return value
+        }
+        try await until { await gate.started.count == 1 }
+        await fulfillment(of: [ready], timeout: 3)
+        let late = Task {
+            let value = try await pool.value(for: "artwork") { XCTFail("Duplicated in-flight artwork"); return 99 }
+            shared.fulfill(); return value
+        }
+        await fulfillment(of: [shared], timeout: 3)
+        let next = Task { try await pool.value(for: "next") { await gate.mark("next"); return 8 } }
+        try await until { await pool.activity.queued == 1 }
+        let held = await pool.activity
+        XCTAssertEqual(held.running, 1, "Persistence continues to own the bounded work slot.")
+        XCTAssertEqual(held.waiters, 1, "The displayed image is no longer an awaiting UI consumer.")
+        let starts = await gate.started
+        XCTAssertEqual(starts, ["persist"])
+        await gate.release("persist")
+        let firstValue = try await first.value, lateValue = try await late.value
+        XCTAssertEqual(firstValue, 7); XCTAssertEqual(lateValue, 7)
+        let nextValue = try await next.value
+        XCTAssertEqual(nextValue, 8)
+        try await until { await pool.activity.running == 0 }
+    }
+
+    func testEarlyDeliveryCanShareAnOptionalNilWithoutStartingDuplicateWork() async throws {
+        let pool = NTVSharedWorkPool<Int?>(limit: 1), gate = Gate()
+        let ready = expectation(description: "Optional nil delivered before completion")
+        let shared = expectation(description: "Optional nil shared with late consumer")
+        let first = Task {
+            let value = try await pool.valueBeforeFinishing(for: "optional") { deliver in
+                await deliver(nil)
+                _ = try await gate.run("finish")
+                return nil
+            }
+            ready.fulfill(); return value
+        }
+        try await until { await gate.started.count == 1 }
+        await fulfillment(of: [ready], timeout: 3)
+        let late = Task {
+            let value = try await pool.value(for: "optional") { XCTFail("A delivered nil is still a delivered value"); return 42 }
+            shared.fulfill(); return value
+        }
+        await fulfillment(of: [shared], timeout: 3)
+        await gate.release("finish")
+        let firstValue = try await first.value, lateValue = try await late.value
+        XCTAssertNil(firstValue); XCTAssertNil(lateValue)
+        try await until { await pool.activity.running == 0 }
+    }
+
+    func testCancelledEarlyProducerCannotDeliverIntoItsReplacement() async throws {
+        let pool = NTVSharedWorkPool<Int>(limit: 1), gate = Gate()
+        let old = Task {
+            try await pool.valueBeforeFinishing(for: "same") { deliver in
+                let value = try await gate.run("old") // deliberately ignores cancellation
+                await deliver(value)
+                return value
+            }
+        }
+        try await until { await gate.started.count == 1 }
+        old.cancel(); await expectCancellation(old)
+        let current = Task { try await pool.value(for: "same") { try await gate.run("current") } }
+        try await until { await pool.activity.queued == 1 }
+        await gate.release("old", value: 100)
+        try await until { await gate.started.count == 2 }
+        await gate.release("current", value: 200)
+        let value = try await current.value
+        XCTAssertEqual(value, 200)
+    }
+
+    func testFailedFollowUpReleasesItsSlotWithoutRetractingTheDeliveredValue() async throws {
+        let pool = NTVSharedWorkPool<Int>(limit: 1), gate = Gate()
+        let ready = expectation(description: "Ready value delivered before follow-up failure")
+        let task = Task {
+            let value = try await pool.valueBeforeFinishing(for: "artwork") { deliver in
+                await deliver(3)
+                _ = try await gate.run("persist")
+                throw FixtureFailure.failed
+            }
+            ready.fulfill(); return value
+        }
+        try await until { await gate.started.count == 1 }
+        await fulfillment(of: [ready], timeout: 3)
+        await gate.release("persist")
+        let value = try await task.value
+        XCTAssertEqual(value, 3)
+        try await until { await pool.activity.running == 0 }
+        let retry = try await pool.value(for: "artwork") { 4 }
+        XCTAssertEqual(retry, 4)
+    }
+
     func testConcurrentConsumersShareOneOperation() async throws {
         let pool = NTVSharedWorkPool<Int>(limit: 4), gate = Gate()
         let first = Task { try await pool.value(for: "poster") { try await gate.run("poster") } }

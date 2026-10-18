@@ -4,7 +4,7 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 10
     environment:
-      xcode: '26.6'
+      xcode: '26.0'
     scripts:
       - name: Probe native media without building nTV
         script: bash scripts/ci/probe-native-media.sh

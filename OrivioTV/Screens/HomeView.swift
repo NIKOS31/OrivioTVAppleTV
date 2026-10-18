@@ -1596,13 +1596,7 @@ struct HomeView: View {
         // Hourly clock nudge so the day bucket in `nextUpRefreshKey` notices a
         // midnight rollover while Home is left open. The key only changes once
         // per day, so this does NOT re-run the Next Up fetch every hour.
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 3_600_000_000_000)
-                guard !Task.isCancelled else { return }
-                clockTick = Date()
-            }
-        }
+        .task { await runClockTick() }
         // Paint the hero from the cached rows without waiting for the network.
         .onChange(of: viewModel.initialHero) { _, item in
             if item == nil { initialHeroFocusRequest.cancel() }
@@ -1876,7 +1870,16 @@ struct HomeView: View {
         }
     }
 
-    // Separate the polling loop from the View expression for Swift type checking.
+    // Keep polling loops outside the View expression for Swift type checking.
+    @MainActor
+    private func runClockTick() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 3_600_000_000_000)
+            guard !Task.isCancelled else { return }
+            clockTick = Date()
+        }
+    }
+
     @MainActor
     private func runCatalogAutoRefresh(minutes: Int) async {
         guard minutes > 0 else { return }

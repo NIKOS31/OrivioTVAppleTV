@@ -17,13 +17,14 @@ workflows:
     name: nTV - Apple TV
     instance_type: mac_mini_m2
     max_build_duration: 60
-    environment:
+    environment: &ntv_environment
       xcode: '26.6'
       vars:
         XCODEGEN_VERSION: '2.46.0'
         XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
     scripts:
-      - name: Prepare the existing CI scripts
+      - &ntv_prepare
+        name: Prepare the existing CI scripts
         script: |
           set -euo pipefail
           ntv_ci_tmp=$(mktemp -d "${TMPDIR:-/tmp}/ntv-ci.XXXXXX")
@@ -34,9 +35,11 @@ workflows:
               exit 1
             }
           fi
-      - name: Check source for credentials
+      - &ntv_secrets
+        name: Check source for credentials
         script: bash scripts/ci/check-secrets.sh
-      - name: Install verified XcodeGen
+      - &ntv_xcodegen
+        name: Install verified XcodeGen
         script: |
           set -euo pipefail
           archive="$RUNNER_TEMP/xcodegen.zip"
@@ -54,7 +57,8 @@ workflows:
           chmod +x "$binary"
           "$binary" --version
           printf 'PATH=%s:%s\n' "$(dirname "$binary")" "$PATH" >> "$CM_ENV"
-      - name: Build nTV for Apple TV and Simulator
+      - &ntv_build
+        name: Build nTV for Apple TV and Simulator
         script: bash scripts/ci/build-tvos.sh
       - name: Test nTV on the tvOS Simulator
         script: bash scripts/ci/test-ntv-ui.sh
@@ -68,3 +72,21 @@ workflows:
       - build/ci/logs/*.log
       - build/ci/results/**/*.xcresult
       - build/ci/screenshots/**
+  ntv-device-test:
+    name: nTV - Test sur Apple TV
+    instance_type: mac_mini_m2
+    max_build_duration: 40
+    environment: *ntv_environment
+    scripts:
+      - *ntv_prepare
+      - *ntv_secrets
+      - *ntv_xcodegen
+      - *ntv_build
+      - name: Package for manual Apple TV testing (simulator tests not run)
+        script: bash scripts/ci/package-ntv.sh --device-test
+    artifacts:
+      - build/ci/packages/nTV-unsigned.ipa
+      - build/ci/packages/package-info.json
+      - build/ci/packages/nTV-unsigned.ipa.sha256
+      - build/ci/build-info.json
+      - build/ci/logs/*.log

@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+validation=ui-tested
+case ${1:-} in
+  '') ;;
+  --device-test) validation=device-test ;;
+  *) echo 'Use no argument for validated packages, or --device-test for manual Apple TV testing.' >&2; exit 1 ;;
+esac
+[[ $# -le 1 ]] || exit 1
+
 task_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$task_root"
 output="$task_root/build/ci"
@@ -12,9 +20,9 @@ if [[ $(uname -s) != Darwin || ! -d "$app" ]]; then
   exit 1
 fi
 
-# Never package simulator output or publish an untested checkout.
+# Manual device tests keep their untested status; normal releases still require successful UI tests.
 python3 scripts/ci/verify-ntv-icon-assets.py "$app/Info.plist" "$app/Assets.car"
-python3 - "$app/Info.plist" "$output/build-info.json" <<'PY'
+python3 - "$app/Info.plist" "$output/build-info.json" "$validation" <<'PY'
 import json
 import plistlib
 import subprocess
@@ -31,7 +39,9 @@ if info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon") != "NTVPrimaryIconV2
     raise SystemExit("The system must reference the dedicated nTV icon, including the app switcher.")
 if info.get("CFBundleSupportedPlatforms") != ["AppleTVOS"] or 3 not in info.get("UIDeviceFamily", []):
     raise SystemExit("Expected a device tvOS app, never simulator output.")
-if build.get("commit") != head or build.get("ui_tests_executed") is not True:
+if build.get("commit") != head:
+    raise SystemExit("The build must match this exact checkout.")
+if sys.argv[3] != "device-test" and build.get("ui_tests_executed") is not True:
     raise SystemExit("This checkout has no successful nTV UI-test record.")
 PY
 
@@ -78,7 +88,7 @@ PY
 # ditto preserves the framework permissions and symbolic links in the bundle.
 ditto -c -k --keepParent "$stage/Payload" "$package_dir/nTV-unsigned.ipa"
 
-python3 - "$package_dir" "$output/build-info.json" <<'PY'
+python3 - "$package_dir" "$output/build-info.json" "$validation" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -116,6 +126,7 @@ record = {
     "local_sharing_entitlement_requested": True,
     "personal_addons_configured": False,
     "ui_tests_executed": build["ui_tests_executed"],
+    "validation": sys.argv[3],
     "ffmpeg": build["ffmpeg"],
 }
 (directory / "nTV-unsigned.ipa.sha256").write_text(checksum + "  " + ipa.name + "\n", encoding="utf-8")
@@ -129,5 +140,5 @@ print(json.dumps(record, indent=2))
 PY
 
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
-  printf '\n- nTV unsigned device IPA packaged after successful UI tests. Sign it locally before installing on an Apple TV.\n' >> "$GITHUB_STEP_SUMMARY"
+  printf '\n- nTV unsigned device IPA packaged (%s). Sign it locally before installing on an Apple TV.\n' "$validation" >> "$GITHUB_STEP_SUMMARY"
 fi

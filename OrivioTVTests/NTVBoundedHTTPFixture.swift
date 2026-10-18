@@ -42,6 +42,9 @@ final class NTVBoundedHTTPFixture: URLProtocol, @unchecked Sendable {
     private static var probes: [String: NTVBoundedHTTPProbe] = [:]
     private static let queue = DispatchQueue(label: "ntv.test.bounded-response")
     private var probe: NTVBoundedHTTPProbe?
+    private let stopLock = NSLock()
+    private var stopped = false
+    private var isStopped: Bool { stopLock.lock(); defer { stopLock.unlock() }; return stopped }
 
     static func register(_ probe: NTVBoundedHTTPProbe) -> (URLSession, URLRequest) {
         lock.lock(); probes[probe.id] = probe; lock.unlock()
@@ -66,7 +69,7 @@ final class NTVBoundedHTTPFixture: URLProtocol, @unchecked Sendable {
     }
     private func sendChunk(from position: Int) {
         Self.queue.asyncAfter(deadline: .now() + (probe?.chunkDelay ?? 0.005)) { [weak self] in
-            guard let self, let probe = self.probe, !probe.isStopped else { return }
+            guard let self, let probe = self.probe, !self.isStopped else { return }
             guard position < probe.body.count else { self.client?.urlProtocolDidFinishLoading(self); return }
             let end = min(position + probe.chunkSize, probe.body.count)
             let chunk = probe.body.subdata(in: position..<end)
@@ -75,7 +78,11 @@ final class NTVBoundedHTTPFixture: URLProtocol, @unchecked Sendable {
             self.sendChunk(from: end)
         }
     }
-    override func stopLoading() { probe?.stop() }
+    override func stopLoading() {
+        // A probe may serve another request after this protocol instance stops.
+        stopLock.lock(); stopped = true; stopLock.unlock()
+        probe?.stop()
+    }
 }
 
 /// Real loopback HTTP is used for gzip: URLProtocol does not model wire decoding.

@@ -1447,6 +1447,28 @@ struct HomeView: View {
 
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.home)
+        catalogContent
+        .task(id: nextUpRefreshKey) { await refreshNextUpContinueItems() }
+        // Hourly clock nudge so the day bucket in `nextUpRefreshKey` notices a
+        // midnight rollover while Home is left open. The key only changes once
+        // per day, so this does NOT re-run the Next Up fetch every hour.
+        .task { await runClockTick() }
+        // Paint the hero from the cached rows without waiting for the network.
+        .onChange(of: viewModel.initialHero) { _, item in
+            if item == nil { initialHeroFocusRequest.cancel() }
+            if item == nil, usesNTVLayout {
+                hero.item = nil
+                didSeedHeroFocus = false
+            } else {
+                seedHero(item)
+            }
+        }
+        // Hero source changed: arm one forced reseed for the recomputed hero.
+        .onChange(of: viewModel.heroSourceRevision) { _, _ in forceHeroReseed = true }
+    }
+
+    // Opaque return types bound compiler inference without adding view containers.
+    private var focusContent: some View {
         layoutContent
         .overlay(alignment: .bottom) {
             if usesNTVLayout {
@@ -1542,28 +1564,11 @@ struct HomeView: View {
             guard isVisible && !perf.reduceMotion, hero.rolls else { return }
             hero.rotateIfIdle()
         }
-        .task {
-            // Continue Watching rows only persist name/art — this fetches the
-            // full meta (synopsis/genres/rating) for the billboard on demand.
-            hero.enrich = { [weak addonManager] bare in
-                guard let addonManager,
-                      let addon = addonManager.metaAddon(for: bare.type, id: bare.id),
-                      let full = try? await StremioAPI.meta(addon: addon, type: bare.type, id: bare.id)
-                else { return nil }
-                // Keep the art the progress row already had when the meta
-                // addon returns none (hero backdrop must never go blank).
-                return MetaItem(
-                    id: full.id, type: full.type, name: full.name,
-                    poster: full.poster ?? bare.poster,
-                    background: full.background ?? bare.background,
-                    logo: full.logo ?? bare.logo,
-                    description: full.description, releaseInfo: full.releaseInfo,
-                    imdbRating: full.imdbRating, runtime: full.runtime,
-                    genres: full.genres, cast: full.cast, videos: full.videos
-                )
-            }
-            await reload()
-        }
+    }
+
+    private var catalogContent: some View {
+        focusContent
+        .task { await configureHeroAndReload() }
         // Periodic catalog auto-refresh (Settings → Content & Discovery).
         // Restarts whenever the cadence changes; 0 = off. Uses the FORCED
         // load (not loadIfNeeded — the fingerprint wouldn't have changed) so
@@ -1592,23 +1597,6 @@ struct HomeView: View {
         .onChange(of: homeCatalogSettings.catalogTypeSuffixEnabled) { _, _ in scheduleReload() }
         .onChange(of: homeCatalogSettings.hideUnreleasedContent) { _, _ in scheduleReload() }
         .onChange(of: homeCatalogSettings.showPosterBanners) { _, _ in scheduleReload() }
-        .task(id: nextUpRefreshKey) { await refreshNextUpContinueItems() }
-        // Hourly clock nudge so the day bucket in `nextUpRefreshKey` notices a
-        // midnight rollover while Home is left open. The key only changes once
-        // per day, so this does NOT re-run the Next Up fetch every hour.
-        .task { await runClockTick() }
-        // Paint the hero from the cached rows without waiting for the network.
-        .onChange(of: viewModel.initialHero) { _, item in
-            if item == nil { initialHeroFocusRequest.cancel() }
-            if item == nil, usesNTVLayout {
-                hero.item = nil
-                didSeedHeroFocus = false
-            } else {
-                seedHero(item)
-            }
-        }
-        // Hero source changed: arm one forced reseed for the recomputed hero.
-        .onChange(of: viewModel.heroSourceRevision) { _, _ in forceHeroReseed = true }
     }
 
     /// The ONLY focusable thing in Hybrid's pinned hero, and the way back to
@@ -1868,6 +1856,28 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    @MainActor
+    private func configureHeroAndReload() async {
+        // Continue Watching rows only persist name/art — fetch full billboard metadata on demand.
+        hero.enrich = { [weak addonManager] (bare: MetaItem) async -> MetaItem? in
+            guard let addonManager,
+                  let addon = addonManager.metaAddon(for: bare.type, id: bare.id),
+                  let full = try? await StremioAPI.meta(addon: addon, type: bare.type, id: bare.id)
+            else { return nil }
+            // Preserve cached artwork when the metadata add-on returns none.
+            return MetaItem(
+                id: full.id, type: full.type, name: full.name,
+                poster: full.poster ?? bare.poster,
+                background: full.background ?? bare.background,
+                logo: full.logo ?? bare.logo,
+                description: full.description, releaseInfo: full.releaseInfo,
+                imdbRating: full.imdbRating, runtime: full.runtime,
+                genres: full.genres, cast: full.cast, videos: full.videos
+            )
+        }
+        await reload()
     }
 
     // Keep polling loops outside the View expression for Swift type checking.

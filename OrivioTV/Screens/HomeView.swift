@@ -1569,24 +1569,7 @@ struct HomeView: View {
         // load (not loadIfNeeded — the fingerprint wouldn't have changed) so
         // new releases appear without relaunching.
         .task(id: homeCatalogSettings.autoRefreshMinutes) {
-            let minutes = homeCatalogSettings.autoRefreshMinutes
-            guard minutes > 0 else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(minutes) * 60_000_000_000)
-                guard !Task.isCancelled else { return }
-                // Same gate the account-sync loops use: never fire a full
-                // multi-addon catalog sweep (plus its poster prefetch) while
-                // the home is covered or a stream is playing — that competed
-                // with the movie for bandwidth mid-film.
-                guard isVisible, !OrivioSyncManager.playbackActive else { continue }
-                await viewModel.load(
-                    addonManager: addonManager,
-                    collections: collections,
-                    settings: homeCatalogSettings,
-                    providers: collectionProviders,
-                    xperienceOnly: usesNTVLayout
-                )
-            }
+            await runCatalogAutoRefresh(minutes: homeCatalogSettings.autoRefreshMinutes)
         }
         // Eight separate triggers, ONE debounced reload. Each of these used to
         // fire its own unthrottled `reload()`, and at launch they arrive in a
@@ -1890,6 +1873,25 @@ struct HomeView: View {
                 }
                 }
             }
+        }
+    }
+
+    // Separate the polling loop from the View expression for Swift type checking.
+    @MainActor
+    private func runCatalogAutoRefresh(minutes: Int) async {
+        guard minutes > 0 else { return }
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: UInt64(minutes) * 60_000_000_000)
+            guard !Task.isCancelled else { return }
+            // Never compete with playback or a screen covering Home for bandwidth.
+            guard isVisible, !OrivioSyncManager.playbackActive else { continue }
+            await viewModel.load(
+                addonManager: addonManager,
+                collections: collections,
+                settings: homeCatalogSettings,
+                providers: collectionProviders,
+                xperienceOnly: usesNTVLayout
+            )
         }
     }
 

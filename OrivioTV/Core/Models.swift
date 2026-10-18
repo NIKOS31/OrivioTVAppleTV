@@ -1515,7 +1515,7 @@ struct NTVEpisodeReleaseStatus: Equatable {
             let point = SeasonEpisode(season: season, episode: episode)
             if point > furthest { eligible.insert(point) }
         }
-        let season = furthest.season > 0 ? eligible.map(.season).filter { $0 > furthest.season }.min() : nil
+        let season = furthest.season > 0 ? eligible.map(\.season).filter { $0 > furthest.season }.min() : nil
         return Self(count: eligible.count, newSeason: season)
     }
     var label: String? {

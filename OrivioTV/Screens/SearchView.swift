@@ -489,10 +489,19 @@ private struct SearchField: View {
                         .foregroundStyle(text.isEmpty ? NTVDesign.textSecondary : NTVDesign.textPrimary)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    Label("Rechercher", systemImage: "magnifyingglass")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(NTVDesign.background)
+                        .padding(.horizontal, 18)
+                        .frame(height: 52)
+                        .background(NTVDesign.textPrimary, in: Capsule())
+                        .fixedSize(horizontal: true, vertical: false)
+                        .accessibilityHidden(true)
                 }
                 .font(.system(size: 29, weight: .medium))
-                .padding(.horizontal, 24)
-                .frame(height: 74)
+                .padding(.leading, 24)
+                .padding(.trailing, 6)
+                .frame(height: 68)
                 .background { NTVGlassSurface(shape: Capsule(), clear: true) }
                 .overlay { Capsule().strokeBorder(.white.opacity(focused ? 0.8 : 0.18), lineWidth: focused ? 2 : 1) }
             }

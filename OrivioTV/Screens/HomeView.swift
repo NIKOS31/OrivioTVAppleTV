@@ -1048,6 +1048,7 @@ final class HeroFocus: ObservableObject {
     private var lastRotation = Date.distantPast
     /// Seconds each spotlight title stays on screen before the next.
     private let dwellSeconds: TimeInterval = 9
+    @Published var spotlightPaused = false
     /// True while the hero's own Play button holds focus. Read by the
     /// spotlight stepper to tell a real Left/Right press from a stray focus
     /// resolve — it no longer FREEZES rotation.
@@ -1163,15 +1164,14 @@ final class HeroFocus: ObservableObject {
     /// played for a moment and then the art, name and synopsis all jumped to
     /// a title you had not selected. Browsing IS the only thing that changes
     /// a pinned billboard.
-    func rotateIfIdle() {
-        let now = Date()
+    func rotateIfIdle(now: Date = Date()) {
         // Reduce Motion disables automatic rotation, exactly as FusionHeroBar
         // already does. Without it the billboard kept swapping every few
         // seconds — and because `heroCrossfadeEffective` is false under that
         // setting, it swapped as a HARD CUT, which is strictly worse for the
         // person the setting exists to protect. Manual stepping still works.
         guard !PerformanceSettingsStore.shared.reduceMotion,
-              spotlight.count > 1, !trailerPlaying,
+              spotlight.count > 1, !trailerPlaying, !spotlightPaused,
               now.timeIntervalSince(lastInteraction) > 6,
               now.timeIntervalSince(lastRotation) >= dwellSeconds else { return }
         lastRotation = now
@@ -1457,7 +1457,7 @@ struct HomeView: View {
         }
         .onAppear {
             isVisible = true
-            hero.layout = usesNTVLayout ? .pinnedFocus : homeCatalogSettings.heroLayout
+            hero.layout = usesNTVLayout ? .hybrid : homeCatalogSettings.heroLayout
             hero.onBrowseStateChange = { browsing in
                 AppProbe.focus("home handoff browsedIntoContent=\(browsing)")
                 // DEFERRED BY ONE TURN, and that is the whole fix for "the
@@ -1497,7 +1497,7 @@ struct HomeView: View {
         .onChange(of: homeCatalogSettings.heroLayout) { _, mode in
             initialHeroFocusRequest.cancel()
             AppProbe.focus("home heroLayout=\(mode)")
-            hero.layout = usesNTVLayout ? .pinnedFocus : mode
+            hero.layout = usesNTVLayout ? .hybrid : mode
             hero.resetBrowseHandoff()
         }
         .onChange(of: scenePhase) { _, phase in

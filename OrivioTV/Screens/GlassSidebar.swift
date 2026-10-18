@@ -35,6 +35,20 @@ enum AppTab: Int, CaseIterable, Identifiable {
         case .settings: return "gearshape.fill"
         }
     }
+
+    @ViewBuilder
+    var navigationIcon: some View {
+        if self == .anime {
+            Image("NTVAnimeCategory")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 28, height: 18)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: icon)
+        }
+    }
 }
 
 /// The always-visible left navigation rail, drawn as Liquid Glass (tvOS 26;
@@ -216,8 +230,7 @@ struct GlassSidebar: View {
                         selected = tab.rawValue
                     } label: {
                         if theme.palette.id == NTVDesign.palette.id {
-                            NTVNavigationLabel(title: NTVBrand.navigationTitle(for: tab),
-                                               symbol: tab.icon, selected: selected == tab.rawValue)
+                            NTVNavigationLabel(tab: tab, selected: selected == tab.rawValue)
                         } else {
                             GlassItemLabel(tab: tab, selected: selected == tab.rawValue,
                                            expanded: true, horizontal: true)
@@ -258,6 +271,8 @@ struct GlassSidebar: View {
     private var ntvVerticalBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             NTVWordmark(size: 22)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(NTVBrand.name)
                 .frame(maxWidth: .infinity, alignment: expanded ? .leading : .center)
                 .padding(.horizontal, expanded ? OrivioSpacing.md : 0)
                 .frame(height: 64)
@@ -306,12 +321,11 @@ struct GlassSidebar: View {
         .clipped()
         .frame(maxHeight: .infinity)
         .background {
-            // A single quiet panel, rather than a live full-height material
-            // sampling the moving poster rows. Focused items are plain fills.
+            // The collapsed rail shares the root artwork and its fade to black.
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(NTVDesign.surface.opacity(0.98))
+                .fill(Color.black.opacity(expanded ? 0.66 : 0))
                 .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(.white.opacity(0.08), lineWidth: 1) }
+                    .strokeBorder(.white.opacity(expanded ? 0.08 : 0), lineWidth: 1) }
         }
         .padding(.leading, 12)
         .padding(.vertical, 20)
@@ -452,7 +466,7 @@ private struct NTVTopNavigationLabel: View {
     var body: some View {
         Group {
             if iconOnly {
-                Image(systemName: tab.icon)
+                tab.navigationIcon
                     .font(.system(size: 24, weight: .medium))
                     .frame(width: 56)
             } else {
@@ -501,7 +515,7 @@ private struct GlassItemLabel: View {
 
     var body: some View {
         HStack(spacing: OrivioSpacing.sm) {
-            Image(systemName: tab.icon)
+            tab.navigationIcon
                 .font(.system(size: expanded ? 30 : 36, weight: .semibold))
                 .foregroundStyle(highlighted ? theme.palette.textPrimary : theme.palette.textSecondary)
                 .frame(width: expanded ? 44 : 60, height: expanded ? nil : 60, alignment: .center)

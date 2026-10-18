@@ -9,6 +9,7 @@ struct NTVLiveHub: View {
     @State private var section: Section = .television
     @State private var selectorRevision = 0
     @FocusState private var sectionFocus: Section?
+    @ScaledMetric(relativeTo: .body) private var selectorLabelSize: CGFloat = 23
     let onSelectChannel: (MetaItem) -> Void
     let onPlayDirect: (LiveChannel) -> Void
     let onBackAtRoot: () -> Void
@@ -23,19 +24,36 @@ struct NTVLiveHub: View {
                     .accessibilityIdentifier("ntv.live.hub.heading")
                     .ntvHalloweenDecor(.heading)
                 Spacer(minLength: 20)
-                ForEach(Section.allCases, id: \.self) { choice in
-                    Button { section = choice } label: {
-                        HStack(spacing: 10) {
-                            Label(choice.rawValue, systemImage: choice == .television ? "tv" : "bubble.left.and.bubble.right")
-                            if choice == section { Image(systemName: "checkmark.circle.fill") }
+                HStack(spacing: 0) {
+                    ForEach(Section.allCases, id: \.self) { choice in
+                        Button { section = choice } label: {
+                            Label(choice == .television ? "TV" : "Twitch",
+                                  systemImage: choice == .television ? "tv" : "bubble.left.and.bubble.right")
+                                .font(.system(size: selectorLabelSize, weight: .semibold))
+                                .lineLimit(1)
+                                .frame(width: 144, height: 52)
+                                .foregroundStyle(choice == section ? NTVDesign.background : NTVDesign.textPrimary)
+                                .background {
+                                    Capsule().fill(choice == section ? NTVDesign.textPrimary : .clear)
+                                }
+                                .overlay {
+                                    Capsule().inset(by: -4)
+                                        .strokeBorder(sectionFocus == choice ? .white : .clear, lineWidth: 2)
+                                }
                         }
+                        .buttonStyle(PlainCardButtonStyle())
+                        .focused($sectionFocus, equals: choice)
+                        .accessibilityLabel(choice.rawValue)
+                        .accessibilityValue(choice == section ? "Sélectionné" : "")
+                        .accessibilityAddTraits(choice == section ? .isSelected : [])
+                        .accessibilityIdentifier(choice == .television ? "ntv.live.section.television" : "ntv.live.section.twitch")
                     }
-                    .buttonStyle(NTVActionButtonStyle())
-                    .focused($sectionFocus, equals: choice)
-                    .accessibilityLabel(choice.rawValue)
-                    .accessibilityValue(choice == section ? "Sélectionné" : "")
-                    .accessibilityIdentifier(choice == .television ? "ntv.live.section.television" : "ntv.live.section.twitch")
                 }
+                .padding(4)
+                .background(NTVDesign.surface, in: Capsule())
+                .overlay { Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 1) }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Type de direct")
             }
             .padding(.horizontal, NTVViewport.horizontalInset)
             .padding(.top, 28)

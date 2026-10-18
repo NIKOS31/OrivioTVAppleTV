@@ -1270,6 +1270,7 @@ struct RootView: View {
         case 0 where homePath.isEmpty: return "ntv.home.backdrop"
         case 5 where moviesPath.isEmpty: return "ntv.catalog.movie.backdrop"
         case 6 where seriesPath.isEmpty: return "ntv.catalog.series.backdrop"
+        case 8: return "ntv.anime.backdrop"
         default: return nil
         }
     }

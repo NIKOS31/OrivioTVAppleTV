@@ -124,8 +124,13 @@ struct NTVAnimeView: View {
     @State private var selectedEntryID: String?
     @State private var pendingSearch: String?
     @State private var refresh = 0
+    @State private var featuredIndex = 0
+    @State private var featuredPaused = false
     @FocusState private var focus: String?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.ntvBackdropCanvas) private var canvas
+    @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var profiles: ProfileStore
     @ObservedObject private var follows = NTVAnimeFollows.shared
     let onSearch: (String) -> Void
@@ -139,6 +144,26 @@ struct NTVAnimeView: View {
     private var requestID: String { request.cacheKey + ".\(refresh).p\(profiles.activeProfileID)" }
     private var profileFollowing: Set<Int>? { section == .calendar && followingOnly ? follows.ids(profile: profiles.activeProfileID) : nil }
     private var followingRevision: String { "\(profiles.activeProfileID).\(follows.revision).\(followingOnly).\(section.rawValue)" }
+    private var featuredEntries: [NTVAnimeEntry] { Array(model.feed.entries.prefix(6)) }
+    private var featuredEntry: NTVAnimeEntry? {
+        let entries = featuredEntries
+        return entries.isEmpty ? nil : entries[featuredIndex % entries.count]
+    }
+    private var usesSharedBackdrop: Bool { theme.palette.id == NTVDesign.palette.id }
+    private var canRotateFeatured: Bool {
+        section == .season && scenePhase == .active && !reduceMotion && !featuredPaused
+            && !model.loading && selection == nil && featuredEntries.count > 1
+            && (focus == nil || focus == Section.season.rawValue || focus == Section.season.rawValue + ".rotation")
+    }
+    private func reportFeaturedBackdrop() {
+        guard usesSharedBackdrop else { return }
+        canvas?.update("ntv.anime.backdrop", url: section == .season ? featuredEntry?.media.backdrop : nil)
+    }
+    private func stepFeatured(_ delta: Int) {
+        guard !featuredEntries.isEmpty else { return }
+        featuredPaused = true
+        featuredIndex = (featuredIndex + delta + featuredEntries.count) % featuredEntries.count
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -204,7 +229,19 @@ struct NTVAnimeView: View {
         .padding(.top, 28)
         .foregroundStyle(NTVDesign.textPrimary)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(NTVDesign.background.ignoresSafeArea())
+        .background((usesSharedBackdrop ? Color.clear : NTVDesign.background).ignoresSafeArea())
+        .onAppear { reportFeaturedBackdrop() }
+        .onChange(of: featuredEntry?.id) { _, _ in reportFeaturedBackdrop() }
+        .onChange(of: featuredEntry?.media.backdrop) { _, _ in reportFeaturedBackdrop() }
+        .onChange(of: section) { _, _ in reportFeaturedBackdrop() }
+        .task(id: canRotateFeatured) {
+            guard canRotateFeatured else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(9)) } catch { return }
+                guard canRotateFeatured, !Task.isCancelled else { return }
+                featuredIndex = (featuredIndex + 1) % featuredEntries.count
+            }
+        }
         .ignoresSafeArea(edges: .horizontal)
         .task(id: requestID + "." + section.rawValue) {
             guard section != .library else { return }
@@ -317,13 +354,30 @@ struct NTVAnimeView: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                if section == .season, let entry = model.feed.entries.first {
-                    Button { open(entry, focusID: "featured") } label: { NTVAnimeFeature(media: entry.media) }
+                if section == .season, let entry = featuredEntry {
+                    Button { open(entry, focusID: "featured") } label: { NTVAnimeFeature(media: entry.media, sharedBackdrop: usesSharedBackdrop) }
                         .buttonStyle(PlainCardButtonStyle())
                         .focused($focus, equals: "featured")
                         .accessibilityLabel("À l’affiche : " + entry.media.displayTitle)
                         .accessibilityIdentifier("ntv.anime.featured")
                         .padding(.bottom, 24)
+                    if featuredEntries.count > 1 {
+                        HStack(spacing: 16) {
+                            Button { stepFeatured(-1) } label: { Image(systemName: "chevron.left") }
+                                .accessibilityLabel("Proposition précédente")
+                                .focused($focus, equals: "featured.previous")
+                            Text("\(featuredIndex % featuredEntries.count + 1) / \(featuredEntries.count)")
+                                .font(.system(size: 22).monospacedDigit()).foregroundStyle(NTVDesign.textSecondary)
+                            Button { stepFeatured(1) } label: { Image(systemName: "chevron.right") }
+                                .accessibilityLabel("Proposition suivante")
+                                .focused($focus, equals: "featured.next")
+                            Button { featuredPaused.toggle() } label: { Image(systemName: featuredPaused ? "play.fill" : "pause.fill") }
+                                .accessibilityLabel(featuredPaused ? "Reprendre les propositions" : "Mettre les propositions en pause")
+                                .focused($focus, equals: Section.season.rawValue + ".rotation")
+                        }
+                        .buttonStyle(NTVActionButtonStyle())
+                        .padding(.bottom, 24)
+                    }
                     HStack(alignment: .firstTextBaseline) {
                         Text("À suivre cette saison").font(.system(size: 30, weight: .semibold))
                         Spacer()
@@ -331,6 +385,11 @@ struct NTVAnimeView: View {
                             .font(.system(size: 25)).foregroundStyle(NTVDesign.textSecondary)
                     }
                     .padding(.bottom, 22)
+                }
+                if section == .calendar {
+                    Text(selectedDay.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).weekday(.wide).day().month(.wide)))
+                        .font(.system(size: 30, weight: .semibold))
+                        .padding(.bottom, 22)
                 }
                 LazyVGrid(columns: section == .calendar
                           ? [GridItem(.flexible(), spacing: 28), GridItem(.flexible(), spacing: 28)]
@@ -342,7 +401,8 @@ struct NTVAnimeView: View {
                         }
                             .buttonStyle(PlainCardButtonStyle())
                             .focused($focus, equals: entry.id)
-                            .accessibilityLabel(entry.media.displayTitle + (entry.episode.map { ", épisode \($0)" } ?? ""))
+                            .accessibilityLabel(entry.media.displayTitle + (entry.episode.map { ", épisode \($0)" } ?? "")
+                                + (entry.airingAt.map { ", " + $0.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) } ?? ""))
                             .accessibilityIdentifier("ntv.anime.card.\(entry.id)")
                     }
                 }
@@ -400,13 +460,16 @@ struct NTVAnimeView: View {
 private struct NTVAnimeFeature: View {
     @Environment(\.isFocused) private var focused
     let media: NTVAnimeMedia
+    var sharedBackdrop = false
     var body: some View {
         ZStack(alignment: .leading) {
-            RemoteImage(url: media.backdrop, maxDimension: 1600)
-                .frame(height: 300).clipped()
-            LinearGradient(colors: [NTVDesign.background.opacity(0.98), NTVDesign.background.opacity(0.88), .clear],
-                           startPoint: .leading, endPoint: .trailing)
-            LinearGradient(colors: [.clear, NTVDesign.background.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+            if !sharedBackdrop {
+                RemoteImage(url: media.backdrop, maxDimension: 1600)
+                    .frame(height: 300).clipped()
+                LinearGradient(colors: [NTVDesign.background.opacity(0.98), NTVDesign.background.opacity(0.88), .clear],
+                               startPoint: .leading, endPoint: .trailing)
+                LinearGradient(colors: [.clear, NTVDesign.background.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+            }
             HStack(alignment: .center, spacing: 32) {
                 RemoteImage(url: media.artwork, maxDimension: 400)
                     .frame(width: 150, height: 225)
@@ -426,9 +489,9 @@ private struct NTVAnimeFeature: View {
             .padding(.horizontal, 32)
         }
         .frame(maxWidth: .infinity).frame(height: 300)
-        .background(NTVDesign.surface)
+        .background(sharedBackdrop ? Color.clear : NTVDesign.surface)
         .clipShape(RoundedRectangle(cornerRadius: 22))
-        .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(.white.opacity(focused ? 0.85 : 0.12), lineWidth: focused ? 3 : 1) }
+        .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(.white.opacity(focused ? 0.85 : sharedBackdrop ? 0 : 0.12), lineWidth: focused ? 3 : 1) }
     }
 }
 
@@ -461,28 +524,39 @@ private struct NTVAnimeCard: View {
     @Environment(\.isFocused) private var focused
     let entry: NTVAnimeEntry
     var body: some View {
-        HStack(alignment: .top, spacing: 24) {
+        HStack(alignment: .center, spacing: 20) {
             RemoteImage(url: entry.media.artwork, maxDimension: 320)
-                .frame(width: 142, height: 212)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 14) {
-                if let date = entry.airingAt {
-                    Text(date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()))
-                        .font(.system(size: 30, weight: .semibold).monospacedDigit())
+                .frame(width: 104, height: 156)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                    if let date = entry.airingAt {
+                        Text(date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()))
+                            .font(.system(size: 24, weight: .bold).monospacedDigit())
+                    }
+                    Text(entry.media.formatLabel)
+                        .font(.system(size: 21)).foregroundStyle(NTVDesign.textSecondary)
                 }
-                Text(entry.media.displayTitle).font(.system(size: 29, weight: .semibold)).lineLimit(3)
-                if let episode = entry.episode { Text("Épisode \(episode)").font(.system(size: 25)) }
-                else if let count = entry.media.episodes, count > 0 { Text("\(count) épisodes").font(.system(size: 25)) }
+                Text(entry.media.displayTitle)
+                    .font(.system(size: 27, weight: .semibold))
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 0)
-                Text("Vérifier mes sources").font(.system(size: 23)).foregroundStyle(NTVDesign.textSecondary)
+                HStack(spacing: 12) {
+                    if let episode = entry.episode { Text("Épisode \(episode)") }
+                    else if let count = entry.media.episodes, count > 0 { Text("\(count) épisodes") }
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right").accessibilityHidden(true)
+                }
+                .font(.system(size: 23)).foregroundStyle(NTVDesign.textSecondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 212, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 156, alignment: .topLeading)
         }
-        .padding(24)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(NTVDesign.textPrimary)
-        .background(focused ? NTVDesign.raised : NTVDesign.surface, in: RoundedRectangle(cornerRadius: 20))
-        .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(focused ? Color.white.opacity(0.85) : .white.opacity(0.09), lineWidth: focused ? 3 : 1) }
+        .background(focused ? NTVDesign.raised : NTVDesign.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(focused ? Color.white.opacity(0.85) : .white.opacity(0.07), lineWidth: focused ? 3 : 1) }
         .scaleEffect(focused ? 1.025 : 1)
     }
 }

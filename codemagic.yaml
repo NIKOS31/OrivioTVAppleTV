@@ -1,0 +1,56 @@
+workflows:
+  ntv-tvos:
+    name: nTV - Apple TV
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: '26.6'
+      vars:
+        XCODEGEN_VERSION: '2.46.0'
+        XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+    scripts:
+      - name: Prepare the existing CI scripts
+        script: |
+          set -euo pipefail
+          ntv_ci_tmp=$(mktemp -d "${TMPDIR:-/tmp}/ntv-ci.XXXXXX")
+          printf 'RUNNER_TEMP=%s\n' "$ntv_ci_tmp" >> "$CM_ENV"
+          if [[ $(git rev-parse --is-shallow-repository) == true ]]; then
+            git fetch --unshallow --quiet > /dev/null 2>&1 || {
+              echo 'Full source history is required for the secret check.' >&2
+              exit 1
+            }
+          fi
+      - name: Check source for credentials
+        script: bash scripts/ci/check-secrets.sh
+      - name: Install verified XcodeGen
+        script: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcodegen.zip"
+          tools_dir="$RUNNER_TEMP/ntv-xcodegen"
+          curl --fail --location --retry 3 --max-time 120 \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip" \
+            --output "$archive"
+          printf '%s  %s\n' "$XCODEGEN_SHA256" "$archive" | shasum -a 256 --check
+          unzip -q "$archive" -d "$tools_dir"
+          binary=$(find "$tools_dir" -type f -path '*/bin/xcodegen' -print)
+          if [[ -z "$binary" || "$binary" == *$'\n'* ]]; then
+            echo 'Expected one XcodeGen binary in the verified archive.' >&2
+            exit 1
+          fi
+          chmod +x "$binary"
+          "$binary" --version
+          printf 'PATH=%s:%s\n' "$(dirname "$binary")" "$PATH" >> "$CM_ENV"
+      - name: Build nTV for Apple TV and Simulator
+        script: bash scripts/ci/build-tvos.sh
+      - name: Test nTV on the tvOS Simulator
+        script: bash scripts/ci/test-ntv-ui.sh
+      - name: Package nTV for local signing
+        script: bash scripts/ci/package-ntv.sh
+    artifacts:
+      - build/ci/packages/*.ipa
+      - build/ci/packages/*.json
+      - build/ci/packages/*.sha256
+      - build/ci/build-info.json
+      - build/ci/logs/*.log
+      - build/ci/results/**/*.xcresult
+      - build/ci/screenshots/**

@@ -6,6 +6,26 @@ import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    @MainActor
+    func testSpotlightPauseDwellAndManualNavigation() throws {
+        try XCTSkipIf(PerformanceSettingsStore.shared.reduceMotion)
+        let hero = HeroFocus()
+        hero.setSpotlight([MetaItem(id: "first", type: "movie", name: "First"),
+                           MetaItem(id: "second", type: "movie", name: "Second")])
+        let later = Date().addingTimeInterval(30)
+        hero.spotlightPaused = true
+        hero.rotateIfIdle(now: later)
+        XCTAssertEqual(hero.spotlightIndex, 0)
+        hero.spotlightPaused = false
+        hero.rotateIfIdle(now: later)
+        XCTAssertEqual(hero.spotlightIndex, 1)
+        hero.rotateIfIdle(now: later.addingTimeInterval(5))
+        XCTAssertEqual(hero.spotlightIndex, 1, "Keep each proposal readable for the full dwell.")
+        hero.spotlightPaused = true
+        hero.stepSpotlight(by: 1)
+        XCTAssertEqual(hero.spotlightIndex, 0, "Manual navigation must still work while paused.")
+    }
+
     func testRenderMeterSeparatesBodyCountsFromTimedWorkAndRejectsInvalidDurations() throws {
         let meter = NTVRenderMeter()
         meter.record(.posterRow); meter.record(.posterRow)

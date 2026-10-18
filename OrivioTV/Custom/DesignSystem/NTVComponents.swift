@@ -98,14 +98,13 @@ struct NTVPosterArtwork: View {
 
 struct NTVNavigationLabel: View {
     @Environment(\.isFocused) private var focused
-    let title: String
-    let symbol: String
+    let tab: AppTab
     let selected: Bool
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 22, weight: .medium))
-            Text(title).font(.system(size: 24, weight: .medium)).lineLimit(1)
+            tab.navigationIcon.font(.system(size: 22, weight: .medium))
+            Text(NTVBrand.navigationTitle(for: tab)).font(.system(size: 24, weight: .medium)).lineLimit(1)
         }
         .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .padding(.horizontal, 20)
@@ -131,12 +130,12 @@ struct NTVSidebarLabel: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            Image(systemName: tab.icon)
+            tab.navigationIcon
                 .font(.system(size: 25, weight: .medium))
                 .frame(width: expanded ? 32 : 56)
             if expanded {
                 Text(NTVBrand.navigationTitle(for: tab))
-                    .font(.system(size: labelSize, weight: .medium))
+                    .font(.system(size: labelSize, weight: focused || selected ? .bold : .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                     .transition(.opacity)
@@ -149,28 +148,20 @@ struct NTVSidebarLabel: View {
         .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         .background {
             RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                .fill(focused ? NTVDesign.textPrimary.opacity(0.16)
-                      : selected ? NTVDesign.accentMuted : .clear)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                .strokeBorder(focused ? NTVDesign.accent : .clear, lineWidth: 2)
-        }
-        .overlay(alignment: .leading) {
-            if selected {
-                Capsule().fill(NTVDesign.accent)
-                    .frame(width: 3, height: 22).padding(.leading, 3)
-            }
+                .fill(focused ? Color.white.opacity(0.34)
+                      : selected ? Color.white.opacity(0.08) : .clear)
         }
         .accessibilityLabel(NTVBrand.navigationTitle(for: tab))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
 struct NTVActionButtonStyle: ButtonStyle {
     var prominent = false
     var glass = false
+    var capsule = false
     func makeBody(configuration: Configuration) -> some View {
-        Chrome(configuration: configuration, prominent: prominent, glass: glass)
+        Chrome(configuration: configuration, prominent: prominent, glass: glass, capsule: capsule)
     }
 
     private struct Chrome: View {
@@ -180,30 +171,32 @@ struct NTVActionButtonStyle: ButtonStyle {
         let configuration: ButtonStyle.Configuration
         let prominent: Bool
         let glass: Bool
+        let capsule: Bool
+        private var radius: CGFloat { capsule ? 100 : NTVDesign.controlRadius }
 
         var body: some View {
             configuration.label
-                .font(.system(size: labelSize, weight: legibility == .bold ? .bold : .medium))
+                .font(.system(size: capsule ? labelSize * 0.86 : labelSize, weight: legibility == .bold ? .bold : .medium))
                 .foregroundStyle(focused || prominent ? NTVDesign.background : NTVDesign.textPrimary)
-                .padding(.horizontal, 28)
-                .frame(minHeight: 70)
+                .padding(.horizontal, capsule ? 20 : 28)
+                .frame(minHeight: capsule ? 56 : 70)
                 .background {
                     if focused || prominent {
-                        RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
+                        RoundedRectangle(cornerRadius: radius, style: .continuous)
                             .fill(NTVDesign.textPrimary.opacity(focused ? 1 : 0.92))
                     } else if glass {
-                        NTVGlassSurface(shape: RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous), clear: true)
+                        NTVGlassSurface(shape: RoundedRectangle(cornerRadius: radius, style: .continuous), clear: true)
                     } else {
-                        RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
+                        RoundedRectangle(cornerRadius: radius, style: .continuous)
                             .fill(NTVDesign.raised.opacity(0.92))
                     }
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(.white.opacity(focused ? 0 : 0.12), lineWidth: 1)
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: NTVDesign.controlRadius + 4, style: .continuous)
+                    RoundedRectangle(cornerRadius: radius + 4, style: .continuous)
                         .inset(by: -4).stroke(.white, lineWidth: 2)
                         .opacity(focused ? 1 : 0)
                 }

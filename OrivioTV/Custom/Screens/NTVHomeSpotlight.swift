@@ -105,12 +105,27 @@ struct NTVHomeSpotlight: View {
                     Button { onSelect(item) } label: {
                         Label("Voir la fiche", systemImage: "info.circle")
                     }
-                    .buttonStyle(NTVActionButtonStyle(prominent: true))
+                    .buttonStyle(NTVActionButtonStyle(prominent: true, capsule: true))
                     .focused(playFocus)
                     .accessibilityIdentifier("ntv.home.spotlight")
                     .onExitCommand(perform: onBack)
                     .onChange(of: playFocus.wrappedValue) { _, focused in
                         if focused { ContentFocusRouter.shared.noteFocused(row: "home.heroPlay") }
+                    }
+                    if hero.spotlight.count > 1 {
+                        HStack(spacing: 16) {
+                            Button { hero.stepSpotlight(by: -1) } label: { Image(systemName: "chevron.left") }
+                                .accessibilityLabel("Proposition précédente")
+                            Text("\(hero.spotlightIndex + 1) / \(hero.spotlight.count)")
+                                .font(.system(size: 22).monospacedDigit()).foregroundStyle(NTVDesign.textSecondary)
+                            Button { hero.stepSpotlight(by: 1) } label: { Image(systemName: "chevron.right") }
+                                .accessibilityLabel("Proposition suivante")
+                            Button { hero.spotlightPaused.toggle(); hero.markInteraction() } label: {
+                                Image(systemName: hero.spotlightPaused ? "play.fill" : "pause.fill")
+                            }
+                            .accessibilityLabel(hero.spotlightPaused ? "Reprendre les propositions" : "Mettre les propositions en pause")
+                        }
+                        .buttonStyle(NTVActionButtonStyle())
                     }
                 }
                 .foregroundStyle(NTVDesign.textPrimary)

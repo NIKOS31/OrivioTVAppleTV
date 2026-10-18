@@ -1,10 +1,29 @@
 import XCTest
+import AVFoundation
 import Libavcodec
 import Libavformat
 import Libavutil
 @testable import OrivioTV
 
 final class NTVFFmpegTests: XCTestCase {
+    @MainActor
+    func testBundledFixtureStartsInNativePlayer() async throws {
+        let url = try XCTUnwrap(Bundle.main.url(forResource: "ntv-player-fixture", withExtension: "mp4"))
+        let item = AVPlayerItem(url: url)
+        let ready = expectation(description: "Native fixture leaves unknown status")
+        let observation = item.observe(\.status, options: [.initial, .new]) { item, _ in
+            if item.status != .unknown { ready.fulfill() }
+        }
+        let player = AVPlayer(playerItem: item)
+        defer { observation.invalidate(); player.pause() }
+        player.play()
+        await fulfillment(of: [ready], timeout: 15)
+        let error = item.error as NSError?
+        XCTAssertEqual(item.status, .readyToPlay,
+            "Native fixture: \(error?.domain ?? "no error") / \(error?.code ?? 0)")
+        XCTAssertGreaterThan(item.duration.seconds, 60)
+    }
+
     func testRequiredVideoAudioSubtitleAndContainerSupport() {
         XCTAssertEqual(NTVMediaDependencyAudit.ffmpegVersion, "6.1.6")
         for name in ["h264", "hevc", "aac", "ac3", "eac3", "dca", "truehd", "ass", "subrip", "pgssub", "webvtt"] {

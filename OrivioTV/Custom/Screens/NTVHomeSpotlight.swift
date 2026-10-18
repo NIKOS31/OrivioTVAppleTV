@@ -133,6 +133,7 @@ struct NTVHomeSpotlight: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: 350)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ntv.seanime.home.feature")
         }
     }

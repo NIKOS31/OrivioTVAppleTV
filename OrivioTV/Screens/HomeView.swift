@@ -2720,6 +2720,7 @@ struct HomePosterRow: View {
     var accessibilityPrefix = "ntv.home.poster"
     var restoreItemID: String? = nil
     var onVerticalMove: ((MoveCommandDirection) -> Void)? = nil
+    var onUpAtBoundary: (() -> Void)? = nil
     var focusFirstRequest: ContentFocusRouter.EntryRequest? = nil
     var restoreFocusRequest: ContentFocusRouter.EntryRequest? = nil
     var onLeftAtStart: (() -> Void)? = nil
@@ -2738,6 +2739,7 @@ struct HomePosterRow: View {
             row: row, useLandscape: useLandscape, hero: hero, onSelect: onSelect,
             onPlayManually: onPlayManually, onSeeAll: onSeeAll, onBackAtStart: onBackAtStart,
             accessibilityPrefix: accessibilityPrefix, restoreItemID: restoreItemID, onVerticalMove: onVerticalMove,
+            onUpAtBoundary: onUpAtBoundary,
             focusFirstRequest: focusFirstRequest, restoreFocusRequest: restoreFocusRequest,
             onLeftAtStart: onLeftAtStart, onFirstVisibleChange: onFirstVisibleChange,
             focusFirstScroll: focusFirstScroll, visibility: visibility)
@@ -2777,6 +2779,7 @@ private struct HomePosterRowContent: View {
     var accessibilityPrefix = "ntv.home.poster"
     var restoreItemID: String? = nil
     var onVerticalMove: ((MoveCommandDirection) -> Void)? = nil
+    var onUpAtBoundary: (() -> Void)? = nil
     var focusFirstRequest: ContentFocusRouter.EntryRequest? = nil
     var restoreFocusRequest: ContentFocusRouter.EntryRequest? = nil
     var onLeftAtStart: (() -> Void)? = nil
@@ -2855,7 +2858,7 @@ private struct HomePosterRowContent: View {
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
                 .modifier(CatalogRowMovementObserver(
-                    enabled: onVerticalMove != nil, rowID: row.id))
+                    enabled: onVerticalMove != nil, rowID: row.id, onUpAtBoundary: onUpAtBoundary))
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIFocusSystem.movementDidFailNotification)) { note in
                     // A move command also fires when UIKit successfully moves
@@ -3025,14 +3028,18 @@ private struct HomePosterRowContent: View {
 private struct CatalogRowMovementObserver: ViewModifier {
     let enabled: Bool
     let rowID: String
+    let onUpAtBoundary: (() -> Void)?
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if enabled {
-            content.onMoveCommand { _ in
+            content.onMoveCommand { direction in
                 // A new command after landing cancels stale retries that
                 // could otherwise pull the viewer back to the first card.
                 ContentFocusRouter.shared.noteUserMovement(in: rowID)
+                // The header sits to the right; native Up can choose the rail
+                // successfully, so a failed-movement notification cannot route it.
+                if direction == .up { onUpAtBoundary?() }
             }
         } else {
             content

@@ -48,6 +48,7 @@ struct NTVRecentSearchRow: View {
                 .frame(height: 98)
             }
             .focusSection()
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ntv.search.recent")
         }
     }

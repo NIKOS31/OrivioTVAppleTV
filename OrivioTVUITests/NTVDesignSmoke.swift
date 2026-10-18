@@ -372,10 +372,11 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 15))
         remote.press(.menu)
         XCTAssertTrue(focused(settings, timeout: 8))
-        for _ in 0..<7 {
+        for _ in 0..<9 {
             if app.buttons["ntv.navigation.0"].hasFocus { break }
             remote.press(seanime ? .up : .left)
         }
+        XCTAssertTrue(focused(app.buttons["ntv.navigation.0"], timeout: 5))
         remote.press(.select)
         if seanime { remote.press(.right) }
         let spotlight = app.buttons["ntv.home.spotlight"]

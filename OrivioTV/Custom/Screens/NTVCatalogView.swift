@@ -215,6 +215,8 @@ struct NTVCatalogView: View {
                                     onBackAtRoot: onBackAtRoot,
                                     onLeftAtStart: { openCategory(source.id) }, interceptLeftEdge: navigationIsTop,
                                     onVerticalMove: { move in moveFromRow(source.id, direction: move, proxy: proxy) },
+                                    onUpAtBoundary: !navigationIsTop && source.id == viewModel.firstNavigableSourceID
+                                        ? { moveFromRow(source.id, direction: .up, proxy: proxy) } : nil,
                                     focusRequest: requestedCategory?.sourceID == source.id ? requestedCategory?.entry : nil,
                                     focusScrollToStart: requestedCategory?.scrollToStart ?? true,
                                     restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil,
@@ -396,8 +398,11 @@ struct NTVCatalogView: View {
         } else if direction == .up {
             if navigationIsTop { onBackAtRoot() }
             else {
+                cancelEntryRequests()
+                requestedCategory = nil; restoreSelection = nil; restoreFocusRequest = nil
                 proxy.scrollTo("catalogTop", anchor: .top)
-                categoryTriggerFocused = true
+                ContentFocusRouter.shared.land(in: routerID,
+                    assign: { categoryTriggerFocused = true }, landed: { categoryTriggerFocused })
             }
         }
     }
@@ -433,6 +438,7 @@ private struct NTVCatalogShelf: View {
     let onLeftAtStart: () -> Void
     var interceptLeftEdge = true
     let onVerticalMove: (MoveCommandDirection) -> Void
+    var onUpAtBoundary: (() -> Void)? = nil
     let focusRequest: ContentFocusRouter.EntryRequest?
     var focusScrollToStart = true
     let restoreItemID: String?
@@ -450,6 +456,7 @@ private struct NTVCatalogShelf: View {
                     onPlayManually: onPlayManually, onSeeAll: onSeeAll,
                     onBackAtStart: onBackAtRoot, accessibilityPrefix: "ntv.poster",
                     restoreItemID: restoreItemID, onVerticalMove: onVerticalMove,
+                    onUpAtBoundary: onUpAtBoundary,
                     focusFirstRequest: focusRequest,
                     restoreFocusRequest: restoreFocusRequest,
                     onLeftAtStart: interceptLeftEdge ? onLeftAtStart : nil,

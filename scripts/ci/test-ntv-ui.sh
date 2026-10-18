@@ -25,6 +25,12 @@ PY
 
 xcrun simctl boot "$simulator" || true
 xcrun simctl bootstatus "$simulator" -b
+# The runner contains only test fixtures; retain native media startup failures.
+xcrun simctl spawn "$simulator" log stream --style compact --level info \
+  --predicate 'process == "OrivioTV" AND (eventMessage CONTAINS "[OrivioPlayer]" OR subsystem BEGINSWITH "com.apple.coremedia" OR subsystem BEGINSWITH "com.apple.avfoundation")' \
+  > "$output/logs/native-media.log" 2>&1 &
+media_log_pid=$!
+trap 'kill "$media_log_pid" 2>/dev/null || true' EXIT
 # Keep the result bundle available for screenshots even when the test fails.
 set +e
 xcodebuild test \
@@ -53,6 +59,9 @@ xcodebuild test \
   ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
   2>&1 | tee "$output/logs/ntv-ui.log"
 test_pipeline=("${PIPESTATUS[@]}")
+kill "$media_log_pid" 2>/dev/null || true
+wait "$media_log_pid" 2>/dev/null || true
+trap - EXIT
 set -e
 
 export_status=0

@@ -287,8 +287,9 @@ final class NTVAnimeTests: XCTestCase {
         XCTAssertFalse(store.toggle(try entry(201).media, profile: 1))
         XCTAssertTrue(store.toggle(items[0], profile: 1), "A full list must still allow removal.")
         XCTAssertTrue(store.toggle(try entry(201).media, profile: 1))
-        defaults.set(Data(repeating: 32, count: (1 << 20) + 1), forKey: followsStorageName(profile: 2))
-        XCTAssertTrue(store.items(profile: 2).isEmpty)
+        // Writing >1 MiB to real tvOS defaults terminates the test host.
+        let oversized = try XCTUnwrap(NTVAnimeOversizedDefaults(suiteName: suite))
+        XCTAssertTrue(NTVAnimeFollows(defaults: oversized).items(profile: 2).isEmpty)
         defaults.set(Data("invalid JSON".utf8), forKey: followsStorageName(profile: 3))
         XCTAssertTrue(store.items(profile: 3).isEmpty)
     }
@@ -548,6 +549,12 @@ final class NTVAnimeTests: XCTestCase {
         _ = try await client.load(request)
         let count = await counter.count
         XCTAssertEqual(count, 1, "Returning to the same season must use its short-lived cache.")
+    }
+}
+
+private final class NTVAnimeOversizedDefaults: UserDefaults, @unchecked Sendable {
+    override func data(forKey defaultName: String) -> Data? {
+        Data(repeating: 32, count: (1 << 20) + 1)
     }
 }
 

@@ -8,8 +8,11 @@ workflows:
     scripts:
       - name: Probe native media without building nTV
         script: bash scripts/ci/probe-native-media.sh
+      - name: Probe tvOS Simulator without nTV
+        script: bash scripts/ci/probe-simulator-media.sh
     artifacts:
       - build/ci/logs/native-host-probe.log
+      - build/ci/logs/native-simulator-probe.log
   ntv-tvos:
     name: nTV - Apple TV
     instance_type: mac_mini_m2

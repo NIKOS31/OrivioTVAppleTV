@@ -4,6 +4,7 @@ import Foundation
 import CoreAudio
 #else
 import UIKit
+var videoLayer: AVPlayerLayer?
 #endif
 
 #if os(macOS)
@@ -21,6 +22,10 @@ print("host_audio_query_status=\(audioStatus) host_output_available=\(output != 
 func probe(_ asset: AVAsset, label: String) -> Bool {
     let item = AVPlayerItem(asset: asset)
     let player = AVPlayer(playerItem: item)
+    #if os(tvOS)
+    videoLayer?.player = player
+    CATransaction.flush()
+    #endif
     player.play()
     defer { player.pause() }
     let deadline = Date().addingTimeInterval(15)
@@ -67,6 +72,10 @@ final class MediaProbeDelegate: UIResponder, UIApplicationDelegate {
         window = UIWindow(frame: UIScreen.main.bounds)
         window?.rootViewController = UIViewController()
         window?.makeKeyAndVisible()
+        let layer = AVPlayerLayer()
+        layer.frame = UIScreen.main.bounds
+        window?.rootViewController?.view.layer.addSublayer(layer)
+        videoLayer = layer
         return true
     }
     func applicationDidBecomeActive(_ application: UIApplication) {

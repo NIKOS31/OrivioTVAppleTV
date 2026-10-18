@@ -126,7 +126,9 @@ final class NTVDesignSmoke: XCTestCase {
         let heading = app.staticTexts["ntv.home.heading"]
         XCTAssertGreaterThan(heading.frame.minX, home.frame.maxX + 8)
         let headingBefore = heading.frame
-        let featureBefore = spotlight.frame
+        let feature = app.descendants(matching: .any)["ntv.seanime.home.feature"].firstMatch
+        XCTAssertTrue(feature.exists)
+        let featureBefore = feature.frame
         capture("ntv-seanime-home-cover-and-summary")
         let remote = XCUIRemote.shared
         for _ in 0..<4 {
@@ -140,7 +142,7 @@ final class NTVDesignSmoke: XCTestCase {
             if item.exists { XCTAssertTrue(screen.contains(item.frame), "Every available rail item must fit the screen.") }
         }
         XCTAssertEqual(heading.frame.minX, headingBefore.minX, accuracy: 1)
-        XCTAssertEqual(spotlight.frame.width, featureBefore.width, accuracy: 1,
+        XCTAssertEqual(feature.frame.width, featureBefore.width, accuracy: 1,
                        "Opening the rail must overlay content rather than squeeze its feature.")
         capture("ntv-seanime-expanded-navigation")
         remote.press(.menu)
@@ -381,14 +383,21 @@ final class NTVDesignSmoke: XCTestCase {
         if seanime { remote.press(.right) }
         let spotlight = app.buttons["ntv.home.spotlight"]
         XCTAssertTrue(spotlight.waitForExistence(timeout: 15))
-        // Home may keep top-bar focus after a tab change. Enter through its
-        // normal Down path; no fixture writes focus or scroll offsets.
-        for _ in 0..<3 {
-            let first = app.buttons["ntv.home.poster.movie.fixture.row.0.item.0"]
-            if first.exists && first.hasFocus { break }
+        // The editorial action is offset from poster zero. Enter the first
+        // shelf before aligning its first column through real remote moves.
+        let firstShelfFocus = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND hasFocus == true",
+            "ntv.home.poster.movie.fixture.row.0.item.")).firstMatch
+        for _ in 0..<6 {
+            if firstShelfFocus.exists { break }
             remote.press(.down)
         }
+        XCTAssertTrue(firstShelfFocus.exists)
         let first = app.buttons["ntv.home.poster.movie.fixture.row.0.item.0"]
+        for _ in 0..<24 {
+            if first.hasFocus { break }
+            remote.press(.left)
+        }
         XCTAssertTrue(focused(first, timeout: 8))
         let navigation = app.buttons["ntv.navigation.0"]
         for row in 1...4 {
@@ -1653,7 +1662,15 @@ final class NTVDesignSmoke: XCTestCase {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "hasFocus == true"), object: element
         )
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+        let completed = XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+        if !completed {
+            capture("ntv-focus-failure")
+            let hierarchy = XCTAttachment(string: XCUIApplication().debugDescription)
+            hierarchy.name = "ntv-focus-failure-hierarchy"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+        }
+        return completed
     }
 
     private func backdropMatches(_ app: XCUIApplication, identifier: String, contentID: String) -> Bool {

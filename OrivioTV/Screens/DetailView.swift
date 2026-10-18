@@ -908,6 +908,7 @@ struct DetailView: View {
             }
             .padding(.horizontal, OrivioSpacing.huge)
             .padding(.top, 80)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ntv.seanime.detail.header")
         } else {
             headerInformation.padding(.leading, OrivioSpacing.huge)

@@ -25,30 +25,19 @@ PY
 
 xcrun simctl boot "$simulator" || true
 xcrun simctl bootstatus "$simulator" -b
+open -a "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$simulator"
 # The runner contains only test fixtures; retain native media startup failures.
 xcrun simctl spawn "$simulator" log stream --style compact --level info \
-  --predicate 'process == "OrivioTV" AND (eventMessage CONTAINS "[OrivioPlayer]" OR subsystem BEGINSWITH "com.apple.coremedia" OR subsystem BEGINSWITH "com.apple.avfoundation")' \
+  --predicate 'process == "OrivioTV" AND (eventMessage CONTAINS "[OrivioPlayer]" OR eventMessage CONTAINS "[FocusTrace]" OR subsystem BEGINSWITH "com.apple.coremedia" OR subsystem BEGINSWITH "com.apple.avfoundation")' \
   > "$output/logs/native-media.log" 2>&1 &
 media_log_pid=$!
 trap 'kill "$media_log_pid" 2>/dev/null || true' EXIT
 # Keep the result bundle available for screenshots even when the test fails.
-set +e
-xcodebuild test \
+test_options=(
   -project OrivioTV.xcodeproj -scheme OrivioTV \
   -configuration Debug -sdk appletvsimulator \
   -destination "platform=tvOS Simulator,id=$simulator" \
   -derivedDataPath "$output/DerivedData" \
-  -resultBundlePath "$results/navigation.xcresult" \
-  -only-testing:OrivioTVUITests/NTVDesignSmoke \
-  -only-testing:OrivioTVTests/NTVCoreTests \
-  -only-testing:OrivioTVTests/NTVAnimeTests \
-  -only-testing:OrivioTVTests/NTVTwitchTests \
-  -only-testing:OrivioTVTests/NTVSecurityTests \
-  -only-testing:OrivioTVTests/NTVAddonPayloadTests \
-  -only-testing:OrivioTVTests/NTVPerformanceTests \
-  -only-testing:OrivioTVTests/NTVArtworkTests \
-  -only-testing:OrivioTVTests/NTVTopShelfTests \
-  -only-testing:OrivioTVTests/NTVFFmpegTests \
   -parallel-testing-enabled NO \
   -test-timeouts-enabled YES \
   -default-test-execution-time-allowance 180 \
@@ -56,18 +45,45 @@ xcodebuild test \
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
   CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
   CODE_SIGN_ENTITLEMENTS="$task_root/Config/NTV-CI-Simulator.entitlements" \
-  ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
-  2>&1 | tee "$output/logs/ntv-ui.log"
-test_pipeline=("${PIPESTATUS[@]}")
+  ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES
+)
+run_test_bundle() {
+  result_bundle="$results/$1.xcresult"
+  shift
+  xcodebuild test "${test_options[@]}" -resultBundlePath "$result_bundle" "$@" \
+    2>&1 | tee -a "$output/logs/ntv-ui.log"
+  test_pipeline=("${PIPESTATUS[@]}")
+}
+set +e
+# A native startup failure must surface before the longer remote journeys.
+run_test_bundle native-video \
+  -only-testing:OrivioTVTests/NTVFFmpegTests/testBundledFixtureStartsInNativePlayer
+if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
+  run_test_bundle navigation \
+    -only-testing:OrivioTVUITests/NTVDesignSmoke \
+    -only-testing:OrivioTVTests/NTVCoreTests \
+    -only-testing:OrivioTVTests/NTVAnimeTests \
+    -only-testing:OrivioTVTests/NTVTwitchTests \
+    -only-testing:OrivioTVTests/NTVSecurityTests \
+    -only-testing:OrivioTVTests/NTVAddonPayloadTests \
+    -only-testing:OrivioTVTests/NTVPerformanceTests \
+    -only-testing:OrivioTVTests/NTVArtworkTests \
+    -only-testing:OrivioTVTests/NTVTopShelfTests \
+    -only-testing:OrivioTVTests/NTVFFmpegTests
+fi
 kill "$media_log_pid" 2>/dev/null || true
 wait "$media_log_pid" 2>/dev/null || true
 trap - EXIT
 set -e
+if ((test_pipeline[0] != 0 || test_pipeline[1] != 0)); then
+  printf '\n--- Native media and focus diagnostics (last 160 lines) ---\n'
+  tail -n 160 "$output/logs/native-media.log"
+fi
 
 export_status=0
-if [[ -d "$results/navigation.xcresult" ]]; then
+if [[ -d "$result_bundle" ]]; then
   if xcrun xcresulttool export attachments \
-    --path "$results/navigation.xcresult" \
+    --path "$result_bundle" \
     --output-path "$output/screenshots" \
     2>&1 | tee "$output/logs/screenshots.log"; then
     :

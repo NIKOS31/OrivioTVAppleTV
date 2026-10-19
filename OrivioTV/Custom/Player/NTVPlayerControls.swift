@@ -165,8 +165,9 @@ struct NTVPlayerControls: View {
             switch direction {
             case .up: focus = .timeline
             case .down: focus = .info
-            case .left: viewModel.nudgeSeek(-Double(viewModel.settings.skipSeconds))
-            case .right: viewModel.nudgeSeek(Double(viewModel.settings.skipSeconds))
+            case .left, .right:
+                viewModel.nudgeSeek(Double(viewModel.settings.skipSeconds) * (direction == .right ? 1 : -1))
+                focus = .play
             default: break
             }
         }

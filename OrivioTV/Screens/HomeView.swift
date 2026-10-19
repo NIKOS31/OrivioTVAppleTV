@@ -2862,7 +2862,7 @@ private struct HomePosterRowContent: View {
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
                 .modifier(CatalogRowMovementObserver(
-                    enabled: onVerticalMove != nil, rowID: row.id))
+                    enabled: onVerticalMove != nil, rowID: row.id, onVerticalMove: onVerticalMove))
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIFocusSystem.movementDidFailNotification)) { note in
                     // A move command also fires when UIKit successfully moves
@@ -2874,14 +2874,7 @@ private struct HomePosterRowContent: View {
                     if context.focusHeading == .left,
                        emptyRowFocused || focusedID == displayedItems.first?.id {
                         onLeftAtStart?()
-                    } else if context.focusHeading == .up {
-                        onVerticalMove?(.up)
-                    } else if context.focusHeading == .down {
-                        onVerticalMove?(.down)
                     }
-                    // A successful native vertical move has already scrolled
-                    // and chosen its destination. Never run a second scrollTo
-                    // for that same press; only bridge an actual failed move.
                 }
                 // Coming back out of the rail lands on THIS row's first card
                 // when this was the row the viewer left (ContentFocusRouter).
@@ -3020,20 +3013,32 @@ private struct HomePosterRowContent: View {
     }
 }
 
-/// Catalog shelves bridge their own failed moves below. Home shelves must
-/// leave the command handler absent so boundary moves reach RootView.
+/// Bridge vertical commands that leave focus in the same shelf: a SwiftUI
+/// command handler need not produce UIKit's movementDidFail notification.
+/// Home leaves this handler absent so boundary moves still reach RootView.
 /// `enabled` is fixed for the lifetime of a row, preserving its view identity.
 private struct CatalogRowMovementObserver: ViewModifier {
     let enabled: Bool
     let rowID: String
+    let onVerticalMove: ((MoveCommandDirection) -> Void)?
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if enabled {
-            content.onMoveCommand { _ in
+            content.onMoveCommand { direction in
+                let router = ContentFocusRouter.shared
                 // A new command after landing cancels stale retries that
                 // could otherwise pull the viewer back to the first card.
-                ContentFocusRouter.shared.noteUserMovement(in: rowID)
+                router.noteUserMovement(in: rowID)
+                guard direction == .up || direction == .down else { return }
+                let generation = router.interactionGeneration
+                // Let UIKit finish this move before bridging it. A newer
+                // command or a successful row crossing supersedes this turn.
+                DispatchQueue.main.async {
+                    guard router.interactionGeneration == generation,
+                          router.lastRowID == rowID else { return }
+                    onVerticalMove?(direction)
+                }
             }
         } else {
             content

@@ -152,6 +152,7 @@ struct NTVCatalogView: View {
     @State private var restoreFocusRequest: ContentFocusRouter.EntryRequest?
     @State private var menuVisible = false
     @State private var menuSourceID: String?
+    @State private var initialEntryGeneration: UInt64?
     @FocusState private var categoryFocus: String?
     @FocusState private var categoryTriggerFocused: Bool
     private var routerID: String { "ntv.catalog.\(mediaType).entry" }
@@ -220,7 +221,14 @@ struct NTVCatalogView: View {
                                     focusScrollToStart: requestedCategory?.scrollToStart ?? true,
                                     restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil,
                                     restoreFocusRequest: restoreSelection?.sourceID == source.id ? restoreFocusRequest : nil)
-                                    .onFirstVisibleItem { viewModel.noteVisibleStart(sourceID: source.id, itemID: $0) }
+                                    .onFirstVisibleItem { itemID in
+                                        viewModel.noteVisibleStart(sourceID: source.id, itemID: itemID)
+                                        guard itemID != nil, source.id == viewModel.sources.first?.id,
+                                              let generation = initialEntryGeneration else { return }
+                                        initialEntryGeneration = nil
+                                        guard isAtRoot, generation == ContentFocusRouter.shared.interactionGeneration else { return }
+                                        requestRow(source.id, proxy: proxy)
+                                    }
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("ntv.catalog.shelf.\(source.id)")
                                     .id(source.id)
@@ -281,6 +289,11 @@ struct NTVCatalogView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task(id: loadKey) {
             hero.layout = .pinnedFocus
+            // A fresh tab waits for its first real poster; any intervening
+            // remote command cancels this initial hand-off.
+            if viewModel.sources.isEmpty {
+                initialEntryGeneration = ContentFocusRouter.shared.interactionGeneration
+            }
             viewModel.configure(addons: addons.catalogAddons, type: mediaType, scope: String(profiles.activeProfileID) + "#" + iptv.routingFingerprint)
             if let first = viewModel.sources.first {
                 let shelf = viewModel.shelf(first)

@@ -227,7 +227,9 @@ struct NTVCatalogView: View {
                                               let generation = initialEntryGeneration else { return }
                                         initialEntryGeneration = nil
                                         guard isAtRoot, generation == ContentFocusRouter.shared.interactionGeneration else { return }
-                                        requestRow(source.id, proxy: proxy)
+                                        // Initial focus keeps the header visible; only explicit row navigation scrolls to its top.
+                                        let entry = ContentFocusRouter.shared.makeEntryRequest(in: "ntv.catalog.shelf.\(source.id)")
+                                        requestedCategory = FocusRequest(sourceID: source.id, entry: entry, scrollToStart: false)
                                     }
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("ntv.catalog.shelf.\(source.id)")

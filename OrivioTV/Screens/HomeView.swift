@@ -2835,7 +2835,8 @@ private struct HomePosterRowContent: View {
                                 hero: hero,
                                 onSelect: onSelect,
                                 onPlayManually: onPlayManually,
-                                accessibilityPrefix: accessibilityPrefix
+                                accessibilityPrefix: accessibilityPrefix,
+                                rowID: row.id, onVerticalMove: onVerticalMove
                             )
                             .equatable()
                             .focused($focusedID, equals: item.id)
@@ -2861,8 +2862,6 @@ private struct HomePosterRowContent: View {
                 // Back: jump to the first card if scrolled in; on the first
                 // card, bubble up (sidebar / tab bar).
                 .onExitCommand { backToStart(proxy) }
-                .modifier(CatalogRowMovementObserver(
-                    enabled: onVerticalMove != nil, rowID: row.id, onVerticalMove: onVerticalMove))
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIFocusSystem.movementDidFailNotification)) { note in
                     // A move command also fires when UIKit successfully moves
@@ -3114,6 +3113,8 @@ private struct HomePosterCell: View, Equatable {
     let onSelect: (MetaItem) -> Void
     let onPlayManually: (MetaItem, MetaVideo?) -> Void
     let accessibilityPrefix: String
+    let rowID: String
+    let onVerticalMove: ((MoveCommandDirection) -> Void)?
     @State private var focused = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -3123,6 +3124,7 @@ private struct HomePosterCell: View, Equatable {
             && lhs.showLabel == rhs.showLabel
             && lhs.cornerRadius == rhs.cornerRadius
             && lhs.accessibilityPrefix == rhs.accessibilityPrefix
+            && lhs.rowID == rhs.rowID
     }
 
     var body: some View {
@@ -3166,6 +3168,9 @@ private struct HomePosterCell: View, Equatable {
             .posterHoldMenu(item) { onSelect(item) }
             .onPlayPauseCommand { onPlayManually(item, nil) }
             .accessibilityIdentifier("\(accessibilityPrefix).\(item.type).\(item.id)")
+            // The focused button receives the command before its enclosing scroll view.
+            .modifier(CatalogRowMovementObserver(
+                enabled: onVerticalMove != nil, rowID: rowID, onVerticalMove: onVerticalMove))
 
             if showLabel {
                 ATVCardCaption(

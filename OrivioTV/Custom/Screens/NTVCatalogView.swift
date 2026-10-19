@@ -389,6 +389,7 @@ struct NTVCatalogView: View {
         requestRow(sourceID, proxy: proxy)
     }
     private func requestRow(_ sourceID: String, proxy: ScrollViewProxy) {
+        initialEntryGeneration = nil
         let keepViewport = menuVisible && menuSourceID == sourceID
         categoryFocus = nil; menuVisible = false
         viewModel.forgetSelection(); restoreSelection = nil; restoreFocusRequest = nil

@@ -171,7 +171,7 @@ final class ContentFocusRouter {
     /// running means someone chose it, and re-assigning would yank them back
     /// to card 1 and snap the platter raise mid-move (up to six times over
     /// 360ms — one face of the "frozen poster" fight).
-    func land(in rowID: String, assign: @escaping () -> Void,
+    func land(in rowID: String, prepare: () -> Void = {}, assign: @escaping () -> Void,
                      landed: @escaping () -> Bool,
                      focusToken: (() -> String?)? = nil) {
         cancelLanding()
@@ -184,6 +184,9 @@ final class ContentFocusRouter {
         // no title, media identifier, addon configuration or URL.
         AppProbe.focus("landing #\(sequence) started")
         PlayerProbe.count("focus.landing.started")
+        // Materialize an offscreen target once; retries must not restart scrolling.
+        prepare()
+        guard landingGeneration == generation else { return }
         PlayerProbe.count("focus.landing.assignment")
         assign()
         guard landingGeneration == generation else { return }

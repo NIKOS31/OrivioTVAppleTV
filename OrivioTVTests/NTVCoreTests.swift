@@ -466,6 +466,21 @@ final class NTVCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testLazyFocusLandingScrollsOnceAndOnlyRetriesFocus() async throws {
+        let router = ContentFocusRouter()
+        var scrolls = 0, assignments = 0
+        let landed = expectation(description: "Lazy first poster became focusable")
+        router.land(in: "ntv.catalog.shelf.fixture", prepare: { scrolls += 1 }, assign: {
+            assignments += 1
+            if assignments == 3 { landed.fulfill() }
+        }, landed: { assignments >= 3 })
+        await fulfillment(of: [landed], timeout: 2)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(scrolls, 1, "Deferred focus must not repeatedly reposition the viewport.")
+        XCTAssertEqual(assignments, 3, "Focus still retries until the lazy poster is available.")
+    }
+
+    @MainActor
     func testANewRemoteMovementCancelsSameRowRetriesAndInvalidatesPendingRestoration() async throws {
         let router = ContentFocusRouter()
         var assignments = 0

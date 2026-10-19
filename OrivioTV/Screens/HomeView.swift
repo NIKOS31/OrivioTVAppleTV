@@ -2787,6 +2787,7 @@ private struct HomePosterRowContent: View {
     @FocusState private var focusedID: String?
     @FocusState private var emptyRowFocused: Bool
     @FocusState private var seeAllFocused: Bool
+    @State private var mountedFirstPosterID: String?
 
     private var displayedItems: [MetaItem] {
         visibility.items(keeping: focusedID)
@@ -2838,6 +2839,12 @@ private struct HomePosterRowContent: View {
                             )
                             .equatable()
                             .focused($focusedID, equals: item.id)
+                            .onAppear {
+                                if item.id == visible.first?.id { mountedFirstPosterID = item.id }
+                            }
+                            .onDisappear {
+                                if mountedFirstPosterID == item.id { mountedFirstPosterID = nil }
+                            }
                             // Scroll target for the Back-to-start jump.
                             .id(item.id)
                         }
@@ -2899,10 +2906,9 @@ private struct HomePosterRowContent: View {
                     // Normalize in this update, rather than scheduling an
                     // unowned next-turn jump that can outlive a quick Up/Down.
                     // The router owns/cancels retries while lazy cards mount.
-                    ContentFocusRouter.shared.land(in: row.id, assign: {
-                        proxy.scrollTo(first, anchor: .leading)
-                        focusedID = first
-                    }, landed: { focusedID == first }, focusToken: { focusedID })
+                    ContentFocusRouter.shared.land(in: row.id, prepare: {
+                        if mountedFirstPosterID != first { proxy.scrollTo(first, anchor: .leading) }
+                    }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
                 .onChange(of: emptyRowFocused) { _, focused in
                     if focused { ContentFocusRouter.shared.noteFocused(row: row.id) }
@@ -2919,10 +2925,9 @@ private struct HomePosterRowContent: View {
                     // its See All header, before any poster receives focus.
                     // Treat that as a row entry too; otherwise poster-only
                     // normalization never runs and Down strands focus here.
-                    ContentFocusRouter.shared.land(in: row.id, assign: {
-                        proxy.scrollTo(first, anchor: .leading)
-                        focusedID = first
-                    }, landed: { focusedID == first }, focusToken: { focusedID })
+                    ContentFocusRouter.shared.land(in: row.id, prepare: {
+                        if mountedFirstPosterID != first { proxy.scrollTo(first, anchor: .leading) }
+                    }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
                 .task(id: focusFirstRequest) {
                     guard let focusFirstRequest,
@@ -2934,10 +2939,9 @@ private struct HomePosterRowContent: View {
                     // This task belongs to ONE catalog move. A newer move, a
                     // detail push or disappearance cancels it; no detached
                     // router retry may drag focus back to an obsolete row.
-                    ContentFocusRouter.shared.land(in: row.id, assign: {
+                    ContentFocusRouter.shared.land(in: row.id, prepare: {
                         if focusFirstScroll { proxy.scrollTo(first, anchor: .leading) }
-                        focusedID = first
-                    }, landed: { focusedID == first }, focusToken: { focusedID })
+                    }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
                 .task(id: restoreFocusRequest) {
                     guard let request = restoreFocusRequest else { return }
@@ -2949,10 +2953,9 @@ private struct HomePosterRowContent: View {
                     // write. Reuse its loaded data and scroll only this shelf.
                     do { try await Task.sleep(for: .milliseconds(320)) } catch { return }
                     guard !Task.isCancelled, ContentFocusRouter.shared.consumeEntry(request) else { return }
-                    ContentFocusRouter.shared.land(in: row.id, assign: {
+                    ContentFocusRouter.shared.land(in: row.id, prepare: {
                         proxy.scrollTo(target, anchor: .center)
-                        focusedID = target
-                    }, landed: { focusedID == target }, focusToken: { focusedID })
+                    }, assign: { focusedID = target }, landed: { focusedID == target }, focusToken: { focusedID })
                 }
             }
         }
@@ -2974,10 +2977,9 @@ private struct HomePosterRowContent: View {
             // Retry until the card actually holds focus: deep in the row the
             // first card is unloaded, and it takes the scroll a few ticks to
             // materialize it on the slower boxes.
-            ContentFocusRouter.shared.land(in: row.id, assign: {
+            ContentFocusRouter.shared.land(in: row.id, prepare: {
                 proxy.scrollTo(first, anchor: .leading)
-                focusedID = first
-            }, landed: { focusedID == first },
+            }, assign: { focusedID = first }, landed: { focusedID == first },
                focusToken: { focusedID })
             return true
         }
@@ -2993,10 +2995,9 @@ private struct HomePosterRowContent: View {
             onBackAtStart()
             return
         }
-        ContentFocusRouter.shared.land(in: row.id, assign: {
+        ContentFocusRouter.shared.land(in: row.id, prepare: {
             withAnimation(FusionMotion.focusMove) { proxy.scrollTo(first, anchor: .leading) }
-            focusedID = first
-        }, landed: { focusedID == first }, focusToken: { focusedID })
+        }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
     }
 
     @ViewBuilder
@@ -3204,10 +3205,9 @@ private struct ContinueWatchingRow: View {
         let firstID = items.first?.id
         ContentFocusRouter.shared.register(Self.routerID) {
             guard let first = firstID else { return false }
-            ContentFocusRouter.shared.land(in: Self.routerID, assign: {
+            ContentFocusRouter.shared.land(in: Self.routerID, prepare: {
                 proxy.scrollTo(first, anchor: .leading)
-                focusedCWCard = first
-            }, landed: { focusedCWCard == first },
+            }, assign: { focusedCWCard = first }, landed: { focusedCWCard == first },
                focusToken: { focusedCWCard })
             return true
         }

@@ -43,7 +43,7 @@ enum AppTab: Int, CaseIterable, Identifiable {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 28, height: 18)
+                .frame(width: 26, height: 18)
                 .accessibilityHidden(true)
         } else {
             Image(systemName: icon)
@@ -323,7 +323,7 @@ struct GlassSidebar: View {
         .background {
             // The collapsed rail shares the root artwork and its fade to black.
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.black.opacity(expanded ? 0.66 : 0))
+                .fill(expanded ? NTVDesign.surface : Color.clear)
                 .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .strokeBorder(.white.opacity(expanded ? 0.08 : 0), lineWidth: 1) }
         }

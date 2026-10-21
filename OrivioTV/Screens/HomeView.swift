@@ -2824,8 +2824,8 @@ private struct HomePosterRowContent: View {
                             // unchanged cell body, so a step re-renders nothing
                             // but the two cards whose focus visuals actually
                             // change (they invalidate via \.isFocused, which
-                            // bypasses ==). Focus/scroll bookkeeping stays out
-                            // here on the wrapper.
+                            // bypasses ==). The shared focus binding belongs
+                            // to the actual button, rather than its caption stack.
                             HomePosterCell(
                                 item: item,
                                 useLandscape: useLandscape,
@@ -2836,10 +2836,10 @@ private struct HomePosterRowContent: View {
                                 onSelect: onSelect,
                                 onPlayManually: onPlayManually,
                                 accessibilityPrefix: accessibilityPrefix,
-                                rowID: row.id, onVerticalMove: onVerticalMove
+                                rowID: row.id, onVerticalMove: onVerticalMove,
+                                focusBinding: $focusedID
                             )
                             .equatable()
-                            .focused($focusedID, equals: item.id)
                             .onAppear {
                                 if item.id == visible.first?.id { mountedFirstPosterID = item.id }
                             }
@@ -3115,6 +3115,7 @@ private struct HomePosterCell: View, Equatable {
     let accessibilityPrefix: String
     let rowID: String
     let onVerticalMove: ((MoveCommandDirection) -> Void)?
+    let focusBinding: FocusState<String?>.Binding
     @State private var focused = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -3168,6 +3169,7 @@ private struct HomePosterCell: View, Equatable {
             .posterHoldMenu(item) { onSelect(item) }
             .onPlayPauseCommand { onPlayManually(item, nil) }
             .accessibilityIdentifier("\(accessibilityPrefix).\(item.type).\(item.id)")
+            .focused(focusBinding, equals: item.id)
             // The focused button receives the command before its enclosing scroll view.
             .modifier(CatalogRowMovementObserver(
                 enabled: onVerticalMove != nil, rowID: rowID, onVerticalMove: onVerticalMove))

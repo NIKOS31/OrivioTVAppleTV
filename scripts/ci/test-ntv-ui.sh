@@ -59,6 +59,12 @@ set +e
 run_test_bundle native-video \
   -only-testing:OrivioTVTests/NTVFFmpegTests/testBundledFixtureStartsInNativePlayer
 if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
+  # Surface the known remote-navigation regression before the full UI suite.
+  run_test_bundle catalog-focus \
+    -only-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeCatalogRapidMovesYieldToNewNavigation \
+    -only-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeCategoriesAndMainRailHaveDistinctRemotePaths
+fi
+if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
   run_test_bundle navigation \
     -only-testing:OrivioTVUITests/NTVDesignSmoke \
     -only-testing:OrivioTVTests/NTVCoreTests \

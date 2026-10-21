@@ -167,39 +167,43 @@ struct NTVCatalogView: View {
                 ZStack(alignment: .leading) {
                     ScrollView(.vertical) {
                         LazyVStack(alignment: .leading, spacing: 22) {
-                            HStack {
-                                Text(title).font(.system(size: 38, weight: .semibold))
-                                    .ntvHalloweenDecor(.heading)
-                                    .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
-                                Spacer()
-                                if !viewModel.sources.isEmpty {
-                                    Button {
-                                        if let source = viewModel.lastSelection?.sourceID ?? viewModel.firstNavigableSourceID {
-                                            openCategory(source)
+                            VStack(alignment: .leading, spacing: 22) {
+                                HStack {
+                                    Text(title).font(.system(size: 38, weight: .semibold))
+                                        .ntvHalloweenDecor(.heading)
+                                        .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
+                                    Spacer()
+                                    if !viewModel.sources.isEmpty {
+                                        Button {
+                                            if let source = viewModel.lastSelection?.sourceID ?? viewModel.firstNavigableSourceID {
+                                                openCategory(source)
+                                            }
+                                        } label: {
+                                            Label("Catégories", systemImage: "line.3.horizontal.decrease")
                                         }
-                                    } label: {
-                                        Label("Catégories", systemImage: "line.3.horizontal.decrease")
-                                    }
-                                    .buttonStyle(NTVActionButtonStyle())
-                                    .focused($categoryTriggerFocused)
-                                    .onChange(of: categoryTriggerFocused) { _, focused in
-                                        if focused { ContentFocusRouter.shared.noteFocused(row: routerID) }
-                                    }
-                                    .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
-                                    .onMoveCommand { direction in
-                                        guard categoryTriggerFocused, direction == .down,
-                                              let first = viewModel.firstNavigableSourceID else { return }
-                                        requestRow(first, proxy: proxy)
+                                        .buttonStyle(NTVActionButtonStyle())
+                                        .focused($categoryTriggerFocused)
+                                        .onChange(of: categoryTriggerFocused) { _, focused in
+                                            if focused { ContentFocusRouter.shared.noteFocused(row: routerID) }
+                                        }
+                                        .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
+                                        .onMoveCommand { direction in
+                                            guard categoryTriggerFocused, direction == .down,
+                                                  let first = viewModel.firstNavigableSourceID else { return }
+                                            requestRow(first, proxy: proxy)
+                                        }
                                     }
                                 }
+                                .padding(.horizontal, NTVViewport.horizontalInset)
+                                NTVCatalogSpotlight(hero: hero)
+                                    .frame(minHeight: 230, alignment: .topLeading)
+                                    .transaction { $0.animation = nil }
+                                    .padding(.horizontal, NTVViewport.horizontalInset)
                             }
-                                .padding(.horizontal, NTVViewport.horizontalInset)
-                                .focusSection()
-                                .id("catalogTop")
-                            NTVCatalogSpotlight(hero: hero)
-                                .frame(minHeight: 230, alignment: .topLeading)
-                                .transaction { $0.animation = nil }
-                                .padding(.horizontal, NTVViewport.horizontalInset)
+                            // The full header bridges the gap between the shelves and Categories.
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .focusSection()
+                            .id("catalogTop")
                             if viewModel.sources.isEmpty {
                                 NTVEmptyCatalog(message: "Ajoutez un addon proposant des catalogues de \(title.lowercased()).", onOpenSettings: onOpenSettings)
                                     .padding(.horizontal, NTVViewport.horizontalInset)

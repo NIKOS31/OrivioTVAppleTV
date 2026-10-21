@@ -430,6 +430,63 @@ final class NTVDesignSmoke: XCTestCase {
         capture(seanime ? "ntv-seanime-home-repeated-row-navigation" : "ntv-home-repeated-row-navigation")
     }
 
+    func testSystemPrimaryIconRefreshIsPerformedOnceForLegacyInstalls() {
+        continueAfterFailure = false
+        executionTimeAllowance = 240
+        let app = XCUIApplication()
+        let remote = XCUIRemote.shared
+        let monitor = addUIInterruptionMonitor(withDescription: "Acknowledge the genuine icon refresh notification") { alert in
+            let message = alert.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "icon for")).firstMatch
+            guard message.exists, alert.buttons["OK"].exists else { return false }
+            remote.press(.select)
+            return true
+        }
+        defer { removeUIInterruptionMonitor(monitor); app.terminate() }
+        let baseArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe"]
+        let probe = app.descendants(matching: .any)["ntv.systemIcon.registration"].firstMatch
+        func waitForPrimary() -> String {
+            Thread.sleep(forTimeInterval: 1)
+            remote.press(.select)
+            guard probe.waitForExistence(timeout: 15) else { return "missing" }
+            let deadline = Date().addingTimeInterval(35)
+            var confirmations = 0
+            while Date() < deadline {
+                let value = probe.value as? String ?? ""
+                if value.hasPrefix("applied#primary#") || value.hasPrefix("failed#") ||
+                    value.hasPrefix("unavailable#") || value.hasPrefix("mismatch#") { return value }
+                if value.hasPrefix("applying#"), confirmations < 4 {
+                    Thread.sleep(forTimeInterval: 1)
+                    remote.press(.select)
+                    confirmations += 1
+                }
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+            return probe.value as? String ?? "timed-out"
+        }
+        // Establish a real primary state without assuming test ordering.
+        app.launchArguments = baseArguments
+        app.launch()
+        XCTAssertTrue(waitForPrimary().hasPrefix("applied#primary#"))
+        app.terminate()
+        app.launchArguments = baseArguments + ["-ntvPrimaryIconRefreshFixture"]
+        app.launch()
+        XCTAssertEqual(waitForPrimary(), "applied#primary#2",
+                       "A legacy install already reporting primary must actually select the alternate and restore the primary.")
+        remote.press(.home)
+        remote.press(.home)
+        Thread.sleep(forTimeInterval: 1)
+        let switcher = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        switcher.name = "ntv-system-primary-refresh-app-switcher"
+        switcher.lifetime = .keepAlways
+        add(switcher)
+        remote.press(.menu)
+        app.terminate()
+        app.launchArguments = baseArguments
+        app.launch()
+        XCTAssertEqual(waitForPrimary(), "applied#primary#0",
+                       "A completed refresh must not repeat notifications at the next launch.")
+    }
+
     func testSystemIconRegistrationAndActualSwitcherCapture() {
         continueAfterFailure = false
         executionTimeAllowance = 180

@@ -562,6 +562,15 @@ final class NTVCoreTests: XCTestCase {
         XCTAssertNil(NTVSystemIconManifest.primaryName(in: [:]))
     }
 
+    func testLegacyPrimaryIconNeedsOneRealRefreshAndThenStaysQuiet() {
+        XCTAssertEqual(NTVSystemIconMigration.steps(current: nil, legacyRegistration: true, refreshed: false),
+                       ["NTVSystemIcon", nil])
+        XCTAssertEqual(NTVSystemIconMigration.steps(current: nil, legacyRegistration: true, refreshed: true), [])
+        XCTAssertEqual(NTVSystemIconMigration.steps(current: nil, legacyRegistration: false, refreshed: false), [])
+        XCTAssertEqual(NTVSystemIconMigration.steps(current: "NTVSystemIcon", legacyRegistration: true, refreshed: true),
+                       [nil], "A selected alternate must still return to the primary even after a past refresh.")
+    }
+
     func testFrameCadenceSeparatesARegularRateFromLongMainLoopGaps() {
         var regular = FrameCadenceWindow()
         XCTAssertNil(regular.record(timestamp: 0, expectedInterval: 1.0 / 60))

@@ -22,14 +22,32 @@ enum NTVSystemIconManifest {
     }
 }
 
+enum NTVSystemIconMigration {
+    static func steps(current: String?, legacyRegistration: Bool, refreshed: Bool) -> [String?] {
+        if current != nil { return [nil] }
+        // A primary name alone does not prove that the switcher's cached image
+        // was updated. Re-register legacy installations once through UIKit.
+        return legacyRegistration && !refreshed ? ["NTVSystemIcon", nil] : []
+    }
+}
+
 /// Restore the supplied n as the primary system icon, including its large
 /// rendition. Build38's alternate small stack did not refresh the switcher
 /// rendition on the user's physical Apple TV.
 /// This leaves the app's bundle ID, signing account and local data untouched.
 @MainActor final class NTVSystemIconUpdater: ObservableObject {
     static let shared = NTVSystemIconUpdater()
-    private static let migrationKey = "ntv.systemIconMigration.v2"
+    private static let migrationKey = "ntv.systemIconMigration.v3"
+    private static let legacyMigrationKey = "ntv.systemIconMigration.v2"
     private var running = false
+    private init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ntvPrimaryIconRefreshFixture") {
+            UserDefaults.standard.set(true, forKey: Self.legacyMigrationKey)
+            UserDefaults.standard.removeObject(forKey: Self.migrationKey)
+        }
+        #endif
+    }
     #if DEBUG
     @Published private(set) var registrationState = "idle"
     @Published private(set) var registrationAttempts = 0
@@ -57,32 +75,52 @@ enum NTVSystemIconManifest {
         #endif
         guard app.supportsAlternateIcons,
               NTVSystemIconManifest.primaryName(in: Bundle.main.infoDictionary ?? [:]) == "NTVPrimaryIconV2",
+              NTVSystemIconManifest.declares("NTVSystemIcon", in: Bundle.main.infoDictionary ?? [:]),
               targetIcon.map({ NTVSystemIconManifest.declares($0, in: Bundle.main.infoDictionary ?? [:]) }) ?? true else {
             #if DEBUG
             registrationState = "unavailable"
             #endif
             return
         }
-        // The current system state is authoritative. A historical success flag
-        // must not prevent re-registration after an update or icon reset.
-        if app.alternateIconName == targetIcon {
+        let steps: [String?]
+        if let targetIcon {
+            steps = app.alternateIconName == targetIcon ? [] : [targetIcon]
+        } else {
+            steps = NTVSystemIconMigration.steps(
+                current: app.alternateIconName,
+                legacyRegistration: UserDefaults.standard.bool(forKey: Self.legacyMigrationKey),
+                refreshed: UserDefaults.standard.bool(forKey: Self.migrationKey)
+            )
+        }
+        if steps.isEmpty {
             #if DEBUG
             registrationState = "applied"
             #endif
-            UserDefaults.standard.set(true, forKey: Self.migrationKey); return
+            if targetIcon == nil { UserDefaults.standard.set(true, forKey: Self.migrationKey) }
+            return
         }
         running = true
         #if DEBUG
-        registrationAttempts += 1
         registrationState = "applying"
         #endif
         defer { running = false }
         do {
-            try await app.setAlternateIconName(targetIcon)
+            for icon in steps {
+                #if DEBUG
+                registrationAttempts += 1
+                #endif
+                try await app.setAlternateIconName(icon)
+                guard app.alternateIconName == icon else {
+                    #if DEBUG
+                    registrationState = "mismatch"
+                    #endif
+                    return
+                }
+            }
             #if DEBUG
             registrationState = app.alternateIconName == targetIcon ? "applied" : "mismatch"
             #endif
-            UserDefaults.standard.set(true, forKey: Self.migrationKey)
+            if targetIcon == nil { UserDefaults.standard.set(true, forKey: Self.migrationKey) }
             TVTopShelfContentProvider.topShelfContentDidChange()
         } catch {
             #if DEBUG

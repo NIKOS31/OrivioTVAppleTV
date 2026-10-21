@@ -202,13 +202,17 @@ final class NTVDesignSmoke: XCTestCase {
         defer { app.terminate() }
         let remote = XCUIRemote.shared
         let play = app.buttons["ntv.player.play"]
+        var opened = false
         for _ in 0..<10 {
-            if play.exists { break }
             remote.press(.up)
-            if play.waitForExistence(timeout: 2) { break }
+            if play.waitForExistence(timeout: 2) { opened = true; break }
         }
+        XCTAssertTrue(opened, "The native fixture must expose its transport before pausing.")
+        // Pause the fresh autoplay fixture before the slower accessibility queries.
+        // Otherwise its five-second idle timer can remove Play between snapshots.
+        remote.press(.playPause)
         XCTAssertTrue(focused(play, timeout: 8))
-        if play.label == "Pause" { remote.press(.playPause) }
+        XCTAssertEqual(play.label, "Lecture")
         remote.press(.down)
         XCTAssertTrue(focused(app.buttons["ntv.player.info"], timeout: 5))
         for _ in 0..<3 { remote.press(.right) }
@@ -1195,21 +1199,23 @@ final class NTVDesignSmoke: XCTestCase {
         let play = app.buttons["ntv.player.play"]
         // A fresh video starts without chrome. Open it as a viewer does;
         // early Up presses are ignored while the local fixture is loading.
+        var opened = false
         for _ in 0..<10 {
-            if play.exists { break }
             remote.press(.up)
-            if play.waitForExistence(timeout: 2) { break }
+            if play.waitForExistence(timeout: 2) { opened = true; break }
         }
-        let opened = play.exists
         if !opened { capture("ntv-player-startup-failure") }
         XCTAssertTrue(opened, "The local video fixture must open nTV controls.")
+        // Keep the fixture paused while inspecting transport state. Live quick
+        // skips and their idle dwell have a separate, unpaused remote journey.
+        remote.press(.playPause)
         XCTAssertTrue(focused(play, timeout: 8))
+        XCTAssertEqual(play.label, "Lecture")
         let quickPosition = app.staticTexts["ntv.player.position"].firstMatch
         XCTAssertTrue(quickPosition.waitForExistence(timeout: 5))
         let beforeQuickSeek = quickPosition.label
         remote.press(.right)
         XCTAssertNotEqual(quickPosition.label, beforeQuickSeek, "Right from the compact play control must perform a quick skip.")
-        if play.label == "Pause" { remote.press(.playPause) }
         XCTAssertTrue(focused(play, timeout: 8))
         XCTAssertEqual(play.label, "Lecture")
         remote.press(.up)

@@ -21,7 +21,7 @@ jobs:
   build:
     name: Device and simulator builds
     runs-on: macos-26-intel
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       XCODEGEN_VERSION: '2.46.0'

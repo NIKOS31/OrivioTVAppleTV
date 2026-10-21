@@ -1325,6 +1325,16 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.right)
         remote.press(.select)
         XCTAssertTrue(play.waitForExistence(timeout: 8))
+        // Keep the real transport clock mounted while playback continues.
+        // Accessibility snapshots can exceed the normal five-second idle
+        // dwell; an open track menu keeps chrome visible without pausing or
+        // restarting playback and therefore cannot unstick a failed seek.
+        remote.press(.down)
+        remote.press(.right)
+        remote.press(.right)
+        remote.press(.right)
+        remote.press(.select)
+        XCTAssertTrue(trackPicker.waitForExistence(timeout: 5))
         // Seeking completes asynchronously. Verify the resulting transport
         // state after completion rather than during the demuxer transition.
         let playbackResumed = XCTNSPredicateExpectation(
@@ -1338,14 +1348,10 @@ final class NTVDesignSmoke: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [clockAdvanced], timeout: 5), .completed,
                        "The real playback clock must advance after committing, not just change the button label.")
-        // Geometry inspection may outlast the playing video's HUD timer.
-        // Pause and reveal the controls as a viewer does, then inspect them.
-        for _ in 0..<3 {
-            remote.press(.up)
-            if play.waitForExistence(timeout: 2) { break }
-        }
-        XCTAssertTrue(play.waitForExistence(timeout: 5))
-        if play.label == "Pause" { remote.press(.playPause) }
+        // Close the menu and pause before the geometry snapshots. Playback
+        // and its advancing clock were checked above while actually running.
+        remote.press(.menu)
+        remote.press(.playPause)
         XCTAssertEqual(play.label, "Lecture", "Pausing after the successful seek keeps the controls available for inspection.")
         let screen = app.windows.firstMatch.frame
         for element in [play, timeline, app.staticTexts["ntv.player.heading"], app.buttons["ntv.player.info"]] {

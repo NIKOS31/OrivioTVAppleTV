@@ -89,11 +89,13 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(movies, timeout: 5))
         remote.press(.right)
         XCTAssertTrue(focused(first, timeout: 8))
-        remote.press(.up)
         let trigger = app.buttons["ntv.catalog.movie.openCategories"]
-        XCTAssertTrue(focused(trigger, timeout: 8), "Up from the first shelf must reach Categories in the left-menu layout.")
-        remote.press(.down)
-        XCTAssertTrue(focused(first, timeout: 8), "Down from Categories returns to the first poster, not a later column.")
+        for _ in 0..<3 {
+            remote.press(.up)
+            XCTAssertTrue(focused(trigger, timeout: 8), "Up from the first shelf must reach Categories in the left-menu layout.")
+            remote.press(.down)
+            XCTAssertTrue(focused(first, timeout: 8), "Down from Categories must reach the first poster even if UIKit initially chooses See All.")
+        }
         remote.press(.up)
         XCTAssertTrue(focused(trigger, timeout: 8))
         remote.press(.select)

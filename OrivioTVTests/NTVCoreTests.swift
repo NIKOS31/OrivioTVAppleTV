@@ -745,6 +745,21 @@ final class NTVCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testCatalogHeaderEntryStartsAtTheFirstPosterWithoutChangingRestoration() {
+        let row = "ntv.catalog.shelf.first"
+        for header in ["ntv.catalog.movie.entry", "ntv.catalog.series.entry"] {
+            XCTAssertTrue(ContentFocusRouter.startsCatalogRow(previousItem: nil, previousRow: header,
+                currentRow: row, restorationItem: nil), "Entering via See All must also normalize to the first poster.")
+            XCTAssertTrue(ContentFocusRouter.startsCatalogRow(previousItem: "remembered-seventh-poster", previousRow: header,
+                currentRow: row, restorationItem: nil), "Retained local focus must not bypass entry from Categories.")
+            XCTAssertFalse(ContentFocusRouter.startsCatalogRow(previousItem: nil, previousRow: header,
+                currentRow: row, restorationItem: "remembered-seventh-poster"))
+        }
+        XCTAssertFalse(ContentFocusRouter.startsCatalogRow(previousItem: nil, previousRow: "ntv.home.entry",
+            currentRow: row, restorationItem: nil), "The Home router keeps ownership of its own entry.")
+    }
+
+    @MainActor
     func testCatalogTouchEntryDoesNotResetHorizontalFocusOrDetailRestoration() {
         let first = "ntv.catalog.shelf.first", second = "ntv.catalog.shelf.second"
         XCTAssertTrue(ContentFocusRouter.startsCatalogRow(previousItem: nil, previousRow: first,

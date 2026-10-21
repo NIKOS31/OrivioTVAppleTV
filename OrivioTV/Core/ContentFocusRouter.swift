@@ -86,16 +86,20 @@ final class ContentFocusRouter {
         if rowID == nil || landingRowID == rowID || pendingEntry?.rowID == rowID || hasPendingRestoration { cancelLanding() }
     }
 
-    /// Normalize an actual entry from another catalog row, never an ordinary
-    /// horizontal/diagonal step or a return to a remembered detail selection.
+    /// Normalize entry from another catalog row or its Categories header,
+    /// never a horizontal step or a return to a remembered detail selection.
     static func startsCatalogRow(previousItem _: String?, previousRow: String?,
                                  currentRow: String, restorationItem: String?) -> Bool {
         // SwiftUI can retain the row-local focus value across a re-entry.
         // The last row that actually received focus identifies the crossing;
         // a non-nil local old value must not turn it into a horizontal step.
-        restorationItem == nil && previousRow != currentRow &&
-            previousRow?.hasPrefix("ntv.catalog.shelf.") == true &&
-            currentRow.hasPrefix("ntv.catalog.shelf.")
+        guard restorationItem == nil, let previousRow, previousRow != currentRow,
+              currentRow.hasPrefix("ntv.catalog.shelf.") else { return false }
+        // Down from the right-aligned Categories button can first land on
+        // See All. The departing button may already have lost focus when its
+        // move handler runs; normalize at the destination in either ordering.
+        return previousRow.hasPrefix("ntv.catalog.shelf.") ||
+            (previousRow.hasPrefix("ntv.catalog.") && previousRow.hasSuffix(".entry"))
     }
 
     func register(_ rowID: String, handler: @escaping () -> Bool) {

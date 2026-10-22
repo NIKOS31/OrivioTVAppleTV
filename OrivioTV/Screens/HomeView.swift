@@ -1068,6 +1068,23 @@ final class HeroFocus: ObservableObject {
     /// resting on this title, and swapping it mid-play is the same yank the
     /// idle window exists to prevent.
     var trailerPlaying = false
+    /// A scrolling nTV banner has no visible work to do below the viewport.
+    /// Keep the newest selection as values, then publish it once on re-entry.
+    private(set) var presentationActive = true
+    private var latestBrowseSelection: (item: MetaItem, progress: WatchProgress?)?
+
+    func setPresentationActive(_ active: Bool) {
+        guard presentationActive != active else { return }
+        presentationActive = active
+        if active {
+            if let selection = latestBrowseSelection {
+                focus(selection.item, progress: selection.progress)
+            }
+        } else {
+            task?.cancel()
+            pendingID = nil
+        }
+    }
 
     // MARK: Hero Layout (Settings → Layout)
 
@@ -1171,6 +1188,7 @@ final class HeroFocus: ObservableObject {
         // setting, it swapped as a HARD CUT, which is strictly worse for the
         // person the setting exists to protect. Manual stepping still works.
         guard !PerformanceSettingsStore.shared.reduceMotion,
+              presentationActive,
               spotlight.count > 1, !trailerPlaying, !spotlightPaused,
               now.timeIntervalSince(lastInteraction) > 6,
               now.timeIntervalSince(lastRotation) >= dwellSeconds else { return }
@@ -1224,6 +1242,8 @@ final class HeroFocus: ObservableObject {
         if layout == .hybrid, !browsedIntoContent { browsedIntoContent = true }
         // ROLLING never follows the browse; that is what makes it "rolling".
         guard followsFocus else { return }
+        latestBrowseSelection = (newItem, newProgress)
+        guard presentationActive else { return }
         guard newItem.id != (pendingID ?? item?.id) else {
             // Same title, different context (catalog card ↔ its CW card):
             // nothing to decode, just swap the progress line.
@@ -1480,7 +1500,7 @@ struct HomeView: View {
         .onAppear {
             isVisible = true
             hero.layout = usesNTVLayout ? .hybrid : homeCatalogSettings.heroLayout
-            hero.onBrowseStateChange = { browsing in
+            hero.onBrowseStateChange = usesNTVLayout ? nil : { browsing in
                 AppProbe.focus("home handoff browsedIntoContent=\(browsing)")
                 // DEFERRED BY ONE TURN, and that is the whole fix for "the
                 // first time I go down, the hero doesn't pin".
@@ -1726,6 +1746,7 @@ struct HomeView: View {
                         NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
                                          onSelect: heroSelect, onBack: onHomeBack)
                             .padding(.horizontal, NTVViewport.horizontalInset)
+                            .modifier(NTVSpotlightVisibility(hero: hero))
                             .focusSection()
                     }
                     if viewModel.entries.isEmpty && !viewModel.isLoading {
@@ -2178,7 +2199,8 @@ struct HomeView: View {
             onDetails: { onSelect(heroItem(from: $0)) },
             onPlayManuallyMenu: { onPlayManuallyProgress($0) },
             onResumeFromStartMenu: { onResumeFromStart($0) },
-            onBackAtStart: onHomeBack
+            onBackAtStart: onHomeBack,
+            resetsRowEntry: usesNTVLayout
         )
     }
 
@@ -2578,7 +2600,8 @@ struct HomeView: View {
             onSelect: onSelect,
             onPlayManually: onPlayManually,
             onSeeAll: onSeeAll,
-            onBackAtStart: onHomeBack
+            onBackAtStart: onHomeBack,
+            resetsRowEntry: usesNTVLayout
         )
     }
 
@@ -2725,6 +2748,7 @@ struct HomePosterRow: View {
     var onLeftAtStart: (() -> Void)? = nil
     var onFirstVisibleChange: ((String?) -> Void)? = nil
     var focusFirstScroll = true
+    var resetsRowEntry = false
 
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.posterContainer)
@@ -2740,7 +2764,7 @@ struct HomePosterRow: View {
             accessibilityPrefix: accessibilityPrefix, restoreItemID: restoreItemID, onVerticalMove: onVerticalMove,
             focusFirstRequest: focusFirstRequest, restoreFocusRequest: restoreFocusRequest,
             onLeftAtStart: onLeftAtStart, onFirstVisibleChange: onFirstVisibleChange,
-            focusFirstScroll: focusFirstScroll, visibility: visibility)
+            focusFirstScroll: focusFirstScroll, resetsRowEntry: resetsRowEntry, visibility: visibility)
         .task(id: visibility.nextRefresh) {
             guard let deadline = visibility.nextRefresh else { return }
             // Addon dates are external input. Never convert an arbitrarily
@@ -2782,6 +2806,7 @@ private struct HomePosterRowContent: View {
     var onLeftAtStart: (() -> Void)? = nil
     var onFirstVisibleChange: ((String?) -> Void)? = nil
     var focusFirstScroll = true
+    var resetsRowEntry = false
     let visibility: NTVPosterVisibility
 
     @FocusState private var focusedID: String?
@@ -2890,9 +2915,7 @@ private struct HomePosterRowContent: View {
                 .onChange(of: focusedID) { old, new in
                     guard let new else { return }
                     let router = ContentFocusRouter.shared
-                    let enteredRow = onVerticalMove != nil && !router.hasPendingRestoration && !router.isLanding(in: row.id) && ContentFocusRouter.startsCatalogRow(
-                        previousItem: old, previousRow: ContentFocusRouter.shared.lastRowID,
-                        currentRow: row.id, restorationItem: router.isPendingEntry(restoreFocusRequest) ? restoreItemID : nil)
+                    let enteredRow = startsRowEntry(previousItem: old)
                     ContentFocusRouter.shared.noteFocused(row: row.id)
                     guard enteredRow, let first = displayedItems.first?.id, first != new else { return }
                     // Normalize in this update, rather than scheduling an
@@ -2908,9 +2931,7 @@ private struct HomePosterRowContent: View {
                 .onChange(of: seeAllFocused) { _, focused in
                     guard focused else { return }
                     let router = ContentFocusRouter.shared
-                    let enteredRow = onVerticalMove != nil && !router.hasPendingRestoration && !router.isLanding(in: row.id) && ContentFocusRouter.startsCatalogRow(
-                        previousItem: nil, previousRow: ContentFocusRouter.shared.lastRowID,
-                        currentRow: row.id, restorationItem: router.isPendingEntry(restoreFocusRequest) ? restoreItemID : nil)
+                    let enteredRow = startsRowEntry(previousItem: nil)
                     ContentFocusRouter.shared.noteFocused(row: row.id)
                     guard enteredRow, let first = displayedItems.first?.id else { return }
                     // At a far-right column UIKit can enter the NEXT shelf via
@@ -2957,6 +2978,17 @@ private struct HomePosterRowContent: View {
                     hideUpcoming: homeCatalogSettings.hideUnreleasedContent, unavailableUntil: $unavailableUntil)
             }
         }
+    }
+
+    private func startsRowEntry(previousItem: String?) -> Bool {
+        let router = ContentFocusRouter.shared
+        guard !router.hasPendingRestoration, !router.isLanding(in: row.id) else { return false }
+        if resetsRowEntry {
+            return router.lastRowID != nil && router.lastRowID != row.id
+        }
+        return onVerticalMove != nil && ContentFocusRouter.startsCatalogRow(
+            previousItem: previousItem, previousRow: router.lastRowID, currentRow: row.id,
+            restorationItem: router.isPendingEntry(restoreFocusRequest) ? restoreItemID : nil)
     }
 
     private func registerRowHandler(_ proxy: ScrollViewProxy) {
@@ -3204,6 +3236,7 @@ private struct ContinueWatchingRow: View {
     let onResumeFromStartMenu: (WatchProgress) -> Void
     /// Back on the first card bubbles up (sidebar / tab bar).
     var onBackAtStart: () -> Void = {}
+    var resetsRowEntry = false
 
     // Tracks the focused card for the Back-to-start jump. Uses the same plain
     // @FocusState model as HomePosterRow (no .focusScope / .prefersDefaultFocus)
@@ -3258,10 +3291,10 @@ private struct ContinueWatchingRow: View {
                         onResume: onResume,
                         onDetails: { onDetails(progress) },
                         onPlayManuallyMenu: { onPlayManuallyMenu(progress) },
-                        onResumeFromStartMenu: { onResumeFromStartMenu(progress) }
+                        onResumeFromStartMenu: { onResumeFromStartMenu(progress) },
+                        focusBinding: $focusedCWCard
                       )
                       .equatable()
-                      .focused($focusedCWCard, equals: progress.id)
                       .id(progress.id)
                     }
                 }
@@ -3296,7 +3329,16 @@ private struct ContinueWatchingRow: View {
             .onChange(of: items.first?.id) { _, _ in registerRowHandler(proxy) }
             .onDisappear { ContentFocusRouter.shared.unregister(Self.routerID) }
             .onChange(of: focusedCWCard) { _, new in
-                if new != nil { ContentFocusRouter.shared.noteFocused(row: Self.routerID) }
+                guard let new else { return }
+                let router = ContentFocusRouter.shared
+                let entered = resetsRowEntry && router.lastRowID != nil && router.lastRowID != Self.routerID
+                    && !router.isLanding(in: Self.routerID) && !router.hasPendingRestoration
+                router.noteFocused(row: Self.routerID)
+                guard entered, let first = items.first?.id, new != first else { return }
+                router.land(in: Self.routerID, prepare: {
+                    proxy.scrollTo(first, anchor: .leading)
+                }, assign: { focusedCWCard = first }, landed: { focusedCWCard == first },
+                   focusToken: { focusedCWCard })
             }
             }   // ScrollViewReader
         }
@@ -3325,6 +3367,7 @@ private struct ContinueWatchingCell: View, Equatable {
     let onDetails: () -> Void
     let onPlayManuallyMenu: () -> Void
     let onResumeFromStartMenu: () -> Void
+    let focusBinding: FocusState<String?>.Binding
     @State private var focused = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -3378,6 +3421,7 @@ private struct ContinueWatchingCell: View, Equatable {
                               onResumeFromStart: onResumeFromStartMenu)
             // ⏯ resumes instantly from a focused CW card too.
             .onPlayPauseCommand { onResume(progress) }
+            .focused(focusBinding, equals: progress.id)
 
             ATVCardCaption(
                 title: progress.name,

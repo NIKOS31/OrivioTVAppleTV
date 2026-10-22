@@ -7,6 +7,42 @@ import Combine
 
 final class NTVPerformanceTests: XCTestCase {
     @MainActor
+    func testHiddenHomeSpotlightDoesNotPublishOrEnrichEveryFocusStep() async throws {
+        let hero = HeroFocus()
+        hero.layout = .pinnedFocus
+        let initial = MetaItem(id: "visible", type: "movie", name: "Visible", description: "Ready")
+        hero.item = initial
+        var updates = 0, enrichments = 0
+        let observation = hero.$item.dropFirst().sink { _ in updates += 1 }
+        defer { observation.cancel() }
+        hero.enrich = { _ in enrichments += 1; return nil }
+        hero.setPresentationActive(false)
+        for index in 0..<80 {
+            hero.focus(MetaItem(id: "hidden.\(index)", type: "movie", name: "Hidden \(index)"))
+        }
+        await Task.yield()
+        XCTAssertEqual(hero.item?.id, initial.id)
+        XCTAssertEqual(updates, 0, "Offscreen rows must not republish a hidden banner or its full-screen artwork.")
+        XCTAssertEqual(enrichments, 0)
+        hero.setPresentationActive(true)
+        try await until { hero.item?.id == "hidden.79" && enrichments == 1 }
+        XCTAssertEqual(updates, 1, "Restore only the newest focused title when the banner is visible again.")
+    }
+
+    @MainActor
+    func testHidingHomeSpotlightCancelsAnAlreadyScheduledFocusCommit() async throws {
+        let hero = HeroFocus()
+        hero.layout = .pinnedFocus
+        hero.item = MetaItem(id: "visible", type: "movie", name: "Visible", description: "Ready")
+        hero.focus(MetaItem(id: "pending", type: "movie", name: "Pending", description: "Ready"))
+        hero.setPresentationActive(false)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(hero.item?.id, "visible", "Leaving the viewport cancels work already waiting in the focus debounce.")
+        hero.setPresentationActive(true)
+        try await until { hero.item?.id == "pending" }
+    }
+
+    @MainActor
     func testSpotlightPauseDwellAndManualNavigation() throws {
         try XCTSkipIf(PerformanceSettingsStore.shared.reduceMotion)
         let hero = HeroFocus()

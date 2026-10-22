@@ -80,28 +80,22 @@ struct NTVHomeSpotlight: View {
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.homeSpotlight)
         if let item = hero.item {
-            HStack(alignment: .center, spacing: 36) {
-                NTVSpotlightCover(item: item, width: 192, height: 288)
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("À L’AFFICHE")
-                        .font(.system(size: 25, weight: .medium))
-                        .tracking(1.5)
-                        .foregroundStyle(NTVDesign.textSecondary)
-                    Text(item.name)
-                        .font(.system(size: titleSize, weight: .semibold))
-                        .lineLimit(2, reservesSpace: true)
-                        .minimumScaleFactor(0.75)
-                    Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
-                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.system(size: metadataSize, weight: .medium))
-                        .foregroundStyle(NTVDesign.textSecondary)
-                        .lineLimit(1, reservesSpace: true)
-                    // Metadata enrichment and a new focused title must not
-                    // change the height of the scrolling hero above the rows.
-                    Text(item.description ?? "")
-                        .font(.system(size: synopsisSize))
-                        .foregroundStyle(NTVDesign.textSecondary)
-                        .lineLimit(2, reservesSpace: true)
+            VStack(alignment: .leading, spacing: 16) {
+                Text(item.name)
+                    .font(.system(size: titleSize, weight: .semibold))
+                    .lineLimit(2, reservesSpace: true)
+                    .minimumScaleFactor(0.75)
+                Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
+                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.system(size: metadataSize, weight: .medium))
+                    .foregroundStyle(NTVDesign.textSecondary)
+                    .lineLimit(1, reservesSpace: true)
+                // Reserve text geometry even while metadata arrives.
+                Text(item.description ?? "")
+                    .font(.system(size: synopsisSize))
+                    .foregroundStyle(NTVDesign.textSecondary)
+                    .lineLimit(2, reservesSpace: true)
+                HStack(spacing: 24) {
                     Button { onSelect(item) } label: {
                         Label("Voir la fiche", systemImage: "info.circle")
                     }
@@ -113,28 +107,45 @@ struct NTVHomeSpotlight: View {
                         if focused { ContentFocusRouter.shared.noteFocused(row: "home.heroPlay") }
                     }
                     if hero.spotlight.count > 1 {
-                        HStack(spacing: 16) {
-                            Button { hero.stepSpotlight(by: -1) } label: { Image(systemName: "chevron.left") }
-                                .accessibilityLabel("Proposition précédente")
-                            Text("\(hero.spotlightIndex + 1) / \(hero.spotlight.count)")
-                                .font(.system(size: 22).monospacedDigit()).foregroundStyle(NTVDesign.textSecondary)
-                            Button { hero.stepSpotlight(by: 1) } label: { Image(systemName: "chevron.right") }
-                                .accessibilityLabel("Proposition suivante")
-                            Button { hero.spotlightPaused.toggle(); hero.markInteraction() } label: {
-                                Image(systemName: hero.spotlightPaused ? "play.fill" : "pause.fill")
+                        HStack(spacing: 7) {
+                            ForEach(hero.spotlight.indices, id: \.self) { index in
+                                Capsule()
+                                    .fill(.white.opacity(index == hero.spotlightIndex ? 0.85 : 0.25))
+                                    .frame(width: index == hero.spotlightIndex ? 18 : 6, height: 4)
                             }
-                            .accessibilityLabel(hero.spotlightPaused ? "Reprendre les propositions" : "Mettre les propositions en pause")
                         }
-                        .buttonStyle(NTVActionButtonStyle())
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Proposition \(hero.spotlightIndex + 1) sur \(hero.spotlight.count)")
                     }
                 }
                 .foregroundStyle(NTVDesign.textPrimary)
-                .frame(maxWidth: 880, alignment: .leading)
-                Spacer(minLength: 0)
             }
-            .frame(minHeight: 350)
+            .foregroundStyle(NTVDesign.textPrimary)
+            .frame(maxWidth: 920, minHeight: 350, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ntv.seanime.home.feature")
+        }
+    }
+}
+
+/// Native visibility reports only threshold crossings, not a scroll-offset
+/// state write on every frame. Older tvOS uses the lazy view's lifecycle.
+struct NTVSpotlightVisibility: ViewModifier {
+    let hero: HeroFocus
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(tvOS 18.0, *) {
+            content
+                .onScrollVisibilityChange(threshold: 0.05) { visible in
+                    hero.setPresentationActive(visible)
+                }
+                .onDisappear { hero.setPresentationActive(false) }
+        } else {
+            content
+                .onAppear { hero.setPresentationActive(true) }
+                .onDisappear { hero.setPresentationActive(false) }
         }
     }
 }

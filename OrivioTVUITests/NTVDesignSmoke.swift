@@ -372,6 +372,7 @@ final class NTVDesignSmoke: XCTestCase {
 
     private func exerciseRepeatedHomeRows(seanime: Bool) {
         continueAfterFailure = false
+        executionTimeAllowance = 300
         let app = XCUIApplication()
         app.launchArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvRowLayoutFixture"]
         if seanime { app.launchArguments.append("-ntvSeanimeDemo") }
@@ -393,6 +394,8 @@ final class NTVDesignSmoke: XCTestCase {
         if seanime { remote.press(.right) }
         let spotlight = app.buttons["ntv.home.spotlight"]
         XCTAssertTrue(spotlight.waitForExistence(timeout: 15))
+        let feature = app.descendants(matching: .any)["ntv.seanime.home.feature"].firstMatch
+        XCTAssertEqual(feature.buttons.count, 1, "The minimal feature has one detail action, without arrow or pause targets.")
         // The editorial action is offset from poster zero. Enter the first
         // shelf before aligning its first column through real remote moves.
         let firstShelfFocus = app.buttons.matching(NSPredicate(
@@ -411,6 +414,11 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(first, timeout: 8))
         let navigation = app.buttons["ntv.navigation.0"]
         for row in 1...4 {
+            // The device recording starts its vertical moves from a column
+            // well beyond poster zero. First-column-only checks missed this.
+            for _ in 0..<9 { remote.press(.right) }
+            let departing = app.buttons["ntv.home.poster.movie.fixture.row.\(row - 1).item.9"]
+            XCTAssertTrue(focused(departing, timeout: 8))
             remote.press(.down)
             let destination = app.buttons["ntv.home.poster.movie.fixture.row.\(row).item.0"]
             XCTAssertTrue(focused(destination, timeout: 8))
@@ -420,6 +428,7 @@ final class NTVDesignSmoke: XCTestCase {
             XCTAssertLessThan(settled.maxY, app.windows.firstMatch.frame.maxY - 8)
             Thread.sleep(forTimeInterval: 0.8)
             XCTAssertTrue(destination.hasFocus, "No delayed retry may pull focus to a different row.")
+            XCTAssertFalse(navigation.hasFocus, "Up/Down inside Home must never expand the side rail or jump to the hero.")
             XCTAssertEqual(destination.frame.minY, settled.minY, accuracy: 2,
                            "Settled focus must not cause a second vertical adjustment.")
             remote.press(.up)

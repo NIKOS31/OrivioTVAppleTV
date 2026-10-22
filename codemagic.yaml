@@ -82,9 +82,9 @@ workflows:
       - *ntv_secrets
       - *ntv_xcodegen
       - *ntv_build
-      - name: Test phone import, focus policy and Top Shelf units
+      - name: Test phone import, hidden hero work and Home remote navigation
         script: bash scripts/ci/test-ntv-ui.sh --feedback-smoke
-      - name: Package for manual Apple TV testing (remote UI suite not run)
+      - name: Package for manual Apple TV testing (full UI suite not run)
         script: bash scripts/ci/package-ntv.sh --device-test
     artifacts:
       - build/ci/packages/nTV-unsigned.ipa
@@ -92,3 +92,4 @@ workflows:
       - build/ci/packages/nTV-unsigned.ipa.sha256
       - build/ci/build-info.json
       - build/ci/logs/*.log
+      - build/ci/screenshots/**

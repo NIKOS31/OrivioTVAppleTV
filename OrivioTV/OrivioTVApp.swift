@@ -335,6 +335,11 @@ struct RootView: View {
     /// The rail is briefly non-focusable at launch so initial focus lands in
     /// the CONTENT (the app boots with the rail collapsed and a card focused).
     @State private var sidebarEnabled = false
+    @State private var sidebarExplicitlyEngaged = false
+
+    private var sidebarRequiresIntent: Bool {
+        theme.palette.id == NTVDesign.palette.id && NTVInterfaceVariant.isSeanime && !navIsTop
+    }
 
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.root)
@@ -785,6 +790,7 @@ struct RootView: View {
                     if args.contains("-railDemo") {
                         Task { @MainActor in
                             try? await Task.sleep(nanoseconds: 4_000_000_000)
+                            sidebarExplicitlyEngaged = true
                             sidebarEnabled = true
                             sidebarFocus = 0
                         }
@@ -1229,6 +1235,7 @@ struct RootView: View {
             return
         }
         AppProbe.focus("reveal rail")
+        sidebarExplicitlyEngaged = true
         sidebarRevealed = true
         sidebarEngagedAt = Date()
         setSidebarEnabled(true)
@@ -1398,7 +1405,10 @@ struct RootView: View {
                              onTabSelected: { newTab in selectTab(newTab) },
                              position: navPosition)
                     .focusSection()
-                    .disabled(!sidebarEnabled)
+                    // A collapsed side rail must not win an Up/Down search
+                    // while the next lazy row is mounting. Left at the edge
+                    // and Menu explicitly enable it before requesting focus.
+                    .disabled(!sidebarEnabled || (sidebarRequiresIntent && !sidebarExplicitlyEngaged))
                     // Back while IN the rail collapses it into content instead
                     // of falling through to the system (which quit the app).
                     .onExitCommand { collapseSidebarFromExit() }
@@ -1498,6 +1508,7 @@ struct RootView: View {
         // moves into from the first card of a row — goes through neither, and
         // that is exactly the case a swipe hits.
         .onChange(of: sidebarFocus) { old, new in
+            if new == nil { sidebarExplicitlyEngaged = false }
             if new != nil { ContentFocusRouter.shared.noteUserMovement() }
             if old == nil, new != nil { sidebarEngagedAt = Date() }
             // Focus left a revealed auto-hiding rail by some route other than
@@ -1699,6 +1710,7 @@ struct RootView: View {
     /// Back always wins: enable now, focus on the next tick.
     private func focusSidebar(_ tab: Int) {
         ContentFocusRouter.shared.noteUserMovement()
+        sidebarExplicitlyEngaged = true
         AppProbe.focus("focusSidebar(\(Self.tabName(tab)))"
                        + "  revealed=\(sidebarRevealed.probe) enabled=\(sidebarEnabled.probe)")
         // Menu at a tab root is the other way back to a hidden rail.

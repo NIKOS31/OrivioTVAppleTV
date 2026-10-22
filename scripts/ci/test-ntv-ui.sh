@@ -62,12 +62,24 @@ run_test_bundle() {
 }
 if [[ ${1:-} == --feedback-smoke ]]; then
   # The manual-device package still has ui_tests_executed:false. These are
-  # targeted native unit checks, never a substitute for the full remote suite.
+  # Targeted native checks, never a substitute for the full remote suite.
   run_test_bundle device-feedback \
     -only-testing:OrivioTVTests/NTVSecurityTests/testRealPhoneServerRejectsUnpairedPostsAndDoesNotEchoPrivateLink \
     -only-testing:OrivioTVTests/NTVPerformanceTests/testFastFocusSweepCoalescesHeroWorkWithoutSlowingAnIsolatedStep \
     -only-testing:OrivioTVTests/NTVPerformanceTests/testRemoteRepeatCadenceDoesNotCommitEveryIntermediateHero \
+    -only-testing:OrivioTVTests/NTVPerformanceTests/testHiddenHomeSpotlightDoesNotPublishOrEnrichEveryFocusStep \
+    -only-testing:OrivioTVTests/NTVPerformanceTests/testHidingHomeSpotlightCancelsAnAlreadyScheduledFocusCommit \
     -only-testing:OrivioTVTests/NTVTopShelfTests
+  set +e
+  run_test_bundle home-feedback \
+    -only-testing:OrivioTVUITests/NTVDesignSmoke/testRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable \
+    -only-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable
+  xcrun xcresulttool export attachments --path "$result_bundle" --output-path "$output/screenshots"
+  export_status=$?
+  set -e
+  for status in "${test_pipeline[@]}" "$export_status"; do
+    if ((status != 0)); then exit "$status"; fi
+  done
   exit 0
 fi
 set +e

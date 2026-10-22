@@ -444,9 +444,14 @@ final class NTVDesignSmoke: XCTestCase {
         defer { removeUIInterruptionMonitor(monitor); app.terminate() }
         let baseArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe"]
         let probe = app.descendants(matching: .any)["ntv.systemIcon.registration"].firstMatch
-        func waitForPrimary() -> String {
-            Thread.sleep(forTimeInterval: 1)
-            remote.press(.select)
+        func waitForPrimary(notificationsBeforeSnapshot: Int = 1) -> String {
+            // UIKit presents one genuine notification for each icon request.
+            // A snapshot between the two notifications can block accessibility
+            // before the interruption monitor gets another remote interaction.
+            for _ in 0..<notificationsBeforeSnapshot {
+                Thread.sleep(forTimeInterval: 1)
+                remote.press(.select)
+            }
             guard probe.waitForExistence(timeout: 15) else { return "missing" }
             let deadline = Date().addingTimeInterval(35)
             var confirmations = 0
@@ -470,7 +475,7 @@ final class NTVDesignSmoke: XCTestCase {
         app.terminate()
         app.launchArguments = baseArguments + ["-ntvPrimaryIconRefreshFixture"]
         app.launch()
-        XCTAssertEqual(waitForPrimary(), "applied#primary#2",
+        XCTAssertEqual(waitForPrimary(notificationsBeforeSnapshot: 2), "applied#primary#2",
                        "A legacy install already reporting primary must actually select the alternate and restore the primary.")
         remote.press(.home)
         remote.press(.home)

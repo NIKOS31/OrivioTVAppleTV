@@ -511,6 +511,7 @@ final class NTVSecurityTests: XCTestCase {
         XCTAssertEqual(policy.authorize(try request(path: "/", host: policy.host)), 403)
         XCTAssertEqual(policy.authorize(try request(path: policy.path, host: "evil.invalid:8099")), 403)
         XCTAssertEqual(policy.authorize(try request(path: policy.path, host: policy.host, origin: "https://evil.invalid", method: "POST")), 403)
+        XCTAssertEqual(policy.authorize(try request(path: policy.path, host: policy.host, origin: "null", method: "POST")), 403)
         XCTAssertEqual(policy.authorize(try request(path: policy.path, host: policy.host, origin: policy.origin, method: "POST")), 200)
         XCTAssertNotEqual(policy.path, NTVAddonImportPolicy(host: policy.host).path)
     }
@@ -567,7 +568,10 @@ final class NTVSecurityTests: XCTestCase {
         let (page, response) = try await session.data(from: url)
         let headers = try XCTUnwrap(response as? HTTPURLResponse)
         XCTAssertEqual(headers.statusCode, 200)
-        XCTAssertEqual(headers.value(forHTTPHeaderField: "Referrer-Policy"), "no-referrer")
+        // A normal browser form POST under no-referrer sends Origin: null.
+        // same-origin preserves this server's Origin without exposing the
+        // temporary capability URL to third-party artwork hosts.
+        XCTAssertEqual(headers.value(forHTTPHeaderField: "Referrer-Policy"), "same-origin")
         XCTAssertEqual(headers.value(forHTTPHeaderField: "Cache-Control"), "no-store")
         XCTAssertTrue(headers.value(forHTTPHeaderField: "Content-Security-Policy")?.contains("frame-ancestors 'none'") == true)
         XCTAssertTrue(String(decoding: page, as: UTF8.self).contains("form method=post"))
@@ -575,6 +579,10 @@ final class NTVSecurityTests: XCTestCase {
         post.httpMethod = "POST"
         post.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         post.httpBody = Data("url=https%3A%2F%2Faddon.example.invalid%2Fprivate-fixture%2Fmanifest.json".utf8)
+        post.setValue("null", forHTTPHeaderField: "Origin")
+        let (_, opaque) = try await session.data(for: post)
+        XCTAssertEqual((opaque as? HTTPURLResponse)?.statusCode, 403)
+        XCTAssertEqual(installed, 0)
         post.setValue("https://untrusted.example.invalid", forHTTPHeaderField: "Origin")
         let (_, rejected) = try await session.data(for: post)
         XCTAssertEqual((rejected as? HTTPURLResponse)?.statusCode, 403)

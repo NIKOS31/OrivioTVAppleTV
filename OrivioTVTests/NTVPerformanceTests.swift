@@ -239,12 +239,27 @@ final class NTVPerformanceTests: XCTestCase {
     func testFastFocusSweepCoalescesHeroWorkWithoutSlowingAnIsolatedStep() {
         var policy = NTVFocusSettlePolicy()
         XCTAssertEqual(policy.delay(at: 10, minimumNanoseconds: 60_000_000), 60_000_000)
-        XCTAssertEqual(policy.delay(at: 10.08, minimumNanoseconds: 60_000_000), 180_000_000)
-        XCTAssertEqual(policy.delay(at: 10.16, minimumNanoseconds: 60_000_000), 180_000_000)
+        XCTAssertEqual(policy.delay(at: 10.08, minimumNanoseconds: 60_000_000), 300_000_000)
+        XCTAssertEqual(policy.delay(at: 10.16, minimumNanoseconds: 60_000_000), 300_000_000)
         XCTAssertEqual(policy.delay(at: 10.60, minimumNanoseconds: 60_000_000), 60_000_000)
-        XCTAssertEqual(policy.delay(at: 10.68, minimumNanoseconds: 220_000_000), 220_000_000)
+        XCTAssertEqual(policy.delay(at: 10.68, minimumNanoseconds: 220_000_000), 300_000_000)
         XCTAssertEqual(policy.delay(at: .nan, minimumNanoseconds: 60_000_000), 60_000_000)
         XCTAssertEqual(policy.delay(at: 9, minimumNanoseconds: 60_000_000), 60_000_000)
+    }
+    func testRemoteRepeatCadenceDoesNotCommitEveryIntermediateHero() {
+        for interval in [0.15, 0.20, 0.28] {
+            var policy = NTVFocusSettlePolicy()
+            var pending: (id: Int, due: Double)?
+            var committed: [Int] = []
+            for step in 0..<8 {
+                let now = Double(step) * interval
+                if let pending, pending.due <= now { committed.append(pending.id) }
+                let delay = policy.delay(at: now, minimumNanoseconds: 60_000_000)
+                pending = (step, now + Double(delay) / 1_000_000_000)
+            }
+            if let pending { committed.append(pending.id) }
+            XCTAssertEqual(committed, [0, 7], "Only the initial and settled title should start artwork/metadata work at \(interval)s repeats.")
+        }
     }
     func testReleaseDateReusePreservesFractionsZonesAndUnknownDates() throws {
         let expected = Date(timeIntervalSince1970: 1_760_572_800)

@@ -43,7 +43,7 @@ enum AppTab: Int, CaseIterable, Identifiable {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 26, height: 18)
+                .frame(width: 32, height: 20)
                 .accessibilityHidden(true)
         } else {
             Image(systemName: icon)

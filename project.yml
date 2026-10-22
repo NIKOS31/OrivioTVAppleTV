@@ -3,6 +3,10 @@ options:
   deploymentTarget:
     tvOS: "17.0"
   createIntermediateGroups: true
+settings:
+  base:
+    # The containing app and its Top Shelf extension must ship together.
+    CURRENT_PROJECT_VERSION: "45"
 packages:
   # VENDORED with two Orivio patches (see "ORIVIO PATCH" comments): a
   # lost-wakeup fix in MEPlayerItem's reader teardown and a display-link
@@ -132,7 +136,6 @@ targets:
         TARGETED_DEVICE_FAMILY: "3"
         # Tracks the Android APK release this port mirrors (v0.7.15-beta).
         MARKETING_VERSION: "0.11"
-        CURRENT_PROJECT_VERSION: "44"
         # The sanitize script below writes into the built .app, so user
         # script sandboxing must be off or the phase is denied file access.
         ENABLE_USER_SCRIPT_SANDBOXING: false
@@ -281,7 +284,6 @@ targets:
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "3"
         MARKETING_VERSION: "0.11"
-        CURRENT_PROJECT_VERSION: "43"
         CODE_SIGN_ENTITLEMENTS: OrivioTopShelf/OrivioTopShelf.entitlements
       configs:
         Debug:

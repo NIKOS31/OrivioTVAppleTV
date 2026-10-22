@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+case ${1:-} in
+  ''|--feedback-smoke) ;;
+  *) echo 'Unknown test mode.' >&2; exit 2 ;;
+esac
+[[ $# -le 1 ]] || exit 2
+
 task_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$task_root"
 output="$task_root/build/ci"
@@ -54,6 +60,16 @@ run_test_bundle() {
     2>&1 | tee -a "$output/logs/ntv-ui.log"
   test_pipeline=("${PIPESTATUS[@]}")
 }
+if [[ ${1:-} == --feedback-smoke ]]; then
+  # The manual-device package still has ui_tests_executed:false. These are
+  # targeted native unit checks, never a substitute for the full remote suite.
+  run_test_bundle device-feedback \
+    -only-testing:OrivioTVTests/NTVSecurityTests/testRealPhoneServerRejectsUnpairedPostsAndDoesNotEchoPrivateLink \
+    -only-testing:OrivioTVTests/NTVPerformanceTests/testFastFocusSweepCoalescesHeroWorkWithoutSlowingAnIsolatedStep \
+    -only-testing:OrivioTVTests/NTVPerformanceTests/testRemoteRepeatCadenceDoesNotCommitEveryIntermediateHero \
+    -only-testing:OrivioTVTests/NTVTopShelfTests
+  exit 0
+fi
 set +e
 # A native startup failure must surface before the longer remote journeys.
 run_test_bundle native-video \

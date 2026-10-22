@@ -25,6 +25,7 @@ python3 scripts/ci/verify-ntv-icon-assets.py "$app/Info.plist" "$app/Assets.car"
 python3 - "$app/Info.plist" "$output/build-info.json" "$validation" <<'PY'
 import json
 import plistlib
+from pathlib import Path
 import subprocess
 import sys
 
@@ -41,6 +42,13 @@ if info.get("CFBundleSupportedPlatforms") != ["AppleTVOS"] or 3 not in info.get(
     raise SystemExit("Expected a device tvOS app, never simulator output.")
 if build.get("commit") != head:
     raise SystemExit("The build must match this exact checkout.")
+extensions = list(Path(sys.argv[1]).parent.glob('PlugIns/*.appex/Info.plist'))
+if len(extensions) != 1:
+    raise SystemExit('The Top Shelf extension must be retained.')
+with extensions[0].open('rb') as handle:
+    extension = plistlib.load(handle)
+if any(extension.get(key) != info.get(key) for key in ('CFBundleVersion', 'CFBundleShortVersionString')):
+    raise SystemExit('The app and Top Shelf extension must have matching versions.')
 if sys.argv[3] != "device-test" and build.get("ui_tests_executed") is not True:
     raise SystemExit("This checkout has no successful nTV UI-test record.")
 PY

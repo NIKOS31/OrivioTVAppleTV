@@ -9,7 +9,10 @@ struct NTVFocusSettlePolicy {
     mutating func delay(at uptime: Double, minimumNanoseconds: UInt64) -> UInt64 {
         guard uptime.isFinite else { return minimumNanoseconds }
         defer { previous = uptime }
-        guard let previous, uptime >= previous, uptime - previous < 0.14 else { return minimumNanoseconds }
-        return max(minimumNanoseconds, 180_000_000)
+        // D-pad repeats and row landings commonly arrive 150–280ms apart.
+        // The old 140ms cutoff treated each as an isolated step, starting
+        // metadata, poster fades and text layout during every focus animation.
+        guard let previous, uptime >= previous, uptime - previous < 0.35 else { return minimumNanoseconds }
+        return max(minimumNanoseconds, 300_000_000)
     }
 }

@@ -221,7 +221,7 @@ final class AddonImportServer: ObservableObject {
         Content-Type: text/html; charset=utf-8\r
         Content-Length: \(data.count)\r
         Cache-Control: no-store\r
-        Referrer-Policy: no-referrer\r
+        Referrer-Policy: same-origin\r
         X-Content-Type-Options: nosniff\r
         Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src https: http: data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'\r
         Connection: close\r

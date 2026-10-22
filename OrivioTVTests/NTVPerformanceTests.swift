@@ -9,6 +9,7 @@ final class NTVPerformanceTests: XCTestCase {
     @MainActor
     func testHiddenHomeSpotlightDoesNotPublishOrEnrichEveryFocusStep() async throws {
         let hero = HeroFocus()
+        hero.suspendsWhenOffscreen = true
         hero.layout = .pinnedFocus
         let initial = MetaItem(id: "visible", type: "movie", name: "Visible", description: "Ready")
         hero.item = initial
@@ -32,6 +33,7 @@ final class NTVPerformanceTests: XCTestCase {
     @MainActor
     func testHidingHomeSpotlightCancelsAnAlreadyScheduledFocusCommit() async throws {
         let hero = HeroFocus()
+        hero.suspendsWhenOffscreen = true
         hero.layout = .pinnedFocus
         hero.item = MetaItem(id: "visible", type: "movie", name: "Visible", description: "Ready")
         hero.focus(MetaItem(id: "pending", type: "movie", name: "Pending", description: "Ready"))

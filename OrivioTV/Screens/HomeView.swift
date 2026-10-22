@@ -1071,9 +1071,13 @@ final class HeroFocus: ObservableObject {
     /// A scrolling nTV banner has no visible work to do below the viewport.
     /// Keep the newest selection as values, then publish it once on re-entry.
     private(set) var presentationActive = true
+    var suspendsWhenOffscreen = false {
+        didSet { if !suspendsWhenOffscreen { setPresentationActive(true) } }
+    }
     private var latestBrowseSelection: (item: MetaItem, progress: WatchProgress?)?
 
     func setPresentationActive(_ active: Bool) {
+        let active = active || !suspendsWhenOffscreen
         guard presentationActive != active else { return }
         presentationActive = active
         if active {
@@ -1499,8 +1503,10 @@ struct HomeView: View {
         }
         .onAppear {
             isVisible = true
+            hero.suspendsWhenOffscreen = usesNTVLayout
             hero.layout = usesNTVLayout ? .hybrid : homeCatalogSettings.heroLayout
-            hero.onBrowseStateChange = usesNTVLayout ? nil : { browsing in
+            hero.onBrowseStateChange = { browsing in
+                guard !usesNTVLayout else { return }
                 AppProbe.focus("home handoff browsedIntoContent=\(browsing)")
                 // DEFERRED BY ONE TURN, and that is the whole fix for "the
                 // first time I go down, the hero doesn't pin".
@@ -1602,7 +1608,10 @@ struct HomeView: View {
         // decoding, then profile scoping republishes four settings at once — so
         // a cold start ran the whole catalog sweep two to four times over.
         .onChange(of: addonManager.addons) { _, _ in scheduleReload() }
-        .onChange(of: usesNTVLayout) { _, _ in scheduleReload() }
+        .onChange(of: usesNTVLayout) { _, enabled in
+            hero.suspendsWhenOffscreen = enabled
+            scheduleReload()
+        }
         .onChange(of: collections.collections) { _, _ in scheduleReload() }
         // Collection rows render regardless, but a provider change still
         // reloads Home so anything downstream of the connections is fresh.

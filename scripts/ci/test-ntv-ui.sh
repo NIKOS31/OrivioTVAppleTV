@@ -92,7 +92,9 @@ if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
     -only-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeCatalogRapidMovesYieldToNewNavigation \
     -only-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeCategoriesAndMainRailHaveDistinctRemotePaths \
     -only-testing:OrivioTVUITests/NTVDesignSmoke/testAdvancedSubtitleOptionsStayNearTransportAndRestoreFocus \
-    -only-testing:OrivioTVUITests/NTVDesignSmoke/testPlayerTimelineCancelAndCommit
+    -only-testing:OrivioTVUITests/NTVDesignSmoke/testPlayerTimelineCancelAndCommit \
+    -only-testing:OrivioTVUITests/NTVDesignSmoke/testRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable \
+    -only-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable
 fi
 if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
   run_test_bundle navigation \

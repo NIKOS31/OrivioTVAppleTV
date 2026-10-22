@@ -1413,11 +1413,20 @@ final class NTVDesignSmoke: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [playbackResumed], timeout: 8), .completed,
                        "Committing the seek must resume playback.")
-        let resumedPosition = position.label
+        // `position` was resolved inside the scrub overlay. Once that overlay
+        // is replaced by the transport, XCTest can retain its old snapshot.
+        // Re-query the mounted clock on every observation; the native screen
+        // recording must agree with the value this assertion inspects.
+        let resumedPosition = app.staticTexts["ntv.player.position"].firstMatch.label
         let clockAdvanced = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label != %@", resumedPosition), object: position
+            predicate: NSPredicate { _, _ in
+                let currentPosition = app.staticTexts["ntv.player.position"].firstMatch
+                return currentPosition.exists && currentPosition.label != resumedPosition
+            }, object: nil
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [clockAdvanced], timeout: 5), .completed,
+        let clockResult = XCTWaiter.wait(for: [clockAdvanced], timeout: 15)
+        if clockResult != .completed { capture("ntv-player-clock-after-commit-failure") }
+        XCTAssertEqual(clockResult, .completed,
                        "The real playback clock must advance after committing, not just change the button label.")
         // Close the menu and pause before the geometry snapshots. Playback
         // and its advancing clock were checked above while actually running.

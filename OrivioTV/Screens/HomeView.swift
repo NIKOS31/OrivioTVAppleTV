@@ -2821,7 +2821,6 @@ private struct HomePosterRowContent: View {
     @FocusState private var focusedID: String?
     @FocusState private var emptyRowFocused: Bool
     @FocusState private var seeAllFocused: Bool
-    @State private var mountedFirstPosterID: String?
 
     private var displayedItems: [MetaItem] {
         visibility.items(keeping: focusedID)
@@ -2874,12 +2873,6 @@ private struct HomePosterRowContent: View {
                                 focusBinding: $focusedID
                             )
                             .equatable()
-                            .onAppear {
-                                if item.id == visible.first?.id { mountedFirstPosterID = item.id }
-                            }
-                            .onDisappear {
-                                if mountedFirstPosterID == item.id { mountedFirstPosterID = nil }
-                            }
                             // Scroll target for the Back-to-start jump.
                             .id(item.id)
                         }
@@ -2931,7 +2924,8 @@ private struct HomePosterRowContent: View {
                     // unowned next-turn jump that can outlive a quick Up/Down.
                     // The router owns/cancels retries while lazy cards mount.
                     ContentFocusRouter.shared.land(in: row.id, prepare: {
-                        if mountedFirstPosterID != first { proxy.scrollTo(first, anchor: .leading) }
+                        // Mounted lazy posters can still sit outside the visible shelf.
+                        proxy.scrollTo(first, anchor: .leading)
                     }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
                 .onChange(of: emptyRowFocused) { _, focused in
@@ -2948,7 +2942,7 @@ private struct HomePosterRowContent: View {
                     // Treat that as a row entry too; otherwise poster-only
                     // normalization never runs and Down strands focus here.
                     ContentFocusRouter.shared.land(in: row.id, prepare: {
-                        if mountedFirstPosterID != first { proxy.scrollTo(first, anchor: .leading) }
+                        proxy.scrollTo(first, anchor: .leading)
                     }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
                 }
                 .task(id: focusFirstRequest) {

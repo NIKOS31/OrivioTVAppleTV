@@ -464,7 +464,7 @@ struct DetailView: View {
     }
 
     private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
-    @ScaledMetric(relativeTo: .title) private var seanimeTitleSize: CGFloat = 48
+    @ScaledMetric(relativeTo: .title) private var seanimeTitleSize: CGFloat = 56
 
     var body: some View {
         ZStack {
@@ -889,25 +889,39 @@ struct DetailView: View {
     @ViewBuilder
     private var header: some View {
         if isNTV {
-            HStack(alignment: .top, spacing: 40) {
+            VStack(alignment: .leading, spacing: 32) {
+            HStack(alignment: .center, spacing: 56) {
                 ZStack {
                     NTVDesign.raised
                     if let poster = viewModel.openingPoster {
-                        RemoteImage(url: poster, maxDimension: 354)
+                        RemoteImage(url: poster, maxDimension: 396)
                     } else {
                         Image(systemName: "film")
                             .font(.system(size: 42, weight: .medium))
                             .foregroundStyle(NTVDesign.textSecondary)
                     }
                 }
-                .frame(width: 236, height: 354)
+                .frame(width: 264, height: 396)
                 .clipShape(RoundedRectangle(cornerRadius: NTVDesign.cardRadius))
+                .overlay { RoundedRectangle(cornerRadius: NTVDesign.cardRadius)
+                    .strokeBorder(.white.opacity(0.14), lineWidth: 1) }
                 .accessibilityHidden(true)
                 headerInformation
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: 1040, alignment: .leading)
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, OrivioSpacing.huge)
-            .padding(.top, 80)
+            .frame(minHeight: 500, alignment: .center)
+            if hasDetailFacts {
+                detailFacts
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(NTVDesign.surface.opacity(0.8), in: RoundedRectangle(cornerRadius: 20))
+                    .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(.white.opacity(0.08), lineWidth: 1) }
+            }
+            }
+            .padding(.horizontal, NTVViewport.horizontalInset)
+            .padding(.top, 48)
+            .padding(.bottom, 16)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ntv.seanime.detail.header")
         } else {
@@ -974,8 +988,19 @@ struct DetailView: View {
 
             actionRow
 
+            if !isNTV { detailFacts }
+        }
+    }
+
+    private var hasDetailFacts: Bool {
+        viewModel.director != nil || viewModel.contentRating != nil || !viewModel.parentalGuide.isEmpty
+            || viewModel.mdbRatings?.entries(settings: mdblist.settings).isEmpty == false
+    }
+
+    private var detailFacts: some View {
+        VStack(alignment: .leading, spacing: 16) {
             if let director = viewModel.director {
-                Text("\(isNTV ? "Réalisation" : "Réalisation"): \(director)")
+                Text("Réalisation : \(director)")
                     .font(FusionType.metadata(theme.font))
                     .foregroundStyle(theme.palette.textTertiary)
             }
@@ -1076,7 +1101,7 @@ struct DetailView: View {
                     } label: {
                         Label("Sources", systemImage: "list.bullet")
                     }
-                    .buttonStyle(NTVActionButtonStyle(glass: true))
+                    .buttonStyle(NTVActionButtonStyle(glass: true, capsule: true))
                     .focused($actionFocus, equals: .sources)
                     .accessibilityIdentifier("ntv.detail.sources")
                 }
@@ -1099,6 +1124,7 @@ struct DetailView: View {
                                             icon: wasSaved ? "bookmark.slash" : "checkmark")
                 }
                 .focused($actionFocus, equals: .library)
+                .accessibilityLabel(library.contains(viewModel.meta) ? "Retirer de ma liste" : "Ajouter à ma liste")
                 if !viewModel.meta.isSeries {
                     // Eye = seen. Filled + accent when watched, outline when not.
                     CircleIconButton(
@@ -1111,6 +1137,7 @@ struct DetailView: View {
                                                 icon: "eye.fill")
                     }
                     .focused($actionFocus, equals: .watched)
+                    .accessibilityLabel(watched.isWatched(viewModel.meta) ? "Marquer comme non vu" : "Marquer comme vu")
                 }
                 // Rate (Trakt) — star fills when you've rated; opens a 1–10 picker.
                 CircleIconButton(
@@ -1118,11 +1145,13 @@ struct DetailView: View {
                     active: ratings.rating(for: viewModel.meta.id) != nil
                 ) { showRatingPicker = true }
                 .focused($actionFocus, equals: .rate)
+                .accessibilityLabel("Noter ce titre")
                 if layout.detailPageTrailerButtonEnabled, let trailer = viewModel.trailers.first {
                     CircleIconButton(systemName: "play.rectangle.fill", active: false) {
                         activeTrailer = trailer
                     }
                     .focused($actionFocus, equals: .trailer)
+                    .accessibilityLabel("Voir la bande-annonce")
                 }
                 if viewModel.meta.isSeries {
                     // Shuffle: a random aired episode from the whole show.
@@ -1137,6 +1166,7 @@ struct DetailView: View {
                         onShuffle(viewModel.meta, episode)
                     }
                     .focused($actionFocus, equals: .shuffle)
+                    .accessibilityLabel("Lire un épisode au hasard")
                 }
                 }
                 .focusSection()
@@ -1927,7 +1957,7 @@ struct PlayActionButton: View {
     var body: some View {
         if theme.palette.id == NTVDesign.palette.id {
             Button(action: action) { label }
-                .buttonStyle(NTVActionButtonStyle(prominent: true))
+                .buttonStyle(NTVActionButtonStyle(prominent: true, capsule: true))
         } else {
             Button(action: action) { label }
                 .buttonStyle(DetailPillButtonStyle())

@@ -424,11 +424,11 @@ private struct NTVTransportLabel: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 25, weight: .medium))
-            if let title { Text(title).font(.system(size: 23, weight: .medium)) }
+            Image(systemName: symbol).font(.system(size: 22, weight: .medium))
+            if let title { Text(title).font(.system(size: 25, weight: .medium)).lineLimit(2) }
         }
-        .padding(.horizontal, title == nil ? 24 : 20)
-        .frame(height: 58)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 48)
         .foregroundStyle(focused ? .black : .white)
         .background(focused ? .white : .white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
     }
@@ -504,6 +504,7 @@ private struct NTVTrackPickerContent: View {
     let onExit: () -> Void
     @FocusState private var selected: String?
     private var group: NTVTrackLanguageGroup? { groups.first { $0.id == language } }
+    private var visibleRows: Int { group.map { $0.options.count + 1 } ?? groups.count + (off == nil ? 0 : 1) }
     private var initialFocus: String {
         if let group { return group.options.first { $0.id == current }?.id ?? group.options.first?.id ?? "languages" }
         if current == "sub-off", off != nil { return "sub-off" }
@@ -512,7 +513,7 @@ private struct NTVTrackPickerContent: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(subtitles ? "Sous-titres" : "Audio").font(.system(size: 30, weight: .semibold))
             ScrollView {
                 VStack(spacing: 8) {
@@ -542,7 +543,7 @@ private struct NTVTrackPickerContent: View {
                     }
                 }.padding(6)
             }
-            .frame(height: 264)
+            .frame(height: CGFloat(min(max(visibleRows, 1), 3)) * 56 + 12)
             if subtitles {
                 HStack(spacing: 10) {
                     delayButton("−0,5 s", id: "earlier") { onDelay(-0.5) }
@@ -557,7 +558,7 @@ private struct NTVTrackPickerContent: View {
             .buttonStyle(PlainCardButtonStyle()).focused($selected, equals: "settings")
             .accessibilityIdentifier("ntv.player.tracks.settings")
         }
-        .foregroundStyle(.white).padding(28).frame(width: 660)
+        .foregroundStyle(.white).padding(24).frame(width: 520)
         .background { NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24), emphasized: true) }
         .accessibilityElement(children: .contain).accessibilityIdentifier("ntv.player.trackPicker")
         .focusSection().defaultFocus($selected, initialFocus)
@@ -578,9 +579,9 @@ private struct NTVTrackPickerContent: View {
     private func delayButton(_ label: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label).font(.system(size: 24, weight: .medium)).monospacedDigit()
-                .frame(maxWidth: .infinity).frame(height: 58)
+                .frame(maxWidth: .infinity).frame(height: 48)
         }
-        .buttonStyle(NTVActionButtonStyle()).focused($selected, equals: "delay:" + id)
+        .buttonStyle(NTVActionButtonStyle(capsule: true)).focused($selected, equals: "delay:" + id)
         .accessibilityLabel(id == "reset" ? "Remettre le décalage à zéro, \(label)" : "Décalage \(label)")
         .accessibilityIdentifier("ntv.player.tracks.delay." + id)
     }

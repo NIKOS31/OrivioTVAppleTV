@@ -53,3 +53,11 @@ The separate legacy player presentation retains its existing full-screen picker.
 
 The explicit French new-episode badge uses nTV existing release/history
 calculation; changing the label does not assert that a source has been checked.
+
+Build 47 corrects nTV's own remote behaviour: repeated directional clicks on
+the timeline use the same configured skip as quick seeks, without the old
+fourfold/twelvefold acceleration. Continuous touch scrubbing, thumbnails,
+confirmation/cancellation, source selection and playback engines are retained.
+Track pickers show three rows at a time in a narrower scrolling panel; advanced
+options and source/episode pickers retain all their entries in bounded panels.
+These are tvOS adaptations, not a port of Nuvio's complete input state machine.

@@ -155,6 +155,24 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(spotlight, timeout: 8), "Back closes the rail into Home's existing content route.")
         XCTAssertEqual(heading.frame.minX, headingBefore.minX, accuracy: 1)
         capture("ntv-seanime-home-after-menu")
+        let firstProposal = spotlight.value as? String
+        XCTAssertNotNil(firstProposal)
+        remote.press(.right)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value != %@", firstProposal ?? ""), object: spotlight)], timeout: 8), .completed,
+            "Right on the minimal hero must change the proposal without opening its detail.")
+        XCTAssertTrue(focused(spotlight, timeout: 5))
+        remote.press(.left)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", firstProposal ?? ""), object: spotlight)], timeout: 8), .completed,
+            "Left must return to the previous proposal, without opening the rail.")
+        XCTAssertTrue(focused(spotlight, timeout: 5))
+        let firstPoster = app.buttons["ntv.home.poster.movie.fixture.row.0.item.0"]
+        for _ in 0..<6 {
+            if firstPoster.hasFocus { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(focused(firstPoster, timeout: 8), "Manual hero navigation must retain the native Down path to the first row.")
     }
 
     func testRecentSearchesLeaveSpaceForPostersAndClearBackToTheField() {
@@ -223,6 +241,12 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.select)
         let settings = app.buttons["ntv.player.tracks.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        let trackPicker = app.descendants(matching: .any)["ntv.player.trackPicker"].firstMatch
+        let playerScreen = app.windows.firstMatch.frame
+        XCTAssertTrue(playerScreen.contains(trackPicker.frame))
+        XCTAssertLessThan(trackPicker.frame.width, playerScreen.width / 3,
+                          "Track selection must stay compact beside the transport.")
+        XCTAssertLessThan(trackPicker.frame.height, playerScreen.height / 2)
         for _ in 0..<8 {
             if settings.hasFocus { break }
             remote.press(.down)
@@ -235,6 +259,7 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         let screen = app.windows.firstMatch.frame
         XCTAssertTrue(screen.contains(card.frame))
+        XCTAssertLessThanOrEqual(card.frame.height, 380, "Advanced options must scroll inside a bounded card.")
         XCTAssertGreaterThan(card.frame.midY, screen.midY, "Advanced subtitle settings must be anchored in the lower half.")
         capture("ntv-player-subtitle-advanced-settings-bottom")
         remote.press(.down)
@@ -248,6 +273,8 @@ final class NTVDesignSmoke: XCTestCase {
         let gap = screen.maxY - picker.frame.maxY
         capture("ntv-player-subtitle-font-picker-bottom")
         XCTAssertTrue(screen.contains(picker.frame))
+        XCTAssertLessThan(picker.frame.width, screen.width / 3)
+        XCTAssertLessThan(picker.frame.height, screen.height / 2)
         XCTAssertGreaterThanOrEqual(gap, 96, "A nested option must inherit the transport anchor, not open as a full-screen picker.")
         XCTAssertLessThanOrEqual(gap, 180)
         remote.press(.menu)
@@ -1290,6 +1317,11 @@ final class NTVDesignSmoke: XCTestCase {
 
     func testPlayerTimelineCancelAndCommit() {
         continueAfterFailure = false
+        func seconds(_ value: String) -> Int {
+            let parts = value.split(separator: ":").compactMap { Int($0) }
+            XCTAssertTrue(parts.count == 2 || parts.count == 3, "The timeline must expose a readable time.")
+            return parts.reduce(0) { $0 * 60 + $1 }
+        }
         let app = XCUIApplication()
         app.launchArguments = ["-ntvPlayerDemo"]
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
@@ -1321,12 +1353,19 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.up)
         let timeline = app.buttons["ntv.player.timeline"]
         XCTAssertTrue(focused(timeline, timeout: 5))
+        let scrubStart = seconds(quickPosition.label)
         remote.press(.right)
         let position = app.staticTexts["ntv.player.position"].firstMatch
         XCTAssertTrue(position.waitForExistence(timeout: 8))
         let first = position.label
+        XCTAssertLessThanOrEqual(abs(seconds(first) - scrubStart - 10), 1,
+                                 "Entering the timeline must use the same precise 10-second step as quick skips.")
         remote.press(.right)
         XCTAssertNotEqual(position.label, first, "Right must move the seek preview before committing.")
+        let repeatedStart = seconds(position.label)
+        for _ in 0..<8 { remote.press(.right) }
+        XCTAssertLessThanOrEqual(seconds(position.label) - repeatedStart, 81,
+                                 "Rapid presses must never accelerate into minute-sized jumps.")
         capture("ntv-player-seek-preview")
         remote.press(.menu)
         XCTAssertTrue(play.waitForExistence(timeout: 8))

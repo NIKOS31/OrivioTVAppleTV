@@ -95,30 +95,16 @@ struct NTVHomeSpotlight: View {
                     .font(.system(size: synopsisSize))
                     .foregroundStyle(NTVDesign.textSecondary)
                     .lineLimit(2, reservesSpace: true)
-                HStack(spacing: 24) {
-                    Button { onSelect(item) } label: {
-                        Label("Voir la fiche", systemImage: "info.circle")
-                    }
-                    .buttonStyle(NTVActionButtonStyle(prominent: true, capsule: true))
-                    .focused(playFocus)
-                    .accessibilityIdentifier("ntv.home.spotlight")
-                    .onExitCommand(perform: onBack)
-                    .onChange(of: playFocus.wrappedValue) { _, focused in
-                        if focused { ContentFocusRouter.shared.noteFocused(row: "home.heroPlay") }
-                    }
-                    if hero.spotlight.count > 1 {
-                        HStack(spacing: 7) {
-                            ForEach(hero.spotlight.indices, id: \.self) { index in
-                                Capsule()
-                                    .fill(.white.opacity(index == hero.spotlightIndex ? 0.85 : 0.25))
-                                    .frame(width: index == hero.spotlightIndex ? 18 : 6, height: 4)
-                            }
+                NTVSpotlightAction(focus: playFocus, index: hero.spotlightIndex,
+                    count: hero.spotlight.count, title: item.name, identifier: "ntv.home.spotlight",
+                    onSelect: { onSelect(item) }, onStep: { hero.stepSpotlight(by: $0) }, onBack: onBack,
+                    onFocus: { focused in
+                        hero.heroButtonFocused = focused
+                        if focused {
+                            hero.markInteraction()
+                            ContentFocusRouter.shared.noteFocused(row: "home.heroPlay")
                         }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Proposition \(hero.spotlightIndex + 1) sur \(hero.spotlight.count)")
-                    }
-                }
-                .foregroundStyle(NTVDesign.textPrimary)
+                    })
             }
             .foregroundStyle(NTVDesign.textPrimary)
             .frame(maxWidth: 920, minHeight: 350, alignment: .leading)
@@ -126,6 +112,63 @@ struct NTVHomeSpotlight: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ntv.seanime.home.feature")
         }
+    }
+}
+
+/// Reuse the existing hero's native focus sentinels so Up/Down keep working.
+struct NTVSpotlightAction: View {
+    var focus: FocusState<Bool>.Binding
+    let index: Int
+    let count: Int
+    let title: String
+    let identifier: String
+    let onSelect: () -> Void
+    let onStep: (Int) -> Void
+    let onBack: () -> Void
+    var onFocus: (Bool) -> Void = { _ in }
+    @FocusState private var step: Int?
+    @State private var leftFocusAt: Date?
+
+    var body: some View {
+        HStack(spacing: 24) {
+            HStack(spacing: 0) {
+                if count > 1 { stepTarget(-1) }
+                Button(action: onSelect) { Label("Voir la fiche", systemImage: "info.circle") }
+                    .buttonStyle(NTVActionButtonStyle(prominent: true, capsule: true))
+                    .focused(focus)
+                    .accessibilityLabel("Voir la fiche de " + title)
+                    .accessibilityValue(count > 1 ? "Proposition \(index + 1) sur \(count)" : "")
+                    .accessibilityHint("Gauche ou droite pour changer de proposition. Retour pour le menu.")
+                    .accessibilityIdentifier(identifier)
+                    .onExitCommand(perform: onBack)
+                if count > 1 { stepTarget(1) }
+            }
+            HStack(spacing: 7) {
+                ForEach(0..<count, id: \.self) { value in
+                    Capsule().fill(.white.opacity(value == index ? 0.85 : 0.25))
+                        .frame(width: value == index ? 18 : 6, height: 4)
+                }
+            }
+            .accessibilityHidden(true)
+        }
+        .foregroundStyle(NTVDesign.textPrimary)
+        .onChange(of: focus.wrappedValue) { _, focused in
+            if !focused { leftFocusAt = Date() }
+            onFocus(focused)
+        }
+        .onChange(of: step) { _, direction in
+            guard let direction else { return }
+            let fromAction = focus.wrappedValue || leftFocusAt.map { Date().timeIntervalSince($0) < 0.35 } == true
+            step = nil
+            if fromAction { onStep(direction) }
+            focus.wrappedValue = true
+        }
+    }
+
+    private func stepTarget(_ direction: Int) -> some View {
+        Color.clear.frame(width: 1, height: 44)
+            .focusable().focused($step, equals: direction)
+            .accessibilityHidden(true)
     }
 }
 

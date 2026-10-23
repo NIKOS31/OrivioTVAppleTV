@@ -945,6 +945,8 @@ struct PosterCard: View {
                 progress: effectiveProgress, shadowsEnabled: perf.settings.cardShadows && !perf.cardParallaxEffective,
                 placeholderSymbol: item.isSeries ? "tv" : "film", cornerRadius: cornerRadius
             )
+            // Cache only the artwork description; the button keeps its live focus binding.
+            .equatable()
         } else {
             upstreamArtwork
         }

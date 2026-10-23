@@ -18,6 +18,7 @@ import SwiftUI
 struct InfuseInfoPanel: View {
     @ObservedObject var viewModel: PlayerViewModel
     var anchoredToTransport = false
+    private var columnWidth: CGFloat { anchoredToTransport ? 410 : InfuseRowMetrics.columnWidth }
     @EnvironmentObject private var store: PlayerSettingsStore
     @FocusState private var focus: Focus?
     @State private var picker: InfusePickerSpec?
@@ -61,7 +62,7 @@ struct InfuseInfoPanel: View {
                 tabBar
                 if anchoredToTransport {
                     ScrollView(.vertical) { card.padding(6) }
-                        .frame(height: 480)
+                        .frame(height: 360)
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("ntv.player.settings.card")
                 } else {
@@ -72,6 +73,8 @@ struct InfuseInfoPanel: View {
             .padding(.top, anchoredToTransport ? 0 : 42)
             .padding(.bottom, anchoredToTransport ? 64 : 0)
             .padding(.horizontal, FusionMetrics.sideInset)
+            .frame(maxWidth: anchoredToTransport ? (viewModel.infoTab == 3 ? 1160 : 1480) : .infinity)
+            .frame(maxWidth: .infinity, alignment: anchoredToTransport ? .trailing : .center)
             .ignoresSafeArea()
             // The sheet stays put under a picker — dimmed, and out of the
             // focus engine's reach — so it is exactly where you left it when
@@ -419,7 +422,7 @@ struct InfuseInfoPanel: View {
                                 interactive: false)
             }
         }
-        .frame(width: InfuseRowMetrics.columnWidth, alignment: .leading)
+        .frame(width: columnWidth, alignment: .leading)
         .allowsHitTesting(false)
     }
 
@@ -451,7 +454,7 @@ struct InfuseInfoPanel: View {
                 }
             }
         }
-        .frame(width: InfuseRowMetrics.columnWidth, alignment: .leading)
+        .frame(width: columnWidth, alignment: .leading)
         .allowsHitTesting(false)
     }
 
@@ -518,7 +521,7 @@ struct InfuseInfoPanel: View {
                 InfuseOptionRow(label: "Dolby Vision", value: dolby, interactive: false)
             }
         }
-        .frame(width: InfuseRowMetrics.columnWidth, alignment: .leading)
+        .frame(width: columnWidth, alignment: .leading)
     }
 
     private static let speeds: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
@@ -552,7 +555,7 @@ struct InfuseInfoPanel: View {
                          selectedID: viewModel.selectedAudioID) { option in
                 viewModel.selectAudio(option)
             }
-            .frame(width: InfuseRowMetrics.columnWidth, alignment: .leading)
+            .frame(width: columnWidth, alignment: .leading)
             audioOptionsColumn
             audioFormatColumn
         }
@@ -576,7 +579,7 @@ struct InfuseInfoPanel: View {
                 }
             }
         }
-        .frame(width: InfuseRowMetrics.columnWidth, alignment: .leading)
+        .frame(width: columnWidth, alignment: .leading)
         .allowsHitTesting(false)
         // `speakerName` is already refreshed on route change below; naming it
         // here makes this column re-evaluate on the same notification.
@@ -610,7 +613,7 @@ struct InfuseInfoPanel: View {
                     routePickerToken += 1
                 }
             }
-            .frame(width: InfuseRowMetrics.columnWidth, alignment: .leading)
+            .frame(width: columnWidth, alignment: .leading)
             .background {
                 // Invisible AVRoutePickerView; the row pokes it to present
                 // the system AirPlay / output sheet.
@@ -772,7 +775,7 @@ struct InfuseInfoPanel: View {
             leading().frame(maxWidth: .infinity, alignment: .leading)
             trailing().frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 230)
+        .padding(.horizontal, anchoredToTransport ? 40 : 230)
         .padding(.vertical, 22)
     }
 
@@ -1148,7 +1151,8 @@ struct InfusePickerScreen: View {
         // snapshot that no longer matches the rows on screen is how the
         // remote goes dead.
         let rows = items
-        let rowWidth: CGFloat = rows.contains { $0.subtitle != nil } ? 1100 : 600
+        let rowWidth: CGFloat = rows.contains { $0.subtitle != nil }
+            ? (anchoredToTransport ? 720 : 1100) : (anchoredToTransport ? 480 : 600)
         ZStack(alignment: anchoredToTransport ? .bottomTrailing : .center) {
             Group {
                 if anchoredToTransport {
@@ -1202,7 +1206,7 @@ struct InfusePickerScreen: View {
                 .scrollClipDisabled()
             }
             .frame(width: anchoredToTransport ? rowWidth + 48 : nil,
-                   height: anchoredToTransport ? min(620, CGFloat(max(rows.count, 1)) * 100 + 104) : nil)
+                   height: anchoredToTransport ? min(420, CGFloat(max(rows.count, 1)) * 100 + 104) : nil)
             .background {
                 if anchoredToTransport {
                     NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24), emphasized: true)

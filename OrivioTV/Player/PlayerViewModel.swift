@@ -6605,9 +6605,6 @@ final class PlayerViewModel: ObservableObject {
     private var resumeAfterScrub = false
     /// Set by the player host; existing themes keep their transport grammar.
     var usesNTVControls = false
-    private var ntvScrubDirection = false
-    private var ntvScrubRepeats = 0
-    private var ntvScrubPressedAt = Date.distantPast
 
     /// This CONTACT (finger-down to lift) has dragged the scrub target — by
     /// pan or by wheel. A directional press during such a contact is the
@@ -6622,8 +6619,6 @@ final class PlayerViewModel: ObservableObject {
     func beginScrub(pausing: Bool = false) {
         guard acceptsTransportInput else { return }
         guard overlay == .none || overlay == .controls || overlay == .pauseInfo else { return }
-        ntvScrubRepeats = 0
-        ntvScrubPressedAt = .distantPast
         var start = position
         if pausing, isPlaying {
             enginePause("bar click opening a scrub")
@@ -7590,15 +7585,9 @@ final class PlayerViewModel: ObservableObject {
         nudgeSeek(forward ? Double(settings.skipSeconds) : -Double(settings.skipSeconds))
     }
 
-    /// Single presses stay precise; a held direction progressively travels further.
+    /// Repeated remote presses retain the configured skip, without acceleration.
     func stepNTVScrub(forward: Bool) {
-        let now = Date()
-        let repeating = forward == ntvScrubDirection && now.timeIntervalSince(ntvScrubPressedAt) < 0.65
-        ntvScrubRepeats = repeating ? ntvScrubRepeats + 1 : 0
-        ntvScrubPressedAt = now
-        ntvScrubDirection = forward
-        let multiplier = ntvScrubRepeats >= 7 ? 12.0 : ntvScrubRepeats >= 3 ? 4.0 : 1.0
-        scrubJump((forward ? 1 : -1) * Double(settings.scrubJumpSeconds) * multiplier)
+        scrubJump((forward ? 1 : -1) * Double(settings.skipSeconds))
     }
 
     // The fast-forward / rewind SCAN transport was removed here.

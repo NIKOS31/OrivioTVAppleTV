@@ -125,7 +125,7 @@ struct NTVAnimeView: View {
     @State private var pendingSearch: String?
     @State private var refresh = 0
     @State private var featuredIndex = 0
-    @State private var featuredPaused = false
+    @FocusState private var featuredFocused: Bool
     @FocusState private var focus: String?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -151,9 +151,9 @@ struct NTVAnimeView: View {
     }
     private var usesSharedBackdrop: Bool { theme.palette.id == NTVDesign.palette.id }
     private var canRotateFeatured: Bool {
-        section == .season && scenePhase == .active && !reduceMotion && !featuredPaused
+        section == .season && scenePhase == .active && !reduceMotion && !featuredFocused
             && !model.loading && selection == nil && featuredEntries.count > 1
-            && (focus == nil || focus == Section.season.rawValue || focus == Section.season.rawValue + ".rotation")
+            && (focus == nil || focus == Section.season.rawValue)
     }
     private func reportFeaturedBackdrop() {
         guard usesSharedBackdrop else { return }
@@ -161,7 +161,6 @@ struct NTVAnimeView: View {
     }
     private func stepFeatured(_ delta: Int) {
         guard !featuredEntries.isEmpty else { return }
-        featuredPaused = true
         featuredIndex = (featuredIndex + delta + featuredEntries.count) % featuredEntries.count
     }
 
@@ -175,7 +174,7 @@ struct NTVAnimeView: View {
                     Button { section = value } label: {
                         Label(value.rawValue, systemImage: value == .calendar ? "calendar" : value == .library ? "bookmark" : "sparkles")
                     }
-                    .buttonStyle(NTVActionButtonStyle())
+                    .buttonStyle(NTVActionButtonStyle(capsule: true))
                     .focused($focus, equals: value.rawValue)
                     .accessibilityValue(section == value ? "Sélectionné" : "")
                     .accessibilityIdentifier(value == .calendar ? "ntv.anime.planning" : value == .library ? "ntv.anime.library" : "ntv.anime.season")
@@ -184,7 +183,7 @@ struct NTVAnimeView: View {
                     }
                 }
                 Button { onSearch("") } label: { Image(systemName: "magnifyingglass") }
-                    .buttonStyle(NTVActionButtonStyle())
+                    .buttonStyle(NTVActionButtonStyle(capsule: true))
                     .accessibilityLabel("Rechercher dans mes sources d’animés")
                     .accessibilityIdentifier("ntv.anime.sources")
             }
@@ -201,7 +200,7 @@ struct NTVAnimeView: View {
                             }
                             .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(NTVActionButtonStyle())
+                        .buttonStyle(NTVActionButtonStyle(capsule: true))
                         .focused($focus, equals: "day.\(day.id)")
                         .accessibilityLabel(day.start.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).weekday(.wide).day().month(.wide)))
                         .accessibilityValue(day.contains(selectedDay) ? "Sélectionné" : "")
@@ -265,7 +264,8 @@ struct NTVAnimeView: View {
             if let title = pendingSearch {
                 pendingSearch = nil
                 onSearch(title)
-            } else { focus = selectedEntryID }
+            } else if selectedEntryID == "featured" { featuredFocused = true }
+            else { focus = selectedEntryID }
         }) { media in
             NTVAnimeDetail(media: media) {
                 // Change tabs only after the cover actually closes. Otherwise
@@ -280,27 +280,25 @@ struct NTVAnimeView: View {
         HStack(spacing: 24) {
             OrivioDropdown(title: "Saison", subtitle: "", icon: "leaf",
                 selection: seasonRequest.seasonName ?? "FALL",
-                options: NTVAnimeRequest.seasons.map { OrivioDropdownOption($0.0, $0.1) }) { name in
+                options: NTVAnimeRequest.seasons.map { OrivioDropdownOption($0.0, $0.1) }, triggerWidth: 230) { name in
                     followsCurrentSeason = false
                     seasonRequest = .season(year: seasonRequest.seasonYear ?? Calendar.current.component(.year, from: Date()), name: name)
                 }
-                .frame(maxWidth: 340)
                 .accessibilityIdentifier("ntv.anime.seasonPicker")
             OrivioDropdown(title: "Année", subtitle: "", icon: "calendar",
                 selection: String(seasonRequest.seasonYear ?? Calendar.current.component(.year, from: Date())),
                 options: (1900...(Calendar.current.component(.year, from: Date()) + 1)).reversed().map {
                     OrivioDropdownOption(String($0), String($0))
-                }) { year in
+                }, triggerWidth: 170) { year in
                     guard let value = Int(year), (1900...2200).contains(value) else { return }
                     followsCurrentSeason = false
                     seasonRequest = .season(year: value, name: seasonRequest.seasonName ?? "FALL")
                 }
-                .frame(maxWidth: 290)
                 .accessibilityIdentifier("ntv.anime.yearPicker")
             Button("Saison actuelle") {
                 followsCurrentSeason = true; seasonRequest = .season(at: Date())
             }
-            .buttonStyle(NTVActionButtonStyle())
+            .buttonStyle(NTVActionButtonStyle(capsule: true))
             .accessibilityIdentifier("ntv.anime.currentSeason")
             Spacer(minLength: 0)
         }.focusSection()
@@ -309,16 +307,16 @@ struct NTVAnimeView: View {
     private var calendarControls: some View {
         HStack(spacing: 20) {
             Button { changeWeek(-1) } label: { Image(systemName: "chevron.left") }
-                .buttonStyle(NTVActionButtonStyle()).accessibilityLabel("Semaine précédente")
+                .buttonStyle(NTVActionButtonStyle(capsule: true)).accessibilityLabel("Semaine précédente")
                 .accessibilityIdentifier("ntv.anime.previousWeek")
             Button("Cette semaine") {
                 followsCurrentWeek = true
                 selectedDay = Calendar.current.startOfDay(for: Date())
                 days = NTVAnimeDay.week(containing: selectedDay)
             }
-            .buttonStyle(NTVActionButtonStyle()).accessibilityIdentifier("ntv.anime.currentWeek")
+            .buttonStyle(NTVActionButtonStyle(capsule: true)).accessibilityIdentifier("ntv.anime.currentWeek")
             Button { changeWeek(1) } label: { Image(systemName: "chevron.right") }
-                .buttonStyle(NTVActionButtonStyle()).accessibilityLabel("Semaine suivante")
+                .buttonStyle(NTVActionButtonStyle(capsule: true)).accessibilityLabel("Semaine suivante")
                 .accessibilityIdentifier("ntv.anime.nextWeek")
             Spacer(minLength: 10)
             if let first = days.first, let last = days.last {
@@ -328,7 +326,7 @@ struct NTVAnimeView: View {
             Button { followingOnly.toggle() } label: {
                 Label(followingOnly ? "Mes animés suivis" : "Tous les animés", systemImage: followingOnly ? "bookmark.fill" : "calendar")
             }
-            .buttonStyle(NTVActionButtonStyle())
+            .buttonStyle(NTVActionButtonStyle(capsule: true))
             .accessibilityValue(followingOnly ? "Filtre personnel activé" : "Toutes les diffusions")
             .accessibilityIdentifier("ntv.anime.followingOnly")
         }.focusSection()
@@ -348,36 +346,18 @@ struct NTVAnimeView: View {
         } else if let message = model.errorMessage {
             VStack(spacing: 24) {
                 Text(message).font(.title2).multilineTextAlignment(.center)
-                Button("Réessayer") { refresh += 1 }.buttonStyle(NTVActionButtonStyle())
+                Button("Réessayer") { refresh += 1 }.buttonStyle(NTVActionButtonStyle(capsule: true))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                 if section == .season, let entry = featuredEntry {
-                    Button { open(entry, focusID: "featured") } label: { NTVAnimeFeature(media: entry.media, sharedBackdrop: usesSharedBackdrop) }
-                        .buttonStyle(PlainCardButtonStyle())
-                        .focused($focus, equals: "featured")
-                        .accessibilityLabel("À l’affiche : " + entry.media.displayTitle)
-                        .accessibilityIdentifier("ntv.anime.featured")
+                    NTVAnimeFeature(media: entry.media, focus: $featuredFocused,
+                        index: featuredIndex, count: featuredEntries.count,
+                        onSelect: { open(entry, focusID: "featured") }, onStep: stepFeatured,
+                        onBack: onBackAtRoot)
                         .padding(.bottom, 24)
-                    if featuredEntries.count > 1 {
-                        HStack(spacing: 16) {
-                            Button { stepFeatured(-1) } label: { Image(systemName: "chevron.left") }
-                                .accessibilityLabel("Proposition précédente")
-                                .focused($focus, equals: "featured.previous")
-                            Text("\(featuredIndex % featuredEntries.count + 1) / \(featuredEntries.count)")
-                                .font(.system(size: 22).monospacedDigit()).foregroundStyle(NTVDesign.textSecondary)
-                            Button { stepFeatured(1) } label: { Image(systemName: "chevron.right") }
-                                .accessibilityLabel("Proposition suivante")
-                                .focused($focus, equals: "featured.next")
-                            Button { featuredPaused.toggle() } label: { Image(systemName: featuredPaused ? "play.fill" : "pause.fill") }
-                                .accessibilityLabel(featuredPaused ? "Reprendre les propositions" : "Mettre les propositions en pause")
-                                .focused($focus, equals: Section.season.rawValue + ".rotation")
-                        }
-                        .buttonStyle(NTVActionButtonStyle())
-                        .padding(.bottom, 24)
-                    }
                     HStack(alignment: .firstTextBaseline) {
                         Text("À suivre cette saison").font(.system(size: 30, weight: .semibold))
                         Spacer()
@@ -430,7 +410,7 @@ struct NTVAnimeView: View {
                         Text(model.snapshot.loadingMore ? "Chargement…" : model.feed.hasMore ? model.snapshot.paginationError == nil ? "Charger la suite" : "Réessayer la suite" : "Actualiser la sélection")
                     }.frame(minWidth: 260)
                 }
-                .buttonStyle(NTVActionButtonStyle())
+                .buttonStyle(NTVActionButtonStyle(capsule: true))
                 .focused($focus, equals: "pagination")
                 .accessibilityIdentifier("ntv.anime.loadMore")
                 .padding(.top, 24)
@@ -454,44 +434,35 @@ struct NTVAnimeView: View {
     }
 }
 
-/// Seanime reference: wide artwork, cover + concise metadata, then a clearly
-/// separated poster gallery. The composition stays fixed when the image loads.
-/// No carousel timer or artwork replacement on each focus movement.
+/// Home and Anime share the same minimal hero and directional navigation.
 private struct NTVAnimeFeature: View {
-    @Environment(\.isFocused) private var focused
     let media: NTVAnimeMedia
-    var sharedBackdrop = false
+    var focus: FocusState<Bool>.Binding
+    let index: Int
+    let count: Int
+    let onSelect: () -> Void
+    let onStep: (Int) -> Void
+    let onBack: () -> Void
+    @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 48
+    @ScaledMetric(relativeTo: .body) private var synopsisSize: CGFloat = 29
+
     var body: some View {
-        ZStack(alignment: .leading) {
-            if !sharedBackdrop {
-                RemoteImage(url: media.backdrop, maxDimension: 1600)
-                    .frame(height: 300).clipped()
-                LinearGradient(colors: [NTVDesign.background.opacity(0.98), NTVDesign.background.opacity(0.88), .clear],
-                               startPoint: .leading, endPoint: .trailing)
-                LinearGradient(colors: [.clear, NTVDesign.background.opacity(0.7)], startPoint: .top, endPoint: .bottom)
-            }
-            HStack(alignment: .center, spacing: 32) {
-                RemoteImage(url: media.artwork, maxDimension: 400)
-                    .frame(width: 150, height: 225)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("À L’AFFICHE CETTE SAISON").font(.system(size: 23, weight: .medium)).tracking(1.5)
-                        .foregroundStyle(NTVDesign.textSecondary)
-                    Text(media.displayTitle).font(.system(size: 40, weight: .semibold)).lineLimit(2)
-                    Text(verbatim: media.summary).font(.system(size: 26)).lineLimit(2)
-                        .foregroundStyle(NTVDesign.textSecondary)
-                    Label("Explorer cet animé", systemImage: "arrow.right")
-                        .font(.system(size: 26, weight: .semibold))
-                }
-                .frame(maxWidth: 780, alignment: .leading)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 32)
+        VStack(alignment: .leading, spacing: 16) {
+            Text(media.displayTitle)
+                .font(.system(size: titleSize, weight: .semibold))
+                .lineLimit(2, reservesSpace: true).minimumScaleFactor(0.75)
+            Text([media.formatLabel, media.episodes.map { "\($0) épisodes" }].compactMap { $0 }.joined(separator: " · "))
+                .font(.system(size: 25, weight: .medium))
+                .foregroundStyle(NTVDesign.textSecondary).lineLimit(1)
+            Text(verbatim: media.summary)
+                .font(.system(size: synopsisSize)).lineLimit(2, reservesSpace: true)
+                .foregroundStyle(NTVDesign.textSecondary)
+            NTVSpotlightAction(focus: focus, index: index, count: count, title: media.displayTitle,
+                identifier: "ntv.anime.featured", onSelect: onSelect, onStep: onStep, onBack: onBack)
         }
-        .frame(maxWidth: .infinity).frame(height: 300)
-        .background(sharedBackdrop ? Color.clear : NTVDesign.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 22))
-        .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(.white.opacity(focused ? 0.85 : sharedBackdrop ? 0 : 0.12), lineWidth: focused ? 3 : 1) }
+        .foregroundStyle(NTVDesign.textPrimary)
+        .frame(maxWidth: 920, minHeight: 350, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -525,8 +496,8 @@ private struct NTVAnimeCard: View {
     let entry: NTVAnimeEntry
     var body: some View {
         HStack(alignment: .center, spacing: 20) {
-            RemoteImage(url: entry.media.artwork, maxDimension: 320)
-                .frame(width: 104, height: 156)
+            RemoteImage(url: entry.media.artwork, maxDimension: 126)
+                .frame(width: 84, height: 126)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 14) {
@@ -541,18 +512,15 @@ private struct NTVAnimeCard: View {
                     .font(.system(size: 27, weight: .semibold))
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Spacer(minLength: 0)
                 HStack(spacing: 12) {
                     if let episode = entry.episode { Text("Épisode \(episode)") }
                     else if let count = entry.media.episodes, count > 0 { Text("\(count) épisodes") }
-                    Spacer(minLength: 0)
-                    Image(systemName: "arrow.up.right").accessibilityHidden(true)
                 }
                 .font(.system(size: 23)).foregroundStyle(NTVDesign.textSecondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 156, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 126, alignment: .topLeading)
         }
-        .padding(20)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(NTVDesign.textPrimary)
         .background(focused ? NTVDesign.raised : NTVDesign.surface, in: RoundedRectangle(cornerRadius: 16))
@@ -581,9 +549,9 @@ private struct NTVAnimeDetail: View {
                     .font(.system(size: 24)).foregroundStyle(NTVDesign.textSecondary)
                 HStack(spacing: 24) {
                     Button("Chercher dans mes addons", action: search)
-                        .buttonStyle(NTVActionButtonStyle()).focused($searchFocused)
+                        .buttonStyle(NTVActionButtonStyle(capsule: true)).focused($searchFocused)
                         .accessibilityIdentifier("ntv.anime.searchSources")
-                    Button("Retour") { dismiss() }.buttonStyle(NTVActionButtonStyle())
+                    Button("Retour") { dismiss() }.buttonStyle(NTVActionButtonStyle(capsule: true))
                 }
                 Button {
                     followError = !follows.toggle(media, profile: profiles.activeProfileID)
@@ -591,7 +559,7 @@ private struct NTVAnimeDetail: View {
                     Label(follows.contains(media.id, profile: profiles.activeProfileID) ? "Ne plus suivre" : "Suivre cet animé",
                           systemImage: follows.contains(media.id, profile: profiles.activeProfileID) ? "bookmark.fill" : "bookmark")
                 }
-                .buttonStyle(NTVActionButtonStyle())
+                .buttonStyle(NTVActionButtonStyle(capsule: true))
                 .accessibilityIdentifier("ntv.anime.follow")
                 if followError {
                     Text("Impossible de modifier la liste. Elle peut contenir jusqu’à 200 animés.")

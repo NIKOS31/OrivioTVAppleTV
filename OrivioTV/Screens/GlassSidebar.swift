@@ -301,7 +301,6 @@ struct GlassSidebar: View {
 
             Spacer(minLength: 20)
 
-            if expanded {
                 Button(action: onProfileTap) {
                     GlassProfileHeader(profile: profiles.active)
                         .padding(.leading, Self.ntvFocusGuard)
@@ -312,9 +311,10 @@ struct GlassSidebar: View {
                 .padding(.trailing, OrivioSpacing.sm)
                 .accessibilityLabel("Profil : \(profiles.active.name)")
                 .accessibilityIdentifier("ntv.navigation.profile")
-            } else {
-                Color.clear.frame(height: 64)
-            }
+                // Mount once; opening the rail only fades the cached avatar.
+                .opacity(expanded ? 1 : 0)
+                .disabled(!expanded)
+                .accessibilityHidden(!expanded)
         }
         .padding(.vertical, 20)
         .frame(width: expanded ? NTVDesign.sidebarExpandedWidth : 80, alignment: .leading)

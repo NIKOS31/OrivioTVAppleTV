@@ -41,7 +41,7 @@ struct NTVWordmark: View {
 }
 
 /// Receives the real metadata artwork URL; never owns an addon or catalog.
-struct NTVPosterArtwork: View {
+struct NTVPosterArtwork: View, Equatable {
     let imageURL: String?
     let title: String
     let width: CGFloat
@@ -129,18 +129,19 @@ struct NTVSidebarLabel: View {
     let expanded: Bool
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: expanded ? 16 : 0) {
             tab.navigationIcon
                 .font(.system(size: 25, weight: .medium))
                 .frame(width: expanded ? 32 : 56)
-            if expanded {
-                Text(NTVBrand.navigationTitle(for: tab))
-                    .font(.system(size: labelSize, weight: focused || selected ? .bold : .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .transition(.opacity)
-                Spacer(minLength: 0)
-            }
+            Text(NTVBrand.navigationTitle(for: tab))
+                .font(.system(size: labelSize, weight: focused || selected ? .bold : .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(width: NTVDesign.sidebarExpandedWidth - 110, alignment: .leading)
+                .opacity(expanded ? 1 : 0)
+                .frame(width: expanded ? nil : 0, alignment: .leading)
+                .clipped()
+            if expanded { Spacer(minLength: 0) }
         }
         .padding(.horizontal, expanded ? 14 : 0)
         .frame(minHeight: 56)

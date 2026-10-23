@@ -2888,6 +2888,8 @@ private struct HomePosterRowContent: View {
                     .padding(.vertical, OrivioSpacing.lg)
                 }
                 .scrollClipDisabled()
+                .modifier(HomeRowDefaultFocus(enabled: resetsRowEntry,
+                    binding: $focusedID, firstID: displayedItems.first?.id))
                 // No .focusSection() here: it blocks the card's long-press hold
                 // menu on tvOS (verified). Full poster rows never get skipped on
                 // vertical moves anyway (there's always a card under any column),
@@ -3054,6 +3056,22 @@ private struct HomePosterRowContent: View {
                 .padding(.trailing, theme.palette.id == NTVDesign.palette.id
                          ? NTVViewport.horizontalInset : OrivioSpacing.huge)
             }
+        }
+    }
+}
+
+private struct HomeRowDefaultFocus: ViewModifier {
+    let enabled: Bool
+    let binding: FocusState<String?>.Binding
+    let firstID: String?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            // Choose at entry, before a scroll can recycle UIKit's remembered candidate.
+            content.defaultFocus(binding, firstID, priority: .userInitiated)
+        } else {
+            content
         }
     }
 }
@@ -3256,11 +3274,8 @@ private struct ContinueWatchingRow: View {
     var onBackAtStart: () -> Void = {}
     var resetsRowEntry = false
 
-    // Tracks the focused card for the Back-to-start jump. Uses the same plain
-    // @FocusState model as HomePosterRow (no .focusScope / .prefersDefaultFocus)
-    // — that focus-scope machinery re-asserted focus within the row and cancelled
-    // the hold-menu long-press on Modern. Entry into the row is handled by the
-    // .focusSection() below, exactly like the poster rows.
+    // Modern keeps its plain focus model to preserve the hold-menu long-press;
+    // only nTV opts into the native first-card preference on row entry.
     @FocusState private var focusedCWCard: String?
     @State private var actualFocusedCWCard: String?
     private static let routerID = "row.continueWatching"
@@ -3364,6 +3379,8 @@ private struct ContinueWatchingRow: View {
                 }, assign: { focusedCWCard = first }, landed: { actualFocusedCWCard == first },
                    focusToken: resetsRowEntry ? nil : { actualFocusedCWCard })
             }
+            .modifier(HomeRowDefaultFocus(enabled: resetsRowEntry,
+                binding: $focusedCWCard, firstID: items.first?.id))
             }   // ScrollViewReader
         }
         // No .focusSection() — matches HomePosterRow. The focus section governs

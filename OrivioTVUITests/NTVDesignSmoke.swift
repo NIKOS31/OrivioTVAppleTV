@@ -816,6 +816,9 @@ final class NTVDesignSmoke: XCTestCase {
         }
         XCTAssertTrue(focused(stream, timeout: 5))
         remote.press(.select)
+        // Freeze AVKit before snapshot queries, as in the standalone Twitch journey.
+        Thread.sleep(forTimeInterval: 2)
+        remote.press(.playPause)
         let video = app.descendants(matching: .any)["ntv.twitch.player.video"].firstMatch
         XCTAssertTrue(video.waitForExistence(timeout: 20))
         // The native AVPlayer controls can consume Back to hide their HUD first.

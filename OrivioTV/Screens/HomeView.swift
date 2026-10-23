@@ -2264,10 +2264,7 @@ struct HomeView: View {
                 && !progressStore.dismissedNextUpShows.contains($0.metaID)
                 && !trakt.droppedShowIDs.contains($0.metaID)
         }
-        // Synthesised Next Up rows already carry their count; stamp the ones
-        // with a real progress row here. Doing it on the row (rather than
-        // passing the map down) keeps `ContinueWatchingCell`'s Equatable
-        // comparison honest — the card re-renders when the number changes.
+        // Synthesised Next Up rows already carry their count; stamp real progress rows too.
         let stamped = active.map { row -> WatchProgress in
             var copy = row
             let status = episodeReleaseStatuses[row.metaID] ?? .none
@@ -2878,7 +2875,6 @@ private struct HomePosterRowContent: View {
                                     else if actualFocusedID == id { actualFocusedID = nil }
                                 }
                             )
-                            .equatable()
                             // Scroll target for the Back-to-start jump.
                             .id(item.id)
                         }
@@ -2923,8 +2919,14 @@ private struct HomePosterRowContent: View {
                 }
                 .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
                 .onChange(of: actualFocusedID) { old, new in
-                    guard let new else { return }
                     let router = ContentFocusRouter.shared
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-ntvRowLayoutFixture") {
+                        NSLog("[FocusTrace] home observed row=%@ item=%@ requested=%@ previousRow=%@",
+                              row.id, new ?? "nil", focusedID ?? "nil", router.lastRowID ?? "nil")
+                    }
+                    #endif
+                    guard let new else { return }
                     let enteredRow = startsRowEntry(previousItem: old)
                     ContentFocusRouter.shared.noteFocused(row: row.id)
                     guard enteredRow, let first = displayedItems.first?.id, first != new else { return }
@@ -3154,23 +3156,13 @@ struct NTVAvailabilityObserver: View {
     }
 }
 
-/// One poster cell, Equatable so a row re-render (every focus step writes the
-/// row's @FocusState) skips the bodies of unchanged cells. == covers the data
-/// and layout inputs; the closures/hero are deliberately ignored — they're
-/// stable for the life of the row, and focus visuals invalidate through
-/// \.isFocused / EnvironmentObject, which bypass the == gate.
-private struct HomePosterCell: View, Equatable {
+/// A reused lazy cell must receive the current row's focus binding and callbacks.
+private struct HomePosterCell: View {
     @EnvironmentObject private var theme: ThemeManager
     let item: MetaItem
     let useLandscape: Bool
     let captionWidth: CGFloat
     /// Settings → Layout → Posters → "Poster labels".
-    ///
-    /// A PROPERTY, not an `@EnvironmentObject`: this cell is `Equatable` and is
-    /// rendered through `.equatable()`, so SwiftUI skips the body whenever `==`
-    /// says nothing changed. An environment read would be invisible to that
-    /// comparison and the row would keep its captions until something else
-    /// forced a rebuild. Included in `==` below for the same reason.
     let showLabel: Bool
     let cornerRadius: CGFloat
     let hero: HeroFocus
@@ -3183,17 +3175,6 @@ private struct HomePosterCell: View, Equatable {
     let focusBinding: FocusState<String?>.Binding
     let onFocusChanged: (String, Bool) -> Void
     @State private var focused = false
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.item == rhs.item
-            && lhs.useLandscape == rhs.useLandscape
-            && lhs.captionWidth == rhs.captionWidth
-            && lhs.showLabel == rhs.showLabel
-            && lhs.cornerRadius == rhs.cornerRadius
-            && lhs.accessibilityPrefix == rhs.accessibilityPrefix
-            && lhs.rowID == rhs.rowID
-            && lhs.tracksMovement == rhs.tracksMovement
-    }
 
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.posterCell)
@@ -3305,16 +3286,7 @@ private struct ContinueWatchingRow: View {
                 // against its unlifted neighbours.
                 LazyHStack(alignment: .top, spacing: OrivioSpacing.xl) {
                     ForEach(items) { progress in
-                      // Equatable cell, same reasoning as HomePosterCell: focus
-                      // steps write the row's @FocusState and re-run this body;
-                      // the == gate skips every unchanged card. Derived values
-                      // (image/subtitle/blur) are computed HERE and passed as
-                      // stored properties so they participate in == — a settings
-                      // toggle that changes them still re-renders. NB: no
-                      // row-level focus glow — LandscapeCard draws its own off
-                      // \.isFocused; a row-level shadow keyed on focusedCWCard
-                      // used to re-render the whole row per move and cancelled
-                      // the hold-menu long-press.
+                      // LandscapeCard owns its focus glow; a row-level shadow cancelled hold menus.
                       ContinueWatchingCell(
                         progress: progress,
                         imageURL: imageFor(progress),
@@ -3333,7 +3305,6 @@ private struct ContinueWatchingRow: View {
                             else if actualFocusedCWCard == id { actualFocusedCWCard = nil }
                         }
                       )
-                      .equatable()
                       .id(progress.id)
                     }
                 }
@@ -3390,13 +3361,8 @@ private struct ContinueWatchingRow: View {
     }
 }
 
-/// One Continue Watching cell, Equatable so row re-renders (focus steps) skip
-/// unchanged card bodies — see HomePosterCell. Derived display values are
-/// stored properties so they participate in ==. The hold-Select menu is applied
-/// with the shared `continueHoldMenu` modifier (built inline from these
-/// closures), NOT a threaded @ViewBuilder — the threaded path failed to present
-/// the menu on the Apple TV card style.
-private struct ContinueWatchingCell: View, Equatable {
+/// Keep focus bindings fresh and build the hold menu inline for the native card style.
+private struct ContinueWatchingCell: View {
     @EnvironmentObject private var theme: ThemeManager
     let progress: WatchProgress
     let imageURL: String?
@@ -3412,14 +3378,6 @@ private struct ContinueWatchingCell: View, Equatable {
     let tracksMovement: Bool
     let onFocusChanged: (String, Bool) -> Void
     @State private var focused = false
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.progress == rhs.progress
-            && lhs.imageURL == rhs.imageURL
-            && lhs.subtitle == rhs.subtitle
-            && lhs.blur == rhs.blur
-            && lhs.tracksMovement == rhs.tracksMovement
-    }
 
     var body: some View {
         let _ = HoldProbe.renderTick("CW \(progress.name)")

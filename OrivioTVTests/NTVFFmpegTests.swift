@@ -21,7 +21,7 @@ final class NTVFFmpegTests: XCTestCase {
         let error = item.error as NSError?
         XCTAssertEqual(item.status, .readyToPlay,
             "Native fixture: \(error?.domain ?? "no error") / \(error?.code ?? 0)")
-        XCTAssertGreaterThan(item.duration.seconds, 60)
+        XCTAssertGreaterThan(item.duration.seconds, 300, "The fixture must outlast the longest remote journey on the CI runner.")
     }
 
     func testRequiredVideoAudioSubtitleAndContainerSupport() {

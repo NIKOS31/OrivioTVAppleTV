@@ -2821,6 +2821,7 @@ private struct HomePosterRowContent: View {
     @FocusState private var focusedID: String?
     @FocusState private var emptyRowFocused: Bool
     @FocusState private var seeAllFocused: Bool
+    @State private var actualFocusedID: String?
 
     private var displayedItems: [MetaItem] {
         visibility.items(keeping: focusedID)
@@ -2870,7 +2871,12 @@ private struct HomePosterRowContent: View {
                                 onPlayManually: onPlayManually,
                                 accessibilityPrefix: accessibilityPrefix,
                                 rowID: row.id, onVerticalMove: onVerticalMove,
-                                focusBinding: $focusedID
+                                tracksMovement: resetsRowEntry,
+                                focusBinding: $focusedID,
+                                onFocusChanged: { id, focused in
+                                    if focused { actualFocusedID = id }
+                                    else if actualFocusedID == id { actualFocusedID = nil }
+                                }
                             )
                             .equatable()
                             // Scroll target for the Back-to-start jump.
@@ -2914,7 +2920,7 @@ private struct HomePosterRowContent: View {
                     registerRowHandler(proxy); onFirstVisibleChange?(first)
                 }
                 .onDisappear { ContentFocusRouter.shared.unregister(row.id) }
-                .onChange(of: focusedID) { old, new in
+                .onChange(of: actualFocusedID) { old, new in
                     guard let new else { return }
                     let router = ContentFocusRouter.shared
                     let enteredRow = startsRowEntry(previousItem: old)
@@ -2926,7 +2932,8 @@ private struct HomePosterRowContent: View {
                     ContentFocusRouter.shared.land(in: row.id, prepare: {
                         // Mounted lazy posters can still sit outside the visible shelf.
                         proxy.scrollTo(first, anchor: .leading)
-                    }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
+                    }, assign: { focusedID = first }, landed: { actualFocusedID == first },
+                       focusToken: resetsRowEntry ? nil : { actualFocusedID })
                 }
                 .onChange(of: emptyRowFocused) { _, focused in
                     if focused { ContentFocusRouter.shared.noteFocused(row: row.id) }
@@ -2943,7 +2950,8 @@ private struct HomePosterRowContent: View {
                     // normalization never runs and Down strands focus here.
                     ContentFocusRouter.shared.land(in: row.id, prepare: {
                         proxy.scrollTo(first, anchor: .leading)
-                    }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
+                    }, assign: { focusedID = first }, landed: { actualFocusedID == first },
+                       focusToken: resetsRowEntry ? nil : { actualFocusedID })
                 }
                 .task(id: focusFirstRequest) {
                     guard let focusFirstRequest,
@@ -2957,7 +2965,8 @@ private struct HomePosterRowContent: View {
                     // router retry may drag focus back to an obsolete row.
                     ContentFocusRouter.shared.land(in: row.id, prepare: {
                         if focusFirstScroll { proxy.scrollTo(first, anchor: .leading) }
-                    }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
+                    }, assign: { focusedID = first }, landed: { actualFocusedID == first },
+                       focusToken: resetsRowEntry ? nil : { actualFocusedID })
                 }
                 .task(id: restoreFocusRequest) {
                     guard let request = restoreFocusRequest else { return }
@@ -2971,7 +2980,8 @@ private struct HomePosterRowContent: View {
                     guard !Task.isCancelled, ContentFocusRouter.shared.consumeEntry(request) else { return }
                     ContentFocusRouter.shared.land(in: row.id, prepare: {
                         proxy.scrollTo(target, anchor: .center)
-                    }, assign: { focusedID = target }, landed: { focusedID == target }, focusToken: { focusedID })
+                    }, assign: { focusedID = target }, landed: { actualFocusedID == target },
+                       focusToken: resetsRowEntry ? nil : { actualFocusedID })
                 }
             }
         }
@@ -3006,8 +3016,8 @@ private struct HomePosterRowContent: View {
             // materialize it on the slower boxes.
             ContentFocusRouter.shared.land(in: row.id, prepare: {
                 proxy.scrollTo(first, anchor: .leading)
-            }, assign: { focusedID = first }, landed: { focusedID == first },
-               focusToken: { focusedID })
+            }, assign: { focusedID = first }, landed: { actualFocusedID == first },
+               focusToken: resetsRowEntry ? nil : { actualFocusedID })
             return true
         }
     }
@@ -3024,7 +3034,8 @@ private struct HomePosterRowContent: View {
         }
         ContentFocusRouter.shared.land(in: row.id, prepare: {
             withAnimation(FusionMotion.focusMove) { proxy.scrollTo(first, anchor: .leading) }
-        }, assign: { focusedID = first }, landed: { focusedID == first }, focusToken: { focusedID })
+        }, assign: { focusedID = first }, landed: { actualFocusedID == first },
+           focusToken: resetsRowEntry ? nil : { actualFocusedID })
     }
 
     @ViewBuilder
@@ -3049,7 +3060,7 @@ private struct HomePosterRowContent: View {
 
 /// Bridge vertical commands that leave focus in the same shelf: a SwiftUI
 /// command handler need not produce UIKit's movementDidFail notification.
-/// Home leaves this handler absent so boundary moves still reach RootView.
+/// Real remote commands cancel old landings; failed boundary moves still notify RootView.
 /// `enabled` is fixed for the lifetime of a row, preserving its view identity.
 private struct CatalogRowMovementObserver: ViewModifier {
     let enabled: Bool
@@ -3150,7 +3161,9 @@ private struct HomePosterCell: View, Equatable {
     let accessibilityPrefix: String
     let rowID: String
     let onVerticalMove: ((MoveCommandDirection) -> Void)?
+    let tracksMovement: Bool
     let focusBinding: FocusState<String?>.Binding
+    let onFocusChanged: (String, Bool) -> Void
     @State private var focused = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -3161,6 +3174,7 @@ private struct HomePosterCell: View, Equatable {
             && lhs.cornerRadius == rhs.cornerRadius
             && lhs.accessibilityPrefix == rhs.accessibilityPrefix
             && lhs.rowID == rhs.rowID
+            && lhs.tracksMovement == rhs.tracksMovement
     }
 
     var body: some View {
@@ -3185,6 +3199,7 @@ private struct HomePosterCell: View, Equatable {
                 }
                 .onFocusChange { isFocused in
                     focused = isFocused
+                    onFocusChanged(item.id, isFocused)
                     if isFocused, PerformanceSettingsStore.shared.settings.showHoldProbe {
                         HoldProbe.log("focus — poster \(item.name)")
                     }
@@ -3207,7 +3222,7 @@ private struct HomePosterCell: View, Equatable {
             .focused(focusBinding, equals: item.id)
             // The focused button receives the command before its enclosing scroll view.
             .modifier(CatalogRowMovementObserver(
-                enabled: onVerticalMove != nil, rowID: rowID, onVerticalMove: onVerticalMove))
+                enabled: tracksMovement || onVerticalMove != nil, rowID: rowID, onVerticalMove: onVerticalMove))
 
             if showLabel {
                 ATVCardCaption(
@@ -3247,6 +3262,7 @@ private struct ContinueWatchingRow: View {
     // the hold-menu long-press on Modern. Entry into the row is handled by the
     // .focusSection() below, exactly like the poster rows.
     @FocusState private var focusedCWCard: String?
+    @State private var actualFocusedCWCard: String?
     private static let routerID = "row.continueWatching"
 
     private func registerRowHandler(_ proxy: ScrollViewProxy) {
@@ -3255,8 +3271,8 @@ private struct ContinueWatchingRow: View {
             guard let first = firstID else { return false }
             ContentFocusRouter.shared.land(in: Self.routerID, prepare: {
                 proxy.scrollTo(first, anchor: .leading)
-            }, assign: { focusedCWCard = first }, landed: { focusedCWCard == first },
-               focusToken: { focusedCWCard })
+            }, assign: { focusedCWCard = first }, landed: { actualFocusedCWCard == first },
+               focusToken: resetsRowEntry ? nil : { actualFocusedCWCard })
             return true
         }
     }
@@ -3295,7 +3311,12 @@ private struct ContinueWatchingRow: View {
                         onDetails: { onDetails(progress) },
                         onPlayManuallyMenu: { onPlayManuallyMenu(progress) },
                         onResumeFromStartMenu: { onResumeFromStartMenu(progress) },
-                        focusBinding: $focusedCWCard
+                        focusBinding: $focusedCWCard,
+                        tracksMovement: resetsRowEntry,
+                        onFocusChanged: { id, focused in
+                            if focused { actualFocusedCWCard = id }
+                            else if actualFocusedCWCard == id { actualFocusedCWCard = nil }
+                        }
                       )
                       .equatable()
                       .id(progress.id)
@@ -3331,7 +3352,7 @@ private struct ContinueWatchingRow: View {
             .onAppear { registerRowHandler(proxy) }
             .onChange(of: items.first?.id) { _, _ in registerRowHandler(proxy) }
             .onDisappear { ContentFocusRouter.shared.unregister(Self.routerID) }
-            .onChange(of: focusedCWCard) { _, new in
+            .onChange(of: actualFocusedCWCard) { _, new in
                 guard let new else { return }
                 let router = ContentFocusRouter.shared
                 let entered = resetsRowEntry && router.lastRowID != nil && router.lastRowID != Self.routerID
@@ -3340,8 +3361,8 @@ private struct ContinueWatchingRow: View {
                 guard entered, let first = items.first?.id, new != first else { return }
                 router.land(in: Self.routerID, prepare: {
                     proxy.scrollTo(first, anchor: .leading)
-                }, assign: { focusedCWCard = first }, landed: { focusedCWCard == first },
-                   focusToken: { focusedCWCard })
+                }, assign: { focusedCWCard = first }, landed: { actualFocusedCWCard == first },
+                   focusToken: resetsRowEntry ? nil : { actualFocusedCWCard })
             }
             }   // ScrollViewReader
         }
@@ -3371,6 +3392,8 @@ private struct ContinueWatchingCell: View, Equatable {
     let onPlayManuallyMenu: () -> Void
     let onResumeFromStartMenu: () -> Void
     let focusBinding: FocusState<String?>.Binding
+    let tracksMovement: Bool
+    let onFocusChanged: (String, Bool) -> Void
     @State private var focused = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -3378,6 +3401,7 @@ private struct ContinueWatchingCell: View, Equatable {
             && lhs.imageURL == rhs.imageURL
             && lhs.subtitle == rhs.subtitle
             && lhs.blur == rhs.blur
+            && lhs.tracksMovement == rhs.tracksMovement
     }
 
     var body: some View {
@@ -3404,6 +3428,7 @@ private struct ContinueWatchingCell: View, Equatable {
                 // focusable Button, not around it.
                 .onFocusChange { isFocused in
                     focused = isFocused
+                    onFocusChanged(progress.id, isFocused)
                     if isFocused, PerformanceSettingsStore.shared.settings.showHoldProbe {
                         HoldProbe.log("focus — CW \(progress.name)")
                     }
@@ -3425,6 +3450,8 @@ private struct ContinueWatchingCell: View, Equatable {
             // ⏯ resumes instantly from a focused CW card too.
             .onPlayPauseCommand { onResume(progress) }
             .focused(focusBinding, equals: progress.id)
+            .modifier(CatalogRowMovementObserver(enabled: tracksMovement,
+                rowID: "row.continueWatching", onVerticalMove: nil))
 
             ATVCardCaption(
                 title: progress.name,

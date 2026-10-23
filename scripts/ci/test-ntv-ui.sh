@@ -85,7 +85,8 @@ fi
 set +e
 # A native startup failure must surface before the longer remote journeys.
 run_test_bundle native-video \
-  -only-testing:OrivioTVTests/NTVFFmpegTests/testBundledFixtureStartsInNativePlayer
+  -only-testing:OrivioTVTests/NTVFFmpegTests/testBundledFixtureStartsInNativePlayer \
+  -only-testing:OrivioTVTests/NTVCoreTests/testRequestedFocusDoesNotCompleteAnUnconfirmedLanding
 if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
   # Surface the known remote-navigation regression before the full UI suite.
   run_test_bundle catalog-focus \
@@ -99,6 +100,12 @@ fi
 if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
   run_test_bundle navigation \
     -only-testing:OrivioTVUITests/NTVDesignSmoke \
+    -skip-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeCatalogRapidMovesYieldToNewNavigation \
+    -skip-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeCategoriesAndMainRailHaveDistinctRemotePaths \
+    -skip-testing:OrivioTVUITests/NTVDesignSmoke/testAdvancedSubtitleOptionsStayNearTransportAndRestoreFocus \
+    -skip-testing:OrivioTVUITests/NTVDesignSmoke/testPlayerTimelineCancelAndCommit \
+    -skip-testing:OrivioTVUITests/NTVDesignSmoke/testRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable \
+    -skip-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable \
     -only-testing:OrivioTVTests/NTVCoreTests \
     -only-testing:OrivioTVTests/NTVPlayerComfortTests \
     -only-testing:OrivioTVTests/NTVAnimeTests \

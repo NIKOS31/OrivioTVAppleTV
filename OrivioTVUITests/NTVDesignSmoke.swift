@@ -431,6 +431,13 @@ final class NTVDesignSmoke: XCTestCase {
             XCTAssertFalse(navigation.hasFocus, "Up/Down inside Home must never expand the side rail or jump to the hero.")
             XCTAssertEqual(destination.frame.minY, settled.minY, accuracy: 2,
                            "Settled focus must not cause a second vertical adjustment.")
+            remote.press(.right)
+            XCTAssertTrue(focused(app.buttons["ntv.home.poster.movie.fixture.row.\(row).item.1"], timeout: 8))
+            Thread.sleep(forTimeInterval: 0.45)
+            XCTAssertTrue(app.buttons["ntv.home.poster.movie.fixture.row.\(row).item.1"].hasFocus,
+                          "A new remote command must cancel the first-poster landing.")
+            remote.press(.left)
+            XCTAssertTrue(focused(destination, timeout: 8))
             remote.press(.up)
             XCTAssertTrue(focused(app.buttons["ntv.home.poster.movie.fixture.row.\(row - 1).item.0"], timeout: 8))
             remote.press(.down)
@@ -1413,20 +1420,12 @@ final class NTVDesignSmoke: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [playbackResumed], timeout: 8), .completed,
                        "Committing the seek must resume playback.")
-        // `position` was resolved inside the scrub overlay. Once that overlay
-        // is replaced by the transport, XCTest can retain its old snapshot.
-        // Re-query the mounted clock on every observation; the native screen
-        // recording must agree with the value this assertion inspects.
-        let resumedPosition = app.staticTexts["ntv.player.position"].firstMatch.label
-        let clockAdvanced = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                let currentPosition = app.staticTexts["ntv.player.position"].firstMatch
-                return currentPosition.exists && currentPosition.label != resumedPosition
-            }, object: nil
-        )
-        let clockResult = XCTWaiter.wait(for: [clockAdvanced], timeout: 15)
-        if clockResult != .completed { capture("ntv-player-clock-after-commit-failure") }
-        XCTAssertEqual(clockResult, .completed,
+        // An AX snapshot can exceed the predicate deadline before its first evaluation.
+        let resumedPosition = transport.staticTexts["ntv.player.position"].firstMatch.label
+        Thread.sleep(forTimeInterval: 2)
+        let advancedPosition = transport.staticTexts["ntv.player.position"].firstMatch.label
+        if advancedPosition == resumedPosition { capture("ntv-player-clock-after-commit-failure") }
+        XCTAssertNotEqual(advancedPosition, resumedPosition,
                        "The real playback clock must advance after committing, not just change the button label.")
         // Close the menu and pause before the geometry snapshots. Playback
         // and its advancing clock were checked above while actually running.

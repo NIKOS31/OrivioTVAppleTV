@@ -491,6 +491,25 @@ final class NTVCoreTests: XCTestCase {
         XCTAssertEqual(assignments, 1, "Right after arriving in a row must not be followed by a pull back to its start.")
         XCTAssertNotEqual(router.interactionGeneration, restoreGeneration)
     }
+
+    @MainActor
+    func testRequestedFocusDoesNotCompleteAnUnconfirmedLanding() async throws {
+        let router = ContentFocusRouter()
+        var requested: String?, observed: String? = "native-candidate", assignments = 0
+        let retried = expectation(description: "The real target still has not received focus")
+        router.land(in: "home-row", assign: {
+            requested = "first"
+            assignments += 1
+            if assignments == 3 { retried.fulfill() }
+        }, landed: { observed == "first" })
+        XCTAssertEqual(requested, "first")
+        await fulfillment(of: [retried], timeout: 2)
+        XCTAssertEqual(observed, "native-candidate")
+        observed = "first"
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(router.isLanding(in: "home-row"))
+        XCTAssertEqual(assignments, 3)
+    }
     @MainActor
     func testTheDepartingRowsMoveNotificationCannotCancelTheNewRowsLanding() async throws {
         let router = ContentFocusRouter()

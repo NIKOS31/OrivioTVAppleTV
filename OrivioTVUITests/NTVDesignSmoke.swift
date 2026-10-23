@@ -317,10 +317,14 @@ final class NTVDesignSmoke: XCTestCase {
         Thread.sleep(forTimeInterval: 1.2)
         XCTAssertTrue(play.exists, "Already-open controls must survive the seek commit and remain visible for their dwell.")
         XCTAssertEqual(play.label, "Pause", "The quick skip and its dwell must run during playback.")
+        // Screenshot capture can exceed the idle dwell; freeze only this evidence step.
+        remote.press(.playPause)
+        XCTAssertEqual(play.label, "Lecture")
         capture("ntv-player-quick-skip-visible-controls")
         remote.press(.menu)
         Thread.sleep(forTimeInterval: 0.4)
         XCTAssertFalse(play.exists)
+        remote.press(.playPause)
         remote.press(.right)
         Thread.sleep(forTimeInterval: 0.15)
         XCTAssertFalse(app.staticTexts["ntv.player.position"].firstMatch.exists,
@@ -330,6 +334,7 @@ final class NTVDesignSmoke: XCTestCase {
         capture("ntv-player-discreet-quick-skip")
         remote.press(.up)
         XCTAssertTrue(play.waitForExistence(timeout: 8), "Explicit Up must still open all transport controls after the skip.")
+        XCTAssertEqual(play.label, "Pause", "The bare-video skip must also preserve playback.")
     }
 
     func testPlaybackOptionsOpenNearTransportAndKeepSubtitleTabReachable() {

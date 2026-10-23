@@ -53,12 +53,15 @@ test_options=(
   CODE_SIGN_ENTITLEMENTS="$task_root/Config/NTV-CI-Simulator.entitlements" \
   ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES
 )
+test_action=test
 run_test_bundle() {
   result_bundle="$results/$1.xcresult"
   shift
-  xcodebuild test "${test_options[@]}" -resultBundlePath "$result_bundle" "$@" \
+  xcodebuild "$test_action" "${test_options[@]}" -resultBundlePath "$result_bundle" "$@" \
     2>&1 | tee -a "$output/logs/ntv-ui.log"
   test_pipeline=("${PIPESTATUS[@]}")
+  # Later selections must reuse the same tested binaries, without another build.
+  test_action=test-without-building
 }
 if [[ ${1:-} == --feedback-smoke ]]; then
   # The manual-device package still has ui_tests_executed:false. These are
@@ -88,6 +91,11 @@ run_test_bundle native-video \
   -only-testing:OrivioTVTests/NTVFFmpegTests/testBundledFixtureStartsInNativePlayer \
   -only-testing:OrivioTVTests/NTVCoreTests/testRequestedFocusDoesNotCompleteAnUnconfirmedLanding
 if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
+  run_test_bundle system-and-twitch \
+    -only-testing:OrivioTVUITests/NTVDesignSmoke/testSystemPrimaryIconRefreshIsPerformedOnceForLegacyInstalls \
+    -only-testing:OrivioTVUITests/NTVDesignSmoke/testTwitchConnectionAndFollowedChannelsFromSettings
+fi
+if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
   # Surface the known remote-navigation regression before the full UI suite.
   run_test_bundle catalog-focus \
     -only-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeCatalogRapidMovesYieldToNewNavigation \
@@ -100,6 +108,8 @@ fi
 if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
   run_test_bundle navigation \
     -only-testing:OrivioTVUITests/NTVDesignSmoke \
+    -skip-testing:OrivioTVUITests/NTVDesignSmoke/testSystemPrimaryIconRefreshIsPerformedOnceForLegacyInstalls \
+    -skip-testing:OrivioTVUITests/NTVDesignSmoke/testTwitchConnectionAndFollowedChannelsFromSettings \
     -skip-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeCatalogRapidMovesYieldToNewNavigation \
     -skip-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeCategoriesAndMainRailHaveDistinctRemotePaths \
     -skip-testing:OrivioTVUITests/NTVDesignSmoke/testAdvancedSubtitleOptionsStayNearTransportAndRestoreFocus \

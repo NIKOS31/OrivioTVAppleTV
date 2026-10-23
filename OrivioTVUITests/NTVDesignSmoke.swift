@@ -451,35 +451,33 @@ final class NTVDesignSmoke: XCTestCase {
         executionTimeAllowance = 240
         let app = XCUIApplication()
         let remote = XCUIRemote.shared
-        let monitor = addUIInterruptionMonitor(withDescription: "Acknowledge the genuine icon refresh notification") { alert in
-            let message = alert.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "icon for")).firstMatch
-            guard message.exists, alert.buttons["OK"].exists else { return false }
-            remote.press(.select)
-            return true
-        }
-        defer { removeUIInterruptionMonitor(monitor); app.terminate() }
+        let system = XCUIApplication(bundleIdentifier: "com.apple.PineBoard")
+        defer { app.terminate() }
         let baseArguments = ["-homeDemo", "-ntvTopMenuDemo", "-ntvIconRegistrationProbe"]
         let probe = app.descendants(matching: .any)["ntv.systemIcon.registration"].firstMatch
-        func waitForPrimary(notificationsBeforeSnapshot: Int = 1) -> String {
-            // UIKit presents one genuine notification for each icon request.
-            // A snapshot between the two notifications can block accessibility
-            // before the interruption monitor gets another remote interaction.
-            for _ in 0..<notificationsBeforeSnapshot {
-                Thread.sleep(forTimeInterval: 1)
+        func waitForPrimary(notificationsBeforeSnapshot: Int? = nil) -> String {
+            // Expected system dialogs must be handled before querying the covered app.
+            for _ in 0..<(notificationsBeforeSnapshot ?? 2) {
+                let confirmation = system.buttons["OK"]
+                guard confirmation.waitForExistence(timeout: notificationsBeforeSnapshot == nil ? 2 : 15) else {
+                    if notificationsBeforeSnapshot != nil {
+                        capture("ntv-icon-confirmation-missing")
+                        XCTFail("Each icon request must present its genuine system confirmation.")
+                        return "missing-confirmation"
+                    }
+                    break
+                }
+                XCTAssertTrue(system.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "icon for")).firstMatch.exists)
                 remote.press(.select)
+                // The next identical dialog can arrive only after dismissal finishes.
+                Thread.sleep(forTimeInterval: 2)
             }
             guard probe.waitForExistence(timeout: 15) else { return "missing" }
             let deadline = Date().addingTimeInterval(35)
-            var confirmations = 0
             while Date() < deadline {
                 let value = probe.value as? String ?? ""
                 if value.hasPrefix("applied#primary#") || value.hasPrefix("failed#") ||
                     value.hasPrefix("unavailable#") || value.hasPrefix("mismatch#") { return value }
-                if value.hasPrefix("applying#"), confirmations < 4 {
-                    Thread.sleep(forTimeInterval: 1)
-                    remote.press(.select)
-                    confirmations += 1
-                }
                 Thread.sleep(forTimeInterval: 0.2)
             }
             return probe.value as? String ?? "timed-out"
@@ -504,7 +502,7 @@ final class NTVDesignSmoke: XCTestCase {
         app.terminate()
         app.launchArguments = baseArguments
         app.launch()
-        XCTAssertEqual(waitForPrimary(), "applied#primary#0",
+        XCTAssertEqual(waitForPrimary(notificationsBeforeSnapshot: 0), "applied#primary#0",
                        "A completed refresh must not repeat notifications at the next launch.")
     }
 
@@ -900,17 +898,20 @@ final class NTVDesignSmoke: XCTestCase {
         }
         XCTAssertTrue(focused(stream, timeout: 5), "A followed channel must be selectable with the remote.")
         remote.press(.select)
+        // Pause AVKit before querying its continuously updating accessibility tree.
+        Thread.sleep(forTimeInterval: 2)
+        remote.press(.playPause)
         let video = app.descendants(matching: .any)["ntv.twitch.player.video"].firstMatch
         XCTAssertTrue(video.waitForExistence(timeout: 20), "Selecting a channel opens the native player inside nTV.")
         XCTAssertFalse(app.staticTexts["ntv.twitch.player.error"].exists)
         capture("ntv-twitch-native-player")
-        remote.press(.select)
         // AVKit exposes transport-bar custom menus as collection cells,
         // including their accessibility label and remote focus behaviour.
         let quality = app.cells["Qualité"].firstMatch
         XCTAssertTrue(quality.waitForExistence(timeout: 5),
                       "The native transport bar must expose the quality menu.\n" + app.debugDescription)
         capture("ntv-twitch-quality-control")
+        remote.press(.playPause)
         for _ in 0..<3 {
             remote.press(.menu)
             if app.buttons["ntv.twitch.followed"].waitForExistence(timeout: 3) { break }

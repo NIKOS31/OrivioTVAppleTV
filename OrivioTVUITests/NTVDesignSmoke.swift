@@ -307,11 +307,16 @@ final class NTVDesignSmoke: XCTestCase {
             remote.press(.up)
             if play.waitForExistence(timeout: 2) { break }
         }
+        // Stabilize startup snapshots paused, then exercise the live skip and dwell.
+        remote.press(.playPause)
         XCTAssertTrue(play.exists)
         XCTAssertTrue(focused(play, timeout: 8))
+        XCTAssertEqual(play.label, "Lecture")
+        remote.press(.playPause)
         remote.press(.right)
         Thread.sleep(forTimeInterval: 1.2)
         XCTAssertTrue(play.exists, "Already-open controls must survive the seek commit and remain visible for their dwell.")
+        XCTAssertEqual(play.label, "Pause", "The quick skip and its dwell must run during playback.")
         capture("ntv-player-quick-skip-visible-controls")
         remote.press(.menu)
         Thread.sleep(forTimeInterval: 0.4)
@@ -341,7 +346,10 @@ final class NTVDesignSmoke: XCTestCase {
             remote.press(.up)
             if play.waitForExistence(timeout: 2) { break }
         }
+        // Pause before snapshotting so the five-second idle timer cannot close the controls.
+        remote.press(.playPause)
         XCTAssertTrue(focused(play, timeout: 8))
+        XCTAssertEqual(play.label, "Lecture")
         remote.press(.down)
         let info = app.buttons["ntv.player.info"]
         XCTAssertTrue(focused(info, timeout: 8))

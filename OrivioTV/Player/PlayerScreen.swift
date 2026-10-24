@@ -123,7 +123,7 @@ struct PlayerScreen: View {
                 },
                 onBegan: { viewModel.remoteTouchBegan() },
                 onMoved: { dx, dy in viewModel.remoteTouchMoved(dx: dx, dy: dy) },
-                onEnded: { dx, dy in viewModel.remoteTouchEnded(dx: dx, dy: dy) }
+                onEnded: { dx, dy, cancelled in viewModel.remoteTouchEnded(dx: dx, dy: dy, cancelled: cancelled) }
             )
             .allowsHitTesting(false)
             .frame(width: 0, height: 0)
@@ -328,7 +328,7 @@ struct PlayerScreen: View {
         .onChange(of: usesNTVControls) { _, enabled in viewModel.usesNTVControls = enabled }
         .onPlayPauseCommand {
             if viewModel.isScrubbing {
-                viewModel.commitScrub()
+                viewModel.commitScrub(resume: true)
             // ⏯ MEANS PLAY/PAUSE, ALWAYS.
             //
             // It used to ALSO skip the intro while the pill was up over bare
@@ -547,7 +547,7 @@ struct PlayerScreen: View {
             } else {
                 // Infuse: a click on the bare picture is play / pause. The
                 // transport comes up with it and hides again on its own.
-                viewModel.togglePlayPause()
+                if !usesNTVControls { viewModel.togglePlayPause() }
                 viewModel.showControls()
             }
         } label: {

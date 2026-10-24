@@ -303,6 +303,9 @@ struct GlassSidebar: View {
 
                 Button(action: onProfileTap) {
                     GlassProfileHeader(profile: profiles.active)
+                        // Hidden profile content cannot widen the collapsed rail's focus frames.
+                        .frame(width: expanded ? nil : 48, alignment: .leading)
+                        .clipped()
                         .padding(.leading, Self.ntvFocusGuard)
                 }
                 .buttonStyle(PlainCardButtonStyle())

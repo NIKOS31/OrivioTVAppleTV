@@ -1,22 +1,15 @@
 import Foundation
 
-/// Slow drags remain precise; faster swipes move a little farther. This only
-/// moves the preview target: playback seeks once on confirmation, not per sample.
+/// Nuvio PlayerSurfaceGestures.kt (GPL-3.0): a fixed anchor and a linear
+/// 60/90/120-second range per viewport; the gesture commits on release.
 enum NTVScrubMotion {
-    static func delta(points: Double, elapsed: Double, duration: Double) -> Double {
-        guard points.isFinite, elapsed.isFinite, elapsed > 0, duration.isFinite, duration > 0 else { return 0 }
-        let interval = min(max(elapsed, 1.0 / 120), 1)
-        let speed = abs(points) / interval
-        let gain = min(max((speed - 120) / 600, 0), 1)
-        let proposed = min(max(points, -2048), 2048) * 0.03 * (1 + 2 * gain * gain)
-        // UIKit can project a small remote gesture into many window points.
-        // A single sample must never jump across a large part of the film.
-        return min(max(proposed, -5), 5)
-    }
-
-    static func position(proposed: Double, anchor: Double, duration: Double) -> Double {
-        guard proposed.isFinite, anchor.isFinite, duration.isFinite, duration > 0 else { return 0 }
-        let budget = min(90, duration * 0.1)
-        return max(0, min(duration - 1, min(max(proposed, anchor - budget), anchor + budget)))
+    static func position(points: Double, viewportWidth: Double, anchor: Double, duration: Double) -> Double {
+        guard points.isFinite, viewportWidth.isFinite, viewportWidth > 0,
+              anchor.isFinite, duration.isFinite, duration > 0 else { return 0 }
+        let range: Double = duration >= 3600 ? 120 : duration >= 1800 ? 90 : 60
+        // A remote can project beyond the window; cap one contact to one viewport.
+        let fraction = min(max(points / viewportWidth, -1), 1)
+        let end = max(duration - 1, 0)
+        return max(0, min(min(max(anchor, 0), end) + fraction * range, end))
     }
 }

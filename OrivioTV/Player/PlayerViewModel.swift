@@ -6432,14 +6432,12 @@ final class PlayerViewModel: ObservableObject {
     /// the close gesture, so the close reads the state at touch-down.
     private var infoTabsAtTouchStart = false
     private var ntvTouchStartedOnTimeline = false
-    private var scrubMotionTime: TimeInterval = 0
     private var ntvTouchAnchor: Double?
 
     func remoteTouchBegan() {
         debug("touch ↓")
         infoTabsAtTouchStart = infoFocusOnTabs
         ntvTouchStartedOnTimeline = usesNTVControls && controlsFocusOnBar
-        scrubMotionTime = ProcessInfo.processInfo.systemUptime
         ntvTouchAnchor = scrubValue
         scrubLastDx = 0            // translation resets per gesture
         panInFlight = true
@@ -6470,10 +6468,14 @@ final class PlayerViewModel: ObservableObject {
             break
         case .undecided:
             let adx = abs(dx), ady = abs(dy)
-            if usesNTVControls, ntvTouchStartedOnTimeline,
-               (overlay == .controls || overlay == .pauseInfo), adx > 22, adx > ady * 1.4 {
-                beginScrub(pausing: true)
-                if isScrubbing { touchIntent = .scrub }
+            if usesNTVControls,
+               overlay == .none || (ntvTouchStartedOnTimeline && (overlay == .controls || overlay == .pauseInfo)),
+               adx > 22, adx > ady * 1.4 {
+                beginScrub()
+                if isScrubbing {
+                    touchIntent = .scrub
+                    scrubPanPoints(dx: dx)
+                }
                 return
             }
             // Skip Intro first. While the pill is up it is the one thing the
@@ -6559,13 +6561,19 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    func remoteTouchEnded(dx: CGFloat, dy: CGFloat) {
+    func remoteTouchEnded(dx: CGFloat, dy: CGFloat, cancelled: Bool) {
+        let dragged = touchIntent == .scrub && scrubDragInContact
+        if usesNTVControls, dragged, !cancelled, isScrubbing { scrubPanPoints(dx: dx) }
         ntvTouchStartedOnTimeline = false
         ntvTouchAnchor = nil
+        if usesNTVControls { gcTouchDown = false }
         panInFlight = false
         scrubDragInContact = false   // the contact is over; presses now hop
         if touchIntent == .scrub { endScrubGesture() }
         touchIntent = .undecided
+        if usesNTVControls, dragged, isScrubbing {
+            if cancelled { cancelScrub() } else { commitScrub() }
+        }
     }
 
     /// Pan scrub via INCREMENTAL deltas so it composes cleanly with the wheel
@@ -6581,18 +6589,13 @@ final class PlayerViewModel: ObservableObject {
     private func scrubPanPoints(dx: CGFloat) {
         let inc = dx - scrubLastDx
         scrubLastDx = dx
-        let now = ProcessInfo.processInfo.systemUptime
-        let elapsed = now - scrubMotionTime
-        scrubMotionTime = now
         guard let target = scrubValue, !wheelEngaged else { return }
-        let delta = usesNTVControls
-            ? NTVScrubMotion.delta(points: Double(inc), elapsed: elapsed, duration: duration)
-            : Double(inc) * secondsPerPoint
-        let proposed = target + delta
         if usesNTVControls, ntvTouchAnchor == nil { ntvTouchAnchor = target }
         let clamped = usesNTVControls
-            ? NTVScrubMotion.position(proposed: proposed, anchor: ntvTouchAnchor ?? target, duration: duration)
-            : max(0, min(proposed, duration > 0 ? duration - 1 : proposed))
+            ? NTVScrubMotion.position(points: Double(dx), viewportWidth: Double(UIScreen.main.bounds.width),
+                                     anchor: ntvTouchAnchor ?? target, duration: duration)
+            : max(0, min(target + Double(inc) * secondsPerPoint,
+                         duration > 0 ? duration - 1 : target + Double(inc) * secondsPerPoint))
         scrubDragInContact = true
         publishScrub(clamped)
         // Moved out of the dense window — fetch the next one once you stop.
@@ -6620,13 +6623,14 @@ final class PlayerViewModel: ObservableObject {
         guard acceptsTransportInput else { return }
         guard overlay == .none || overlay == .controls || overlay == .pauseInfo else { return }
         var start = position
+        let wasPlaying = isPlaying || (usesNTVControls && !pauseIntent && hasStartedPlayback)
         if pausing, isPlaying {
             enginePause("bar click opening a scrub")
             markPaused()
             saveProgress()
             resumeAfterScrub = true
         } else {
-            resumeAfterScrub = false
+            resumeAfterScrub = usesNTVControls && wasPlaying
         }
         // ADOPT A GESTURE ALREADY IN FLIGHT. `touchIntent` is decided when the
         // touch BEGINS, so a finger already on the pad when the bar is clicked
@@ -6681,25 +6685,15 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    func commitScrub() {
+    func commitScrub(resume: Bool? = nil) {
         guard let target = scrubValue else { return }
-        PlayerProbe.event("scrub", String(format: "COMMIT -> %.1f (plays)", target))
+        let autoPlay = resume ?? (!usesNTVControls || resumeAfterScrub || isPlaying)
+        PlayerProbe.event("scrub", String(format: "COMMIT -> %.1f (plays=%@)", target, autoPlay.probe))
         resumeAfterScrub = false
-        // COMMITTING A SCRUB ALWAYS PLAYS.
-        //
-        // It used to resume only when the scrub had done the pausing itself, so
-        // scrubbing from an already-paused player landed on the frame and
-        // waited for a separate play press — the "I have to press play after
-        // scrubbing" half of the report that survived every other fix.
-        //
-        // It is also not what the bar's own grammar says: click pauses, the
-        // picture scrubs, the next click seeks AND RESUMES. Having deliberately
-        // paused HERE is not a request to be left paused somewhere else — and
-        // `cancelScrub` is still the way to change your mind, restoring exactly
-        // the state the scrub found.
-        pauseIntent = false
-        pausedAt = nil
-        seek(to: target, autoPlay: true)
+        // Nuvio retains pause/play intent across a seek; the physical Play key explicitly resumes.
+        pauseIntent = !autoPlay
+        pausedAt = autoPlay ? nil : (pausedAt ?? Date())
+        seek(to: target, autoPlay: autoPlay)
         clock.scrubTarget = nil
         scrubValue = nil
         isScrubbing = false
@@ -6715,7 +6709,7 @@ final class PlayerViewModel: ObservableObject {
         // "Never mind" puts playback back the way the click found it.
         if resumeAfterScrub {
             resumeAfterScrub = false
-            resumePlayback()
+            if !isPlaying { resumePlayback() }
         } else if !isPlaying {
             // Cancelling a scrub the viewer started while ALREADY paused has
             // nothing to resume — and dropping the HUD then left a frozen frame
@@ -6811,6 +6805,7 @@ final class PlayerViewModel: ObservableObject {
     /// GameController absolute finger position ((0,0) = not touching).
     private func wheelSample(x: Double, y: Double) {
         guard isScrubbing else { resetWheel(); return }
+        guard !usesNTVControls else { return }
         let radius = (x * x + y * y).squareRoot()
 
         // Finger LIFTED → leave fine-tune; normal pan owns the scrub again.
@@ -7007,6 +7002,7 @@ final class PlayerViewModel: ObservableObject {
             debug("tap:show")
             showControls()
         case .controls, .pauseInfo:
+            if usesNTVControls { hideControls(); return }
             // Infuse: a touch with the transport up swaps the elapsed /
             // remaining figures for the wall-clock start and end times (and
             // back). The next time the controls come up they read elapsed /

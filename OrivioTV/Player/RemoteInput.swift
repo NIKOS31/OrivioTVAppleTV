@@ -15,7 +15,7 @@ struct RemoteTouchCatcher: UIViewRepresentable {
     let isActive: () -> Bool
     let onBegan: () -> Void
     let onMoved: (CGFloat, CGFloat) -> Void   // translation tx, ty (points)
-    let onEnded: (CGFloat, CGFloat) -> Void    // final translation tx, ty
+    let onEnded: (CGFloat, CGFloat, Bool) -> Void    // final translation tx, ty, cancelled
 
     func makeUIView(context: Context) -> TouchHostView {
         let view = TouchHostView()
@@ -38,11 +38,11 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
     private var isActive: () -> Bool = { false }
     private var onBegan: () -> Void = {}
     private var onMoved: (CGFloat, CGFloat) -> Void = { _, _ in }
-    private var onEnded: (CGFloat, CGFloat) -> Void = { _, _ in }
+    private var onEnded: (CGFloat, CGFloat, Bool) -> Void = { _, _, _ in }
 
     func configure(isActive: @escaping () -> Bool, onBegan: @escaping () -> Void,
                    onMoved: @escaping (CGFloat, CGFloat) -> Void,
-                   onEnded: @escaping (CGFloat, CGFloat) -> Void) {
+                   onEnded: @escaping (CGFloat, CGFloat, Bool) -> Void) {
         self.isActive = isActive
         self.onBegan = onBegan
         self.onMoved = onMoved
@@ -97,8 +97,9 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
             PlayerProbe.event("remote", String(format: "pad UP %@ (%+.0f,%+.0f)",
                                                state == .ended ? "ended" : "cancelled",
                                                t.x, t.y))
+            let cancelled = state != .ended || !acceptedPan || !isActive()
             acceptedPan = false
-            onEnded(t.x, t.y)
+            onEnded(t.x, t.y, cancelled)
         default: break
         }
     }

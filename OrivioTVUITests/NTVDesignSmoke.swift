@@ -1472,13 +1472,15 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.right)
         remote.press(.select)
         XCTAssertTrue(trackPicker.waitForExistence(timeout: 5))
+        XCTAssertEqual(play.label, "Lecture", "A seek started while paused must remain paused, as in Nuvio.")
+        remote.press(.playPause)
         // Seeking completes asynchronously. Verify the resulting transport
         // state after completion rather than during the demuxer transition.
         let playbackResumed = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == %@", "Pause"), object: play
         )
         XCTAssertEqual(XCTWaiter.wait(for: [playbackResumed], timeout: 8), .completed,
-                       "Committing the seek must resume playback.")
+                       "The explicit Play command after a paused seek must resume playback.")
         // An AX snapshot can exceed the predicate deadline before its first evaluation.
         let resumedPosition = transport.staticTexts["ntv.player.position"].firstMatch.label
         Thread.sleep(forTimeInterval: 2)

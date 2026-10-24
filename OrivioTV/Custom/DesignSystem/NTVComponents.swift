@@ -141,6 +141,7 @@ struct NTVSidebarLabel: View {
                 .opacity(expanded ? 1 : 0)
                 .frame(width: expanded ? nil : 0, alignment: .leading)
                 .clipped()
+                .accessibilityHidden(!expanded)
             if expanded { Spacer(minLength: 0) }
         }
         .padding(.horizontal, expanded ? 14 : 0)

@@ -863,8 +863,11 @@ final class NTVCoreTests: XCTestCase {
         let input = TouchHostView()
         var active = false
         var begins = 0, moves = 0, ends = 0
+        var cancellations: [Bool] = []
         input.configure(isActive: { active }, onBegan: { begins += 1 },
-                        onMoved: { _, _ in moves += 1 }, onEnded: { _, _ in ends += 1 })
+                        onMoved: { _, _ in moves += 1 }, onEnded: { _, _, cancelled in
+                            ends += 1; cancellations.append(cancelled)
+                        })
         input.receivePan(state: .began, translation: .zero)
         active = true
         input.receivePan(state: .changed, translation: .init(x: 500, y: 0))
@@ -872,10 +875,13 @@ final class NTVCoreTests: XCTestCase {
         XCTAssertEqual(begins, 0)
         XCTAssertEqual(moves, 0, "A gesture rejected at touch-down cannot move the playhead later")
         XCTAssertEqual(ends, 1, "The existing unconditional end still clears transport state")
+        XCTAssertEqual(cancellations, [true], "A rejected contact cannot commit a seek on release.")
         input.receivePan(state: .began, translation: .zero)
         input.receivePan(state: .changed, translation: .init(x: 20, y: 0))
         XCTAssertEqual(begins, 1)
         XCTAssertEqual(moves, 1, "The next accepted contact remains usable")
+        input.receivePan(state: .ended, translation: .init(x: 20, y: 0))
+        XCTAssertEqual(cancellations, [true, false], "A normal release must remain distinguishable from cancellation.")
     }
 
     @MainActor
@@ -883,8 +889,11 @@ final class NTVCoreTests: XCTestCase {
         let input = TouchHostView()
         var active = true
         var moves = 0, ends = 0
+        var cancellations: [Bool] = []
         input.configure(isActive: { active }, onBegan: {},
-                        onMoved: { _, _ in moves += 1 }, onEnded: { _, _ in ends += 1 })
+                        onMoved: { _, _ in moves += 1 }, onEnded: { _, _, cancelled in
+                            ends += 1; cancellations.append(cancelled)
+                        })
         input.receivePan(state: .began, translation: .zero)
         input.receivePan(state: .changed, translation: .init(x: 20, y: 0))
         active = false
@@ -892,6 +901,7 @@ final class NTVCoreTests: XCTestCase {
         input.receivePan(state: .cancelled, translation: .init(x: 80, y: 0))
         XCTAssertEqual(moves, 1)
         XCTAssertEqual(ends, 1, "An interrupted contact must clear pan-in-flight flags even while input is blocked")
+        XCTAssertEqual(cancellations, [true], "Interruption must cancel rather than seek behind an open panel.")
         active = true
         input.receivePan(state: .changed, translation: .init(x: 150, y: 0))
         XCTAssertEqual(moves, 1, "A late sample after cancellation is not a new contact")
@@ -920,31 +930,36 @@ final class NTVCoreTests: XCTestCase {
     }
 
     func testTouchScrubSlowDragKeepsScenePrecision() {
-        let delta = NTVScrubMotion.delta(points: 2, elapsed: 0.1, duration: 7200)
-        XCTAssertGreaterThan(delta, 0)
-        XCTAssertLessThanOrEqual(delta, 10, "A small slow drag must remain within a few seconds of the scene.")
+        let target = NTVScrubMotion.position(points: 2, viewportWidth: 1920, anchor: 120, duration: 7200)
+        XCTAssertEqual(target, 120.125, accuracy: 0.001, "Small movement must preserve scene precision.")
     }
 
     func testTouchScrubFastSwipeRemainsBounded() {
-        let slow = NTVScrubMotion.delta(points: 100, elapsed: 1, duration: 7200)
-        let fast = NTVScrubMotion.delta(points: 100, elapsed: 0.1, duration: 7200)
-        XCTAssertGreaterThan(fast, slow, "A faster swipe can move farther while remaining controllable.")
-        XCTAssertLessThanOrEqual(fast, 5, "One projected remote sample cannot jump across the film.")
-        XCTAssertEqual(NTVScrubMotion.delta(points: -100, elapsed: 0.1, duration: 7200), -fast)
+        // Nuvio maps displacement, not velocity, to the same target from a fixed anchor.
+        for (duration, range) in [(1200.0, 60.0), (1800, 90), (3600, 120)] {
+            let half = NTVScrubMotion.position(points: 960, viewportWidth: 1920, anchor: 300, duration: duration)
+            XCTAssertEqual(half, 300 + range / 2, accuracy: 0.001)
+            XCTAssertEqual(NTVScrubMotion.position(points: -960, viewportWidth: 1920, anchor: 300, duration: duration),
+                           300 - range / 2, accuracy: 0.001)
+            XCTAssertEqual(NTVScrubMotion.position(points: 960, viewportWidth: 1920, anchor: 300, duration: duration), half,
+                           "Repeated samples at the same finger position cannot accumulate another jump.")
+        }
     }
 
     func testOneTouchGestureCannotTraverseTheWholeFilm() {
-        XCTAssertEqual(NTVScrubMotion.position(proposed: 7000, anchor: 120, duration: 7200), 210)
-        XCTAssertEqual(NTVScrubMotion.position(proposed: -7000, anchor: 120, duration: 7200), 30)
-        XCTAssertEqual(NTVScrubMotion.position(proposed: 90, anchor: 10, duration: 90), 19)
-        XCTAssertEqual(NTVScrubMotion.position(proposed: .nan, anchor: 10, duration: 90), 0)
+        XCTAssertEqual(NTVScrubMotion.position(points: 7000, viewportWidth: 1920, anchor: 120, duration: 7200), 240)
+        XCTAssertEqual(NTVScrubMotion.position(points: -7000, viewportWidth: 1920, anchor: 120, duration: 7200), 0)
+        XCTAssertEqual(NTVScrubMotion.position(points: 1920, viewportWidth: 1920, anchor: 60, duration: 90), 89)
+        XCTAssertEqual(NTVScrubMotion.position(points: -1920, viewportWidth: 1920, anchor: 10, duration: 90), 0)
     }
 
     func testTouchScrubRejectsUnknownDurationAndInvalidSamples() {
-        XCTAssertEqual(NTVScrubMotion.delta(points: 100, elapsed: 0.1, duration: 0), 0)
-        XCTAssertEqual(NTVScrubMotion.delta(points: .nan, elapsed: 0.1, duration: 7200), 0)
-        XCTAssertEqual(NTVScrubMotion.delta(points: 100, elapsed: 0, duration: 7200), 0)
-        XCTAssertTrue(NTVScrubMotion.delta(points: .greatestFiniteMagnitude, elapsed: 0.001, duration: .greatestFiniteMagnitude).isFinite)
+        XCTAssertEqual(NTVScrubMotion.position(points: 100, viewportWidth: 1920, anchor: 10, duration: 0), 0)
+        XCTAssertEqual(NTVScrubMotion.position(points: .nan, viewportWidth: 1920, anchor: 10, duration: 7200), 0)
+        XCTAssertEqual(NTVScrubMotion.position(points: 100, viewportWidth: 0, anchor: 10, duration: 7200), 0)
+        XCTAssertEqual(NTVScrubMotion.position(points: 100, viewportWidth: 1920, anchor: .nan, duration: 7200), 0)
+        XCTAssertTrue(NTVScrubMotion.position(points: .greatestFiniteMagnitude, viewportWidth: .leastNonzeroMagnitude,
+                                             anchor: 10, duration: .greatestFiniteMagnitude).isFinite)
     }
 
     func testOldProfileDecodePreservesSettings() throws {

@@ -43,7 +43,7 @@ struct NTVPlayerControls: View {
                 .buttonStyle(PlainCardButtonStyle())
                 .focused($focus, equals: .timeline)
                 .accessibilityLabel("Parcourir la vidéo")
-                .accessibilityHint("Glissez sur le pavé tactile pour parcourir la vidéo. Un geste rapide avance plus loin. OK pour reprendre, Retour pour annuler.")
+                .accessibilityHint("Glissez pour prévisualiser, puis relâchez pour valider. Gauche ou droite pour ajuster, OK pour confirmer, Retour pour annuler.")
                 .accessibilityIdentifier("ntv.player.timeline")
                 .onMoveCommand { direction in
                     guard !viewModel.moveSuppressed else { return }

@@ -304,7 +304,7 @@ struct NTVPlayerSeekOverlay: View {
                 NTVPlayerTimeValue(viewModel: viewModel, clock: viewModel.clock, totalDuration: true)
             }
             .frame(height: 42)
-            Text(scrubbing ? "Glisser pour parcourir   ·   OK Reprendre   ·   Retour Annuler" : "← → Sauts rapides")
+            Text(scrubbing ? "Glisser pour parcourir   ·   Relâcher ou OK Valider   ·   Retour Annuler" : "← → Sauts rapides")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
                 .frame(height: 52, alignment: .leading)

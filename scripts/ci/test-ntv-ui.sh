@@ -98,6 +98,12 @@ if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
     -only-testing:OrivioTVUITests/NTVDesignSmoke/testSystemPrimaryIconRefreshIsPerformedOnceForLegacyInstalls \
     -only-testing:OrivioTVUITests/NTVDesignSmoke/testTwitchConnectionAndFollowedChannelsFromSettings
 fi
+transport_export_status=0
+if [[ -d "$results/transport-system.xcresult" ]]; then
+  xcrun xcresulttool export attachments --path "$results/transport-system.xcresult" \
+    --output-path "$output/results/transport-screenshots" > "$output/logs/transport-screenshots.log" 2>&1
+  transport_export_status=$?
+fi
 if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
   # Surface the known remote-navigation regression before the full UI suite.
   run_test_bundle catalog-focus \
@@ -124,6 +130,8 @@ if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
     -skip-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable \
     -only-testing:OrivioTVTests/NTVCoreTests \
     -only-testing:OrivioTVTests/NTVPlayerComfortTests \
+    -only-testing:OrivioTVTests/NTVSeekCompletionTests \
+    -only-testing:OrivioTVTests/NTVPlayerDiagnosticsTests \
     -only-testing:OrivioTVTests/NTVAnimeTests \
     -only-testing:OrivioTVTests/NTVTwitchTests \
     -only-testing:OrivioTVTests/NTVSecurityTests \
@@ -158,7 +166,7 @@ else
 fi
 
 # Exporting diagnostics must never turn a failed test into a green job.
-for status in "${test_pipeline[@]}" "$export_status"; do
+for status in "${test_pipeline[@]}" "$export_status" "$transport_export_status"; do
   if ((status != 0)); then exit "$status"; fi
 done
 

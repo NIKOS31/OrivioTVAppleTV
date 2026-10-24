@@ -126,6 +126,7 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(spotlight.waitForExistence(timeout: 20))
         let screen = app.windows.firstMatch.frame
         let heading = app.staticTexts["ntv.home.heading"]
+        capture("ntv-seanime-home-cover-and-summary")
         XCTAssertGreaterThan(heading.frame.minX, home.frame.maxX + 8)
         let headingBefore = heading.frame
         let feature = app.descendants(matching: .any)["ntv.seanime.home.feature"].firstMatch
@@ -133,7 +134,6 @@ final class NTVDesignSmoke: XCTestCase {
         let canvas = app.descendants(matching: .any)["ntv.canvas"].firstMatch
         XCTAssertTrue(canvas.exists)
         let canvasBefore = canvas.frame
-        capture("ntv-seanime-home-cover-and-summary")
         let remote = XCUIRemote.shared
         for _ in 0..<4 {
             if home.hasFocus { break }
@@ -1558,11 +1558,10 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["ntv.home.spotlight"].waitForExistence(timeout: 80),
                       "Home should display the explicit XPERIENCE native-UI fixture.")
+        capture("ntv-home-real-catalogs")
         XCTAssertGreaterThan(app.staticTexts["ntv.home.heading"].frame.minX,
                              app.buttons["ntv.navigation.0"].frame.maxX + 8,
                              "Home must leave horizontal space beside the collapsed left menu.")
-        capture("ntv-home-real-catalogs")
-
         let remote = XCUIRemote.shared
         let home = app.buttons["ntv.navigation.0"]
         let homePoster = app.buttons.matching(NSPredicate(

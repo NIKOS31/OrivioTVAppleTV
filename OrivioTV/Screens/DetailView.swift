@@ -477,6 +477,12 @@ struct DetailView: View {
                         episodesSection
                     }
                     castSection
+                    if isNTV, hasDetailFacts {
+                        VStack(alignment: .leading, spacing: OrivioSpacing.md) {
+                            RowHeader(title: viewModel.meta.isSeries ? "Détails de la série" : "Détails du film")
+                            detailFacts.padding(.horizontal, OrivioSpacing.huge)
+                        }
+                    }
                     collectionSection
                     moreLikeThisSection
                     companiesSection
@@ -889,50 +895,21 @@ struct DetailView: View {
     @ViewBuilder
     private var header: some View {
         if isNTV {
-            VStack(alignment: .leading, spacing: 32) {
-            HStack(alignment: .center, spacing: 56) {
-                ZStack {
-                    NTVDesign.raised
-                    if let poster = viewModel.openingPoster {
-                        RemoteImage(url: poster, maxDimension: 396)
-                    } else {
-                        Image(systemName: "film")
-                            .font(.system(size: 42, weight: .medium))
-                            .foregroundStyle(NTVDesign.textSecondary)
-                    }
-                }
-                .frame(width: 264, height: 396)
-                .clipShape(RoundedRectangle(cornerRadius: NTVDesign.cardRadius))
-                .overlay { RoundedRectangle(cornerRadius: NTVDesign.cardRadius)
-                    .strokeBorder(.white.opacity(0.14), lineWidth: 1) }
-                .accessibilityHidden(true)
-                headerInformation
-                    .frame(maxWidth: 1040, alignment: .leading)
-                Spacer(minLength: 0)
-            }
-            .frame(minHeight: 500, alignment: .center)
-            if hasDetailFacts {
-                detailFacts
-                    .padding(24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(NTVDesign.surface.opacity(0.8), in: RoundedRectangle(cornerRadius: 20))
-                    .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(.white.opacity(0.08), lineWidth: 1) }
-            }
-            }
-            .padding(.horizontal, NTVViewport.horizontalInset)
-            .padding(.top, 48)
-            .padding(.bottom, 16)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("ntv.seanime.detail.header")
+            headerInformation
+                .padding(.horizontal, NTVViewport.horizontalInset)
+                .padding(.top, 140)
+                .padding(.bottom, 24)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("ntv.seanime.detail.header")
         } else {
             headerInformation.padding(.leading, OrivioSpacing.huge)
         }
     }
 
     private var headerInformation: some View {
-        VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
+        VStack(alignment: .leading, spacing: isNTV ? 16 : OrivioSpacing.lg) {
             // Push the logo down so it sits lower on the backdrop (APK layout).
-            Spacer().frame(height: isNTV ? 0 : 260)
+            if !isNTV { Spacer().frame(height: 260) }
 
             // Both title treatments occupy the same reserved slot, bottom-aligned.
             // They did not before: a logo got a fixed 180pt box while the text
@@ -963,10 +940,12 @@ struct DetailView: View {
             // Meta line 1: Genres • Full release date • IMDb.
             MetaLine(segments: primaryMetaSegments, imdbRating: viewModel.meta.imdbRating)
                 .frame(height: isNTV ? 34 : nil, alignment: .leading)
+                .frame(maxWidth: isNTV ? 1040 : nil, alignment: .leading)
             // Meta line 2: Runtime • Country • Language.
             if isNTV || !secondaryMetaSegments.isEmpty {
                 MetaLine(segments: secondaryMetaSegments)
                     .frame(height: isNTV ? 30 : nil, alignment: .leading)
+                    .frame(maxWidth: isNTV ? 1040 : nil, alignment: .leading)
             }
 
             if isNTV || viewModel.meta.description != nil {
@@ -983,6 +962,7 @@ struct DetailView: View {
                     }
                 )
                 .frame(height: isNTV ? 120 : nil, alignment: .topLeading)
+                .frame(maxWidth: isNTV ? 1000 : nil, alignment: .leading)
                 .disabled(!teaserArmed)
             }
 
@@ -1071,7 +1051,7 @@ struct DetailView: View {
                         .focused($actionFocus, equals: .startOver)
                     }
                 } else {
-                    PlayActionButton(title: isNTV ? (playButtonTitle == "Resume" ? "Reprendre" : "Regarder") : playButtonTitle) {
+                    PlayActionButton(title: playButtonTitle) {
                         onPlay(viewModel.meta, nil)
                     }
                     .focused($actionFocus, equals: .play)
@@ -1083,7 +1063,7 @@ struct DetailView: View {
                         infuse: { onPlayInInfuse(viewModel.meta, nil) }
                     )
                     // Movie with saved progress → offer a fresh start.
-                    if playButtonTitle == "Resume" {
+                    if movieInProgress {
                         CircleIconButton(systemName: "gobackward", active: false) {
                             onPlayFromBeginning(viewModel.meta, nil)
                         }
@@ -1264,12 +1244,13 @@ struct DetailView: View {
         return segments
     }
 
-    private var playButtonTitle: String {
+    private var movieInProgress: Bool {
         let key = ProgressStore.key(metaID: viewModel.meta.id, video: nil)
-        if let progress = progressStore.progress(for: key), progress.fraction > 0.02 {
-            return "Reprendre"
-        }
-        return "Lecture"
+        return (progressStore.progress(for: key)?.fraction ?? 0) > 0.02
+    }
+
+    private var playButtonTitle: String {
+        movieInProgress ? "Reprendre" : (isNTV ? "Regarder" : "Lecture")
     }
 
     /// Whether this episode has saved progress worth restarting from 0.

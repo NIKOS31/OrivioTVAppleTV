@@ -132,13 +132,13 @@ struct NTVSpotlightAction: View {
     var body: some View {
         HStack(spacing: 24) {
             HStack(spacing: 0) {
-                if count > 1 { stepTarget(-1) }
+                stepTarget(-1)
                 Button(action: onSelect) { Label("Voir la fiche", systemImage: "info.circle") }
                     .buttonStyle(NTVActionButtonStyle(prominent: true, capsule: true))
                     .focused(focus)
                     .accessibilityLabel("Voir la fiche de " + title)
                     .accessibilityValue(count > 1 ? "Proposition \(index + 1) sur \(count)" : "")
-                    .accessibilityHint("Gauche ou droite pour changer de proposition. Retour pour le menu.")
+                    .accessibilityHint("Gauche ou droite pour changer de proposition. À la première, gauche ouvre le menu. Retour ouvre aussi le menu.")
                     .accessibilityIdentifier(identifier)
                     .onExitCommand(perform: onBack)
                 if count > 1 { stepTarget(1) }
@@ -160,6 +160,10 @@ struct NTVSpotlightAction: View {
             guard let direction else { return }
             let fromAction = focus.wrappedValue || leftFocusAt.map { Date().timeIntervalSince($0) < 0.35 } == true
             step = nil
+            if fromAction, direction < 0, index == 0 {
+                onBack()
+                return
+            }
             if fromAction { onStep(direction) }
             focus.wrappedValue = true
         }

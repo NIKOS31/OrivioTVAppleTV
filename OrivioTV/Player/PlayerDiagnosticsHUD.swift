@@ -18,28 +18,21 @@ struct PlayerDiagnosticsHUD: View {
             // debugging session, an unlabeled stat block over the letterbox
             // bar reads as rendering garbage, not as a tool ("top black
             // border was showing some garbage").
-            Text("DIAGNOSTICS · Settings → Performance")
+            Text("DIAGNOSTICS · Réglages → Performance")
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.45))
                 .padding(.bottom, 2)
-            row("Engine", snapshot.engine)
-            if snapshot.fps > 0 {
-                row("FPS", String(format: "%.1f", snapshot.fps),
-                    bad: snapshot.fps < 22)
-            }
-            row("Dropped", "\(snapshot.droppedFrames)", bad: snapshot.droppedFrames > 30)
-            if abs(snapshot.avSyncDiff) > 0.001 {
-                row("A/V drift", String(format: "%+.0f ms", snapshot.avSyncDiff * 1000),
-                    bad: abs(snapshot.avSyncDiff) > 0.12)
-            }
-            if snapshot.bitrateMbps > 0 {
-                row("Bitrate", String(format: "%.1f Mbps", snapshot.bitrateMbps))
-            }
-            row("Buffer", String(format: "%.0f s ahead", snapshot.bufferSeconds),
-                bad: snapshot.bufferSeconds < 2)
-            if snapshot.downloadedMB > 0 {
-                row("Read", String(format: "%.0f MB", snapshot.downloadedMB))
-            }
+            row("Moteur", snapshot.engine)
+            row("Cadence", snapshot.fps.map { String(format: "%.1f i/s", $0) } ?? "Indisponible",
+                bad: snapshot.fps.map { $0 < 22 } ?? false)
+            row("Images perdues", snapshot.droppedFrames.map { String($0) } ?? "Indisponible",
+                bad: snapshot.droppedFrames.map { $0 > 30 } ?? false)
+            row("Décalage A/V", snapshot.avSyncDiff.map { String(format: "%+.0f ms", $0 * 1000) } ?? "Indisponible",
+                bad: snapshot.avSyncDiff.map { abs($0) > 0.12 } ?? false)
+            row("Débit", snapshot.bitrateMbps.map { String(format: "%.1f Mbit/s", $0) } ?? "Indisponible")
+            row("Tampon", snapshot.bufferSeconds.map { String(format: "%.0f s d’avance", $0) } ?? "Indisponible",
+                bad: snapshot.bufferSeconds.map { $0 < 2 } ?? false)
+            row("Données lues", snapshot.downloadedMB.map { String(format: "%.0f Mo", $0) } ?? "Indisponible")
         }
         .font(.system(size: 20, weight: .semibold, design: .monospaced))
         .padding(.horizontal, 18)
@@ -59,6 +52,6 @@ struct PlayerDiagnosticsHUD: View {
             Spacer(minLength: 0)
             Text(value).foregroundStyle(bad ? Color.red : .white)
         }
-        .frame(width: 320)
+        .frame(width: 420)
     }
 }

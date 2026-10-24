@@ -36,7 +36,7 @@ final class NTVResumeSuggestion: ObservableObject {
         ProfileScopedDefaults.key("ntv.resume.\(name).v2", profile)
     }
     func mode(profile: Int) -> NTVResumePromptMode {
-        NTVResumePromptMode(rawValue: defaults.string(forKey: key("mode", profile)) ?? "") ?? .interrupted
+        NTVResumePromptMode(rawValue: defaults.string(forKey: key("mode", profile)) ?? "") ?? .latest
     }
     func setMode(_ mode: NTVResumePromptMode, profile: Int) {
         guard profile > 0, self.mode(profile: profile) != mode else { return }

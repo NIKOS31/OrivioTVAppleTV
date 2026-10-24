@@ -6,7 +6,6 @@ struct NTVResumePrompt: View {
     @EnvironmentObject private var progress: ProgressStore
     @EnvironmentObject private var profiles: ProfileStore
     let onResume: (WatchProgress) -> Void
-    let includes: (WatchProgress) -> Bool
     @State private var candidate: WatchProgress?
     @State private var candidateProfile: Int?
     @State private var ready = false
@@ -46,13 +45,13 @@ struct NTVResumePrompt: View {
         guard ready, progress.scopedProfileID == profile else { return }
         if let candidate {
             // Clearing history or finishing a title also dismisses its offer.
-            if !includes(candidate) || !items.values.contains(where: { $0.id == candidate.id && $0.fraction < 0.95 }) {
+            if !items.values.contains(where: { $0.id == candidate.id && $0.fraction < 0.95 }) {
                 self.candidate = nil
             }
             return
         }
         guard !NTVResumeSuggestion.shared.hasPresented(profile: profile) else { return }
-        if let suggestion = NTVResumeSuggestion.shared.claim(profile: profile, items: items.values.filter(includes)) {
+        if let suggestion = NTVResumeSuggestion.shared.claim(profile: profile, items: Array(items.values)) {
             candidateProfile = profile
             candidate = suggestion
         }
@@ -82,10 +81,7 @@ private struct NTVResumePromptCard: View {
                             .foregroundStyle(NTVDesign.textSecondary)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-                Button(action: onPlay) {
-                    Image(systemName: "play.fill").frame(width: 32)
-                }
-                .buttonStyle(NTVActionButtonStyle())
+                CircleIconButton(systemName: "play.fill", action: onPlay)
                 .focused($focused, equals: .play)
                 .accessibilityLabel("Reprendre \(item.name)")
                 .accessibilityIdentifier("ntv.resume.prompt.play")

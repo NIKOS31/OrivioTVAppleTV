@@ -95,6 +95,7 @@ open class KSPlayerLayer: NSObject {
 
     public var player: MediaPlayerProtocol {
         didSet {
+            seekGeneration &+= 1
             KSLog("player is \(player)")
             state = .initialized
             runOnMainThread { [weak self] in
@@ -136,6 +137,7 @@ open class KSPlayerLayer: NSObject {
 
     public private(set) var url: URL {
         didSet {
+            seekGeneration &+= 1
             let firstPlayerType: MediaPlayerProtocol.Type
             if isWirelessRouteActive {
                 // airplay的话，默认使用KSAVPlayer
@@ -219,6 +221,8 @@ open class KSPlayerLayer: NSObject {
     private var isWirelessRouteActive = false
     private var bufferedCount = 0
     private var shouldSeekTo: TimeInterval = 0
+    // Pause, replacement and newer seeks retire pending seek callbacks.
+    private var seekGeneration: UInt64 = 0
     private var startTime: TimeInterval = 0
     public init(url: URL, isAutoPlay: Bool = KSOptions.isAutoPlay, options: KSOptions, delegate: KSPlayerLayerDelegate? = nil) {
         self.url = url
@@ -314,10 +318,15 @@ open class KSPlayerLayer: NSObject {
         }
         if player.isReadyToPlay {
             if state == .playedToTheEnd {
-                player.seek(time: 0) { [weak self] finished in
-                    guard let self else { return }
-                    if finished {
-                        self.player.play()
+                seekGeneration &+= 1
+                let generation = seekGeneration
+                player.seek(time: 0) { [weak self, weak seekingPlayer = player] finished in
+                    runOnMainThread {
+                        guard let self, let seekingPlayer,
+                              self.seekGeneration == generation, self.player === seekingPlayer else { return }
+                        if finished {
+                            seekingPlayer.play()
+                        }
                     }
                 }
             } else {
@@ -333,6 +342,7 @@ open class KSPlayerLayer: NSObject {
     }
 
     open func pause() {
+        seekGeneration &+= 1
         // ORIVIO PATCH: symbolicating the call stack costs milliseconds; only
         // pay it when a trail sink is installed (`-pipProbe`).
         if let trail = KSOptions.hostTrail {
@@ -349,6 +359,7 @@ open class KSPlayerLayer: NSObject {
     }
 
     public func stop() {
+        seekGeneration &+= 1
         KSLog("stop Player")
         state = .initialized
         player.shutdown()
@@ -365,14 +376,21 @@ open class KSPlayerLayer: NSObject {
     open func seek(time: TimeInterval, autoPlay: Bool, completion: @escaping ((Bool) -> Void)) {
         if time.isInfinite || time.isNaN {
             completion(false)
+            return
         }
+        seekGeneration &+= 1
+        let generation = seekGeneration
         if player.isReadyToPlay, player.seekable {
-            player.seek(time: time) { [weak self] finished in
-                guard let self else { return }
-                if finished, autoPlay {
-                    self.play()
+            player.seek(time: time) { [weak self, weak seekingPlayer = player] finished in
+                runOnMainThread {
+                    // Reporting an obsolete seek as failure can trigger the host's autoplay recovery.
+                    guard let self, let seekingPlayer,
+                          self.seekGeneration == generation, self.player === seekingPlayer else { return }
+                    if finished, autoPlay {
+                        self.play()
+                    }
+                    completion(finished)
                 }
-                completion(finished)
             }
         } else {
             isAutoPlay = autoPlay
@@ -475,6 +493,7 @@ extension KSPlayerLayer: MediaPlayerDelegate {
     }
 
     public func finish(player: some MediaPlayerProtocol, error: Error?) {
+        if self.player === player { seekGeneration &+= 1 }
         if let error {
             if type(of: player) != KSOptions.secondPlayerType, let secondPlayerType = KSOptions.secondPlayerType {
                 self.player = secondPlayerType.init(url: url, options: options)

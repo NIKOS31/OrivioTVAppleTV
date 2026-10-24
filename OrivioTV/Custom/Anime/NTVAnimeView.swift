@@ -358,6 +358,7 @@ struct NTVAnimeView: View {
                         onSelect: { open(entry, focusID: "featured") }, onStep: stepFeatured,
                         onBack: onBackAtRoot)
                         .padding(.bottom, 24)
+                        .focusSection()
                     HStack(alignment: .firstTextBaseline) {
                         Text("À suivre cette saison").font(.system(size: 30, weight: .semibold))
                         Spacer()

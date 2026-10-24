@@ -1109,14 +1109,29 @@ final class NTVPlayerComfortTests: XCTestCase {
         try body(defaults)
     }
     private let now = Date(timeIntervalSince1970: 1_750_000_000)
-    private func row(_ id: String = "film") -> WatchProgress {
+    private func row(_ id: String = "film", position: Double = 180) -> WatchProgress {
         WatchProgress(id: id, metaID: id, type: "movie", name: "Film", poster: nil,
             background: nil, logo: nil, season: nil, episode: nil, episodeTitle: nil,
-            positionSeconds: 180, durationSeconds: 3600, updatedAt: now)
+            positionSeconds: position, durationSeconds: 3600, updatedAt: now)
+    }
+    func testDefaultLatestOffersProgressAfterAVoluntaryExitOnlyOncePerProcess() throws {
+        try withDefaults { defaults in
+            let live = NTVResumeSuggestion(defaults: defaults), session = UUID()
+            XCTAssertEqual(live.mode(profile: 1), .latest)
+            live.record(id: "film", profile: 1, session: session, position: 180, duration: 3600, now: now)
+            live.clear(profile: 1, session: session)
+            XCTAssertNil(defaults.data(forKey: ProfileScopedDefaults.key("ntv.resume.marker.v2", 1)))
+            let relaunched = NTVResumeSuggestion(defaults: defaults)
+            XCTAssertNil(relaunched.claim(profile: 1, items: [row("finished", position: 3590)], now: now))
+            XCTAssertEqual(relaunched.claim(profile: 1, items: [row()], now: now)?.id, "film")
+            XCTAssertNil(relaunched.claim(profile: 1, items: [row()], now: now))
+            XCTAssertEqual(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row()], now: now)?.id, "film")
+        }
     }
     func testOnlyANewProcessCanClaimAnInterruptedPlayback() throws {
         try withDefaults { defaults in
             let live = NTVResumeSuggestion(defaults: defaults)
+            live.setMode(.interrupted, profile: 1)
             live.record(id: "film", profile: 1, session: UUID(), position: 180, duration: 3600, now: now)
             XCTAssertNil(live.claim(profile: 1, items: [row()], now: now), "Returning from PiP or changing tabs is not a crash.")
             let relaunched = NTVResumeSuggestion(defaults: defaults)
@@ -1128,6 +1143,7 @@ final class NTVPlayerComfortTests: XCTestCase {
     func testVoluntaryExitDoesNotSuggestResumeOnRelaunch() throws {
         try withDefaults { defaults in
             let live = NTVResumeSuggestion(defaults: defaults), session = UUID()
+            live.setMode(.interrupted, profile: 1)
             live.record(id: "film", profile: 1, session: session, position: 180, duration: 3600, now: now)
             live.clear(profile: 1, session: session)
             XCTAssertNil(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row()], now: now))
@@ -1136,6 +1152,7 @@ final class NTVPlayerComfortTests: XCTestCase {
     func testLateTeardownCannotClearTheReplacementPlayersMarker() throws {
         try withDefaults { defaults in
             let live = NTVResumeSuggestion(defaults: defaults), old = UUID(), replacement = UUID()
+            live.setMode(.interrupted, profile: 1)
             live.record(id: "old", profile: 1, session: old, position: 180, duration: 3600, now: now)
             live.record(id: "new", profile: 1, session: replacement, position: 180, duration: 3600, now: now)
             live.clear(profile: 1, session: old)
@@ -1147,6 +1164,7 @@ final class NTVPlayerComfortTests: XCTestCase {
             let live = NTVResumeSuggestion(defaults: defaults)
             live.setMode(.off, profile: 1)
             live.setMode(.latest, profile: 2)
+            live.setMode(.interrupted, profile: 3)
             live.record(id: "film", profile: 1, session: UUID(), position: 180, duration: 3600, now: now)
             let relaunched = NTVResumeSuggestion(defaults: defaults)
             XCTAssertEqual(relaunched.mode(profile: 1), .off)
@@ -1154,13 +1172,15 @@ final class NTVPlayerComfortTests: XCTestCase {
             XCTAssertEqual(relaunched.mode(profile: 3), .interrupted)
             XCTAssertNil(relaunched.claim(profile: 1, items: [row()], now: now))
             XCTAssertNotNil(relaunched.claim(profile: 2, items: [row()], now: now))
+            XCTAssertNil(relaunched.claim(profile: 3, items: [row()], now: now))
             relaunched.purge(profile: 2)
-            XCTAssertEqual(relaunched.mode(profile: 2), .interrupted)
+            XCTAssertEqual(relaunched.mode(profile: 2), .latest)
         }
     }
     func testFinishedContentCannotBecomeAnInterruptionOffer() throws {
         try withDefaults { defaults in
             let live = NTVResumeSuggestion(defaults: defaults), session = UUID()
+            live.setMode(.interrupted, profile: 1)
             live.record(id: "film", profile: 1, session: session, position: 180, duration: 3600, now: now)
             live.record(id: "film", profile: 1, session: session, position: 3590, duration: 3600, now: now)
             XCTAssertNil(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row()], now: now))
@@ -1169,16 +1189,19 @@ final class NTVPlayerComfortTests: XCTestCase {
     func testInterruptionMarkersHaveNoRawIdentifiersAndDoNotInvalidateHomeOnSave() throws {
         try withDefaults { defaults in
             let live = NTVResumeSuggestion(defaults: defaults), id = "https://example.invalid/private/fixture"
+            live.setMode(.interrupted, profile: 1)
+            let initialRevision = live.revision
             live.record(id: id, profile: 1, session: UUID(), position: 180, duration: 3600, now: now)
             let data = try XCTUnwrap(defaults.data(forKey: ProfileScopedDefaults.key("ntv.resume.marker.v2", 1)))
             XCTAssertFalse(String(decoding: data, as: UTF8.self).contains(id))
-            XCTAssertEqual(live.revision, 0, "Periodic progress must not invalidate the Home prompt subtree.")
+            XCTAssertEqual(live.revision, initialRevision, "Periodic progress must not invalidate the Home prompt subtree.")
             XCTAssertEqual(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row(id)], now: now)?.id, id)
         }
     }
     func testExpiredOrFinishedSavedRowsDoNotConsumeAnUnrelatedOffer() throws {
         try withDefaults { defaults in
             let live = NTVResumeSuggestion(defaults: defaults)
+            live.setMode(.interrupted, profile: 1)
             live.record(id: "film", profile: 1, session: UUID(), position: 180, duration: 3600, now: now.addingTimeInterval(-31 * 86400))
             XCTAssertNil(NTVResumeSuggestion(defaults: defaults).claim(profile: 1, items: [row()], now: now))
             defaults.set(Data(repeating: 0, count: 1025), forKey: ProfileScopedDefaults.key("ntv.resume.marker.v2", 1))

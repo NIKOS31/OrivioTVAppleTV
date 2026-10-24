@@ -1201,9 +1201,10 @@ struct InfusePickerScreen: View {
                             .id(item.id)
                         }
                     }
-                    .padding(.vertical, 20)
+                    .padding(.horizontal, anchoredToTransport ? 20 : 0)
+                    .padding(.vertical, anchoredToTransport ? 24 : 20)
                 }
-                .scrollClipDisabled()
+                .scrollClipDisabled(!anchoredToTransport)
             }
             .frame(width: anchoredToTransport ? rowWidth + 48 : nil,
                    height: anchoredToTransport ? min(420, CGFloat(max(rows.count, 1)) * 100 + 104) : nil)

@@ -29,7 +29,7 @@ struct PlaybackSettingsDetail: View {
     private var settingsScaffold: some View {
         DetailScaffold(title: SettingsCategory.playback.title, subtitle: SettingsCategory.playback.subtitle) {
             SettingsGroupCard(title: "Reprise au lancement", subtitle: "Suggestion sur l’accueil, pour ce profil uniquement. La rangée Continuer à regarder reste disponible.") {
-                OrivioDropdown(title: "Carte de reprise", subtitle: "Une sortie volontaire du lecteur ne compte pas comme une interruption", icon: "play.rectangle",
+                OrivioDropdown(title: "Carte de reprise", subtitle: "Choisissez le dernier contenu en cours ou seulement les lectures interrompues", icon: "play.rectangle",
                     selection: resumeSuggestions.mode(profile: profiles.activeProfileID).rawValue,
                     options: NTVResumePromptMode.allCases.map { OrivioDropdownOption($0.rawValue, $0.title) }) {
                         if let mode = NTVResumePromptMode(rawValue: $0) {

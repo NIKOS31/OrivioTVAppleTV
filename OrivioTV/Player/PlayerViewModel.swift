@@ -1246,7 +1246,7 @@ final class PlayerViewModel: ObservableObject {
     /// What the switching cover should SAY. It was hard-coded to "Loading next
     /// episode" in the view, so a source failover — by far the commonest reason
     /// it appears — told the viewer an episode was changing when it was not.
-    @Published private(set) var switchingSourceLabel = "Switching source…"
+    @Published private(set) var switchingSourceLabel = "Changement de source…"
 
     /// The transport may act on the remote right now: a stream is up, it is
     /// not being replaced, and the player is not on its way out.
@@ -2078,7 +2078,8 @@ final class PlayerViewModel: ObservableObject {
                 self.buffered = ahead
                 if abs(self.clock.buffered - ahead) >= 1.0 { self.clock.buffered = ahead }
                 self.publishBufferHealth()
-                self.isPlaying = engine.isPlaying
+                let playing = engine.isPlaying
+                if self.isPlaying != playing { self.isPlaying = playing }
                 self.refreshPictureInPictureSource()
                 // BUFFERING IS ABOUT PROGRESS, NOT ABOUT TICKS.
                 //
@@ -3836,12 +3837,8 @@ final class PlayerViewModel: ObservableObject {
                       self.scrubThumbnails.count, self.fineThumbnails.count)
                 self.thumbnailTask?.cancel()
                 self.thumbnailer?.cancel()
-                self.fineTask?.cancel()
-                self.fineThumbnailer?.cancel()
-                self.fineDebounce?.cancel()
                 self.scrubThumbnails = []
-                self.fineThumbnails = []
-                self.fineCenter = nil
+                self.clearFineThumbnails()
                 // Allow a later scrub to restart the coarse pass from scratch.
                 self.thumbnailsStarted = false
             }
@@ -4858,12 +4855,7 @@ final class PlayerViewModel: ObservableObject {
         // The fine-tune set too: `thumbnail(at:)` prefers it and a stale
         // `fineCenter` blocks regeneration, so a reload mid-fine-tune kept the
         // previous source's frames.
-        fineDebounce?.cancel()
-        fineDebounce = nil
-        fineThumbnailer?.cancel()
-        fineThumbnailer = nil
-        fineThumbnails = []
-        fineCenter = nil
+        clearFineThumbnails()
         cacheTask?.cancel()
         addonSubtitlesFetched = false
         subtitleAutoApplied = false
@@ -9038,7 +9030,7 @@ final class PlayerViewModel: ObservableObject {
         // `pendingResume` is cleared the moment it lands, so neither alone
         // survives a failure in that window — hence the session floor.
         let resumeAt = max(max(position, pendingResume ?? 0), sessionResumeFloor)
-        switchingSourceLabel = "Trying another source…"
+        switchingSourceLabel = "Recherche d’une autre source…"
         isSwitchingSource = true
         Task { [weak self] in
             guard let self else { return }
@@ -9287,7 +9279,7 @@ final class PlayerViewModel: ObservableObject {
             overlay = .none
             // The viewer picked this one themselves — say so, rather than
             // implying the player gave up on something.
-            switchingSourceLabel = "Switching source…"
+            switchingSourceLabel = "Changement de source…"
             isSwitchingSource = true
             let resumeAt = resumeTargetForReload
             let generation = loadGeneration
@@ -9766,7 +9758,7 @@ final class PlayerViewModel: ObservableObject {
         autoAdvanceArmed = false
         advanceInFlight = true
         if !autoAdvance { consecutiveAutoAdvances = 0 }
-        switchingSourceLabel = "Loading next episode…"
+        switchingSourceLabel = "Chargement de l’épisode suivant…"
         isSwitchingSource = true
         playedToEndHandled = false
         if finishingCurrent, let leaving = currentVideo {
@@ -10773,25 +10765,41 @@ final class PlayerViewModel: ObservableObject {
 
     struct DiagnosticsSnapshot {
         var engine = "—"
-        var fps = 0.0
-        var droppedFrames: UInt32 = 0
-        var avSyncDiff = 0.0
-        var bitrateMbps = 0.0
-        var bufferSeconds = 0.0
-        var downloadedMB = 0.0
+        var fps: Double?
+        var droppedFrames: UInt32?
+        var avSyncDiff: Double?
+        var bitrateMbps: Double?
+        var bufferSeconds: Double?
+        var downloadedMB: Double?
+
+        init(engine: String = "—", bufferedUpTo: Double? = nil, position: Double = 0) {
+            self.engine = engine
+            if let bufferedUpTo, bufferedUpTo.isFinite, position.isFinite {
+                bufferSeconds = max(bufferedUpTo - position, 0)
+            }
+        }
     }
 
     /// One coherent read of the live playback internals, for the HUD.
     func diagnosticsSnapshot() -> DiagnosticsSnapshot {
-        var snap = DiagnosticsSnapshot()
-        snap.engine = usingVLC ? "VLC" : engineName + (usingDVDirect ? " · direct DV" : "")
-        snap.bufferSeconds = max(buffered - position, 0)
-        if let info = playerLayer?.player.dynamicInfo {
-            snap.fps = info.displayFPS
+        // Alternate engines must never inherit a retired KSPlayer's counters.
+        if usingDVDirect {
+            return DiagnosticsSnapshot(engine: "Dolby Vision direct", bufferedUpTo: buffered, position: position)
+        }
+        if usingVLC { return DiagnosticsSnapshot(engine: "VLC") }
+        guard let player = playerLayer?.player else { return DiagnosticsSnapshot() }
+        var snap = DiagnosticsSnapshot(engine: engineName == "Native" ? "Natif" : engineName,
+                                       bufferedUpTo: player.playableTime, position: position)
+        if let info = player.dynamicInfo {
+            let fps = info.displayFPS
+            snap.fps = fps.isFinite && fps > 0 ? fps : nil
             snap.droppedFrames = info.droppedVideoFrameCount
-            snap.avSyncDiff = info.audioVideoSyncDiff
-            snap.bitrateMbps = Double(info.videoBitrate) / 1_000_000
-            snap.downloadedMB = Double(info.bytesRead) / 1_048_576
+            let drift = info.audioVideoSyncDiff
+            snap.avSyncDiff = drift.isFinite ? drift : nil
+            let bitrate = info.videoBitrate
+            snap.bitrateMbps = bitrate > 0 ? Double(bitrate) / 1_000_000 : nil
+            let bytesRead = info.bytesRead
+            snap.downloadedMB = bytesRead >= 0 ? Double(bytesRead) / 1_048_576 : nil
         }
         return snap
     }
@@ -10897,7 +10905,9 @@ final class PlayerViewModel: ObservableObject {
         fineCenter = target
         fineCenterWasFineTuning = fineTuning
         fineTask?.cancel()
+        fineTask = nil
         fineThumbnailer?.cancel()
+        fineThumbnailer = nil
         var lower = max(target - half, 0)
         var upper = min(target + half, max(duration - 1, 0))
         // CLAMP TO FILM THAT IS ACTUALLY ON DISK.
@@ -10931,9 +10941,11 @@ final class PlayerViewModel: ObservableObject {
         let count = min(max(4, Int((upper - lower) / spacing)), cap)
         let headers = currentEntry.stream.behaviorHints?.proxyHeaders?.requestHeaders
 
-        fineTask = Task { [weak self] in
-            let health = await MainActor.run { self?.bufferAhead }
-            let need = await MainActor.run { (self?.previewBufferGate ?? 8) * 0.75 }
+        let generation = loadGeneration
+        fineTask = Task { @MainActor [weak self] in
+            guard !Task.isCancelled, self?.isCurrentLoad(generation) == true else { return }
+            let health = self?.bufferAhead
+            let need = (self?.previewBufferGate ?? 8) * 0.75
             var proceed: (@Sendable () -> Bool)?
             if let health { proceed = { health.wrappedValue >= need } }
             // SWEEP FOR THE FRAMES BETWEEN THE KEYFRAMES, off the local cache
@@ -10953,20 +10965,23 @@ final class PlayerViewModel: ObservableObject {
                                             ? ScrubThumbnailer.fineSweepSeconds : nil,
                                         denseCenter: target,
                                         shouldProceed: proceed)
-            await MainActor.run { self?.fineThumbnailer = fine }
-            let thumbs = await fine.generate { partial in
-                Task { @MainActor [weak self] in
-                    guard let self, self.fineThumbnailer === fine else { return }
-                    self.mergeFine(partial)
+            self?.fineThumbnailer = fine
+            let thumbs = await withTaskCancellationHandler {
+                await fine.generate { partial in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.isCurrentLoad(generation),
+                              self.fineThumbnailer === fine else { return }
+                        self.mergeFine(partial)
+                    }
                 }
-            }
-            await MainActor.run {
-                guard let self, self.fineThumbnailer === fine else { return }
-                self.fineThumbnailer = nil
-                PlayerProbe.event("preview", "fine pass done — \(thumbs.count) frames"
-                    + " (\(self.fineThumbnails.count) held)")
-                self.mergeFine(thumbs)
-            }
+            } onCancel: { fine.cancel() }
+            guard !Task.isCancelled, let self, self.isCurrentLoad(generation),
+                  self.fineThumbnailer === fine else { return }
+            self.fineThumbnailer = nil
+            self.fineTask = nil
+            PlayerProbe.event("preview", "fine pass done — \(thumbs.count) frames"
+                + " (\(self.fineThumbnails.count) held)")
+            self.mergeFine(thumbs)
         }
     }
 

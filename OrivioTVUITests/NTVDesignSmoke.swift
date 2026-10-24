@@ -155,19 +155,32 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(spotlight, timeout: 8), "Back closes the rail into Home's existing content route.")
         XCTAssertEqual(heading.frame.minX, headingBefore.minX, accuracy: 1)
         capture("ntv-seanime-home-after-menu")
-        let firstProposal = spotlight.value as? String
-        XCTAssertTrue(["Proposition 1 sur 2", "Proposition 2 sur 2"].contains(firstProposal ?? ""),
+        let initialProposal = spotlight.value as? String
+        XCTAssertTrue(["Proposition 1 sur 2", "Proposition 2 sur 2"].contains(initialProposal ?? ""),
                       "The offline fixture must provide two eligible spotlight proposals before testing Right/Left.")
+        if initialProposal == "Proposition 2 sur 2" {
+            remote.press(.left)
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "Proposition 1 sur 2"), object: spotlight)], timeout: 5), .completed)
+            XCTAssertTrue(focused(spotlight, timeout: 5))
+        }
+        let firstProposal = "Proposition 1 sur 2"
+        XCTAssertEqual(spotlight.value as? String, firstProposal)
         remote.press(.right)
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value != %@", firstProposal ?? ""), object: spotlight)], timeout: 8), .completed,
+            predicate: NSPredicate(format: "value != %@", firstProposal), object: spotlight)], timeout: 8), .completed,
             "Right on the minimal hero must change the proposal without opening its detail.")
         XCTAssertTrue(focused(spotlight, timeout: 5))
         remote.press(.left)
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", firstProposal ?? ""), object: spotlight)], timeout: 8), .completed,
+            predicate: NSPredicate(format: "value == %@", firstProposal), object: spotlight)], timeout: 8), .completed,
             "Left must return to the previous proposal, without opening the rail.")
         XCTAssertTrue(focused(spotlight, timeout: 5))
+        remote.press(.left)
+        XCTAssertTrue(focused(home, timeout: 8), "Left from the first proposal must reach the main rail instead of wrapping.")
+        XCTAssertEqual(spotlight.value as? String, firstProposal)
+        remote.press(.menu)
+        XCTAssertTrue(focused(spotlight, timeout: 8), "Closing the rail must return to the same hero action.")
         let firstPoster = app.buttons["ntv.home.poster.movie.fixture.row.0.item.0"]
         for _ in 0..<6 {
             if firstPoster.hasFocus { break }
@@ -1155,6 +1168,39 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(app.buttons["ntv.anime.yearPicker"].exists)
         XCTAssertTrue(screen.contains(app.buttons["ntv.anime.currentSeason"].frame))
         capture("ntv-anime-season")
+        let focusedFilter = app.buttons.matching(NSPredicate(format:
+            "identifier IN %@ AND hasFocus == true", ["ntv.anime.seasonPicker", "ntv.anime.yearPicker", "ntv.anime.currentSeason"])).firstMatch
+        remote.press(.down)
+        XCTAssertTrue(focusedFilter.waitForExistence(timeout: 5), "Down from the season selector must reach the season filters.")
+        remote.press(.down)
+        XCTAssertTrue(focused(featured, timeout: 5), "Down from the filters must reach the featured action before the poster grid.")
+        for _ in 0..<6 {
+            if featured.value as? String == "Proposition 1 sur 6" { break }
+            let previous = featured.value as? String ?? ""
+            remote.press(.left)
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value != %@", previous), object: featured)], timeout: 5), .completed)
+            XCTAssertTrue(focused(featured, timeout: 5))
+        }
+        XCTAssertEqual(featured.value as? String, "Proposition 1 sur 6")
+        remote.press(.right)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Proposition 2 sur 6"), object: featured)], timeout: 5), .completed)
+        XCTAssertTrue(focused(featured, timeout: 5))
+        remote.press(.left)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Proposition 1 sur 6"), object: featured)], timeout: 5), .completed)
+        XCTAssertTrue(focused(featured, timeout: 5))
+        let firstSeasonCard = app.buttons["ntv.anime.card.media.195516"]
+        remote.press(.down)
+        XCTAssertTrue(focused(firstSeasonCard, timeout: 5), "Down from the featured action must enter the first poster row in one move.")
+        remote.press(.up)
+        XCTAssertTrue(focused(featured, timeout: 5), "Up from the first poster must return to the featured action.")
+        remote.press(.up)
+        XCTAssertTrue(focusedFilter.waitForExistence(timeout: 5), "Up from the featured action must return to the filters.")
+        remote.press(.up)
+        XCTAssertTrue(focused(season, timeout: 5))
+        capture("ntv-anime-featured-remote-navigation")
         remote.press(.right)
         XCTAssertTrue(focused(planning, timeout: 5))
         remote.press(.select)
@@ -1391,6 +1437,22 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertLessThan(toolTop - optionPicker.frame.maxY, 96)
         capture("ntv-player-speed-near-actions")
         let normalSpeed = app.buttons["ntv.player.picker.item.1.0"]
+        XCTAssertTrue(focused(normalSpeed, timeout: 5))
+        for speed in ["0.75", "0.5"] {
+            remote.press(.up)
+            let row = app.buttons["ntv.player.picker.item.\(speed)"]
+            XCTAssertTrue(focused(row, timeout: 5))
+            XCTAssertTrue(optionPicker.frame.contains(row.frame), "The focused speed must stay inside its card, including its focus margin.")
+        }
+        capture("ntv-player-speed-first-option")
+        for speed in ["0.75", "1.0", "1.25", "1.5", "2.0"] {
+            remote.press(.down)
+            let row = app.buttons["ntv.player.picker.item.\(speed)"]
+            XCTAssertTrue(focused(row, timeout: 5))
+            XCTAssertTrue(optionPicker.frame.contains(row.frame), "Every speed must remain reachable inside the scrolling card.")
+        }
+        capture("ntv-player-speed-last-option")
+        for _ in 0..<3 { remote.press(.up) }
         XCTAssertTrue(focused(normalSpeed, timeout: 5))
         remote.press(.select)
         XCTAssertTrue(focused(speedTool, timeout: 5), "Choosing a speed must restore its toolbar control.")

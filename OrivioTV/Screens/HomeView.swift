@@ -1498,9 +1498,7 @@ struct HomeView: View {
         layoutContent
         .overlay(alignment: .bottom) {
             if usesNTVLayout {
-                NTVResumePrompt(onResume: onResume, includes: {
-                    !NTVAnimeLibrary.shared.contains(viewModel.metaFor($0))
-                })
+                NTVResumePrompt(onResume: onResume)
             }
         }
         .onAppear {

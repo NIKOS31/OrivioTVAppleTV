@@ -862,10 +862,10 @@ struct PlayerLoadingOverlay: View {
         switch viewModel.loadPhase {
         case .caching:
             return viewModel.cacheProgress > 0
-                ? "Preparing video… \(viewModel.cacheProgress)%"
-                : "Preparing video…"
+                ? "Préparation de la vidéo… \(viewModel.cacheProgress)%"
+                : "Préparation de la vidéo…"
         default:
-            return viewModel.isResumingFromSavedPosition ? "Resuming…" : "Loading…"
+            return viewModel.isResumingFromSavedPosition ? "Reprise en cours…" : "Chargement…"
         }
     }
 

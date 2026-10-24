@@ -268,6 +268,8 @@ final class HomeViewModel: ObservableObject {
                         items: (0..<24).map { column in
                             MetaItem(id: "fixture.row.\(row).item.\(column)", type: "movie",
                                 name: column.isMultiple(of: 2) ? "Titre court" : "Un titre volontairement plus long",
+                                // Two offline placeholders let this fixture exercise manual spotlight navigation.
+                                background: column < 2 ? "ntv-fixture://background/\(column)" : nil,
                                 description: column.isMultiple(of: 2) ? nil : "Une description sur plusieurs lignes pour contrôler la stabilité du bandeau pendant la navigation entre les rangées.",
                                 releaseInfo: column.isMultiple(of: 3) ? nil : "2026",
                                 genres: column.isMultiple(of: 3) ? nil : ["Adventure", "Science Fiction"])

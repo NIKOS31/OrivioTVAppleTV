@@ -1827,6 +1827,7 @@ struct LibrarySection<Content: View>: View {
 struct HeroGradient: View {
     let background: Color
     var fullBleed: Bool = false
+    var protectsText: Bool = false
     /// Light appearance (Apple TV theme only — Classic is always dark): the
     /// dark-tuned scrim opacities read as fog when the background is white,
     /// so light mode uses tighter ramps that leave the art vivid.
@@ -1836,7 +1837,14 @@ struct HeroGradient: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                stops: isLight
+                stops: protectsText
+                    ? [
+                        .init(color: background.opacity(0.96), location: 0),
+                        .init(color: background.opacity(0.90), location: 0.45),
+                        .init(color: background.opacity(0.82), location: 0.78),
+                        .init(color: background.opacity(0.30), location: 1)
+                    ]
+                    : isLight
                     ? [
                         .init(color: background, location: 0),
                         .init(color: background.opacity(0.86), location: 0.20),
@@ -1852,7 +1860,7 @@ struct HeroGradient: View {
                         .init(color: .clear, location: 1)
                     ],
                 startPoint: .leading,
-                endPoint: UnitPoint(x: fullBleed ? 0.65 : 0.45, y: 0.5)
+                endPoint: protectsText ? .trailing : UnitPoint(x: fullBleed ? 0.65 : 0.45, y: 0.5)
             )
             LinearGradient(
                 stops: isLight

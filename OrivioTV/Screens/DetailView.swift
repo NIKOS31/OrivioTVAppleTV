@@ -681,7 +681,7 @@ struct DetailView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .allowsHitTesting(false)
                     .opacity(showBackdropTrailer ? 1 : 0)
-                HeroGradient(background: theme.stageBlend, fullBleed: true)
+                HeroGradient(background: theme.stageBlend, fullBleed: true, protectsText: isNTV)
                     .opacity(trailerFullscreen ? 0 : 1)
             }
         }

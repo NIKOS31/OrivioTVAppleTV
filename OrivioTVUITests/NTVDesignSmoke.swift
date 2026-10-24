@@ -156,7 +156,8 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertEqual(heading.frame.minX, headingBefore.minX, accuracy: 1)
         capture("ntv-seanime-home-after-menu")
         let firstProposal = spotlight.value as? String
-        XCTAssertNotNil(firstProposal)
+        XCTAssertTrue(["Proposition 1 sur 2", "Proposition 2 sur 2"].contains(firstProposal ?? ""),
+                      "The offline fixture must provide two eligible spotlight proposals before testing Right/Left.")
         remote.press(.right)
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value != %@", firstProposal ?? ""), object: spotlight)], timeout: 8), .completed,

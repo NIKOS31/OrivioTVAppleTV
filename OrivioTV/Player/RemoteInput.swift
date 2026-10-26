@@ -34,6 +34,7 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
     private var pan: UIPanGestureRecognizer?
     private weak var attachedWindow: UIWindow?
     private var acceptedPan = false
+    private var panNeedsCleanup = false
 
     private var isActive: () -> Bool = { false }
     private var onBegan: () -> Void = {}
@@ -63,6 +64,12 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
     }
 
     func removeRecognizers() {
+        if panNeedsCleanup {
+            panNeedsCleanup = false
+            acceptedPan = false
+            let translation = pan?.translation(in: attachedWindow) ?? .zero
+            onEnded(translation.x, translation.y, true)
+        }
         if let attachedWindow, let pan {
             attachedWindow.removeGestureRecognizer(pan)
         }
@@ -84,9 +91,18 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
             // never fired, or it fired and `isActive` refused it because some
             // overlay was up — and they are indistinguishable downstream.
             acceptedPan = isActive()
+            panNeedsCleanup = acceptedPan
             PlayerProbe.event("remote", "pad DOWN (active=\(acceptedPan.probe))")
-            if acceptedPan { onBegan() } else { PlayerProbe.count("input.pan-rejected") }
-        case .changed: if acceptedPan && isActive() { onMoved(t.x, t.y) }
+            if acceptedPan {
+                onBegan()
+                // UIKit has already crossed its movement threshold at .began.
+                if t != .zero { onMoved(t.x, t.y) }
+            } else { PlayerProbe.count("input.pan-rejected") }
+        case .changed:
+            guard acceptedPan else { return }
+            // Closing a blocking panel cannot revive the contact it interrupted.
+            guard isActive() else { acceptedPan = false; return }
+            onMoved(t.x, t.y)
         // The END is delivered UNCONDITIONALLY. `isActive` reads the live
         // overlay, so a gesture that began over active UI and ended after an
         // overlay opened mid-swipe (Up Next arriving, a glyph popover) had its
@@ -99,6 +115,7 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
                                                t.x, t.y))
             let cancelled = state != .ended || !acceptedPan || !isActive()
             acceptedPan = false
+            panNeedsCleanup = false
             onEnded(t.x, t.y, cancelled)
         default: break
         }

@@ -465,6 +465,8 @@ struct DetailView: View {
 
     private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
     @ScaledMetric(relativeTo: .title) private var seanimeTitleSize: CGFloat = 56
+    @ScaledMetric(relativeTo: .callout) private var metadataLineHeight: CGFloat = 34
+    @ScaledMetric(relativeTo: .body) private var synopsisHeight: CGFloat = 130
 
     var body: some View {
         ZStack {
@@ -477,15 +479,17 @@ struct DetailView: View {
                         episodesSection
                     }
                     castSection
-                    if isNTV, hasDetailFacts {
-                        VStack(alignment: .leading, spacing: OrivioSpacing.md) {
-                            RowHeader(title: viewModel.meta.isSeries ? "Détails de la série" : "Détails du film")
-                            detailFacts.padding(.horizontal, OrivioSpacing.huge)
-                        }
-                    }
                     collectionSection
                     moreLikeThisSection
                     companiesSection
+                    if isNTV, hasDetailFacts {
+                        VStack(alignment: .leading, spacing: OrivioSpacing.md) {
+                            RowHeader(title: viewModel.meta.isSeries ? "Détails de la série" : "Détails du film")
+                            detailFacts.padding(.horizontal, NTVViewport.horizontalInset)
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("ntv.detail.facts")
+                    }
                     commentsSection
                 }
                 .padding(.bottom, OrivioSpacing.huge)
@@ -907,45 +911,57 @@ struct DetailView: View {
     }
 
     private var headerInformation: some View {
-        VStack(alignment: .leading, spacing: isNTV ? 16 : OrivioSpacing.lg) {
+        VStack(alignment: .leading, spacing: isNTV ? 28 : OrivioSpacing.lg) {
             // Push the logo down so it sits lower on the backdrop (APK layout).
             if !isNTV { Spacer().frame(height: 260) }
 
-            // Both title treatments occupy the same reserved slot, bottom-aligned.
-            // They did not before: a logo got a fixed 180pt box while the text
-            // fallback was sized by its own content, so a one-line title sat
-            // about a hundred points higher than a logo and dragged the meta
-            // lines, description and buttons up with it. Moving between two
-            // titles — one with artwork, one without — visibly re-laid out the
-            // whole header. Bottom alignment is what keeps a short wide logo
-            // and a two-line title sharing a baseline.
-            Group {
-                if let logo = isNTV ? viewModel.openingLogo : viewModel.meta.logo {
-                    RemoteImage(url: logo, contentMode: .fit, alignment: .bottomLeading, maxDimension: 520)
-                        // Grounds a white logo on both a light frost and dark art.
-                        .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
-                        .frame(width: 520)
-                } else {
-                    Text(viewModel.meta.name)
-                        .font(isNTV ? .system(size: seanimeTitleSize, weight: .semibold)
-                              : FusionType.heroTitle(theme.font))
-                        .foregroundStyle(theme.palette.textPrimary)
-                        .lineLimit(2)
-                        .frame(maxWidth: 900, alignment: .leading)
-                        .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
+            VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
+                // One stable baseline for a wide film logo, a tall series logo or text.
+                Group {
+                    if let logo = isNTV ? viewModel.openingLogo : viewModel.meta.logo {
+                        RemoteImage(url: logo, contentMode: .fit, alignment: .bottomLeading, maxDimension: 520)
+                            .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
+                            .frame(width: isNTV ? 480 : 520)
+                    } else {
+                        Text(viewModel.meta.name)
+                            .font(isNTV ? .system(size: seanimeTitleSize, weight: .semibold)
+                                  : FusionType.heroTitle(theme.font))
+                            .foregroundStyle(theme.palette.textPrimary)
+                            .lineLimit(2)
+                            .frame(maxWidth: isNTV ? 840 : 900, alignment: .leading)
+                            .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
+                    }
                 }
-            }
-            .frame(height: isNTV ? seanimeTitleSize * 2.4 : 180, alignment: .bottomLeading)
+                .frame(height: isNTV ? seanimeTitleSize * 2.4 : 180, alignment: .bottomLeading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(viewModel.meta.name)
+                .accessibilityIdentifier("ntv.detail.title")
 
-            // Meta line 1: Genres • Full release date • IMDb.
-            MetaLine(segments: primaryMetaSegments, imdbRating: viewModel.meta.imdbRating)
-                .frame(height: isNTV ? 34 : nil, alignment: .leading)
-                .frame(maxWidth: isNTV ? 1040 : nil, alignment: .leading)
-            // Meta line 2: Runtime • Country • Language.
-            if isNTV || !secondaryMetaSegments.isEmpty {
-                MetaLine(segments: secondaryMetaSegments)
-                    .frame(height: isNTV ? 30 : nil, alignment: .leading)
-                    .frame(maxWidth: isNTV ? 1040 : nil, alignment: .leading)
+                if isNTV {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 16) {
+                            if !primaryMetaSegments.isEmpty {
+                                Text(primaryMetaSegments.joined(separator: " · "))
+                                    .font(.callout.weight(.medium))
+                                    .lineLimit(1)
+                            }
+                            if let rating = viewModel.meta.imdbRating { ImdbBadge(rating: rating) }
+                        }
+                        .frame(height: metadataLineHeight, alignment: .leading)
+                        Text(secondaryMetaSegments.joined(separator: " · "))
+                            .font(.callout)
+                            .lineLimit(1)
+                            .frame(height: metadataLineHeight, alignment: .leading)
+                    }
+                    .foregroundStyle(NTVDesign.textSecondary)
+                    .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+                    .frame(maxWidth: 1040, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("ntv.detail.metadata")
+                } else {
+                    MetaLine(segments: primaryMetaSegments, imdbRating: viewModel.meta.imdbRating)
+                    if !secondaryMetaSegments.isEmpty { MetaLine(segments: secondaryMetaSegments) }
+                }
             }
 
             if isNTV || viewModel.meta.description != nil {
@@ -961,8 +977,9 @@ struct DetailView: View {
                         interactionCount += 1
                     }
                 )
-                .frame(height: isNTV ? 120 : nil, alignment: .topLeading)
-                .frame(maxWidth: isNTV ? 1000 : nil, alignment: .leading)
+                .frame(height: isNTV ? synopsisHeight : nil, alignment: .topLeading)
+                .frame(maxWidth: isNTV ? 940 : nil, alignment: .leading)
+                .accessibilityIdentifier("ntv.detail.synopsis")
                 .disabled(!teaserArmed)
             }
 
@@ -1497,6 +1514,8 @@ struct DetailView: View {
     @ViewBuilder
     private var castSection: some View {
         let people = viewModel.crew + viewModel.cast
+        let fallbackNames = (viewModel.meta.cast ?? [])
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if layout.detailShowCast, !people.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
                 // The trailer lives only in the action row above; the cast
@@ -1520,6 +1539,18 @@ struct DetailView: View {
                 .scrollClipDisabled()
             }
             .focusSection()
+        } else if isNTV, layout.detailShowCast, !fallbackNames.isEmpty {
+            VStack(alignment: .leading, spacing: OrivioSpacing.md) {
+                RowHeader(title: "Distribution")
+                Text(fallbackNames.joined(separator: " · "))
+                    .font(.body)
+                    .foregroundStyle(NTVDesign.textSecondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 1100, alignment: .leading)
+                    .padding(.horizontal, NTVViewport.horizontalInset)
+                    .accessibilityIdentifier("ntv.detail.cast.names")
+            }
         }
     }
 
@@ -2111,10 +2142,11 @@ private struct TeaserLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 25))
-            .foregroundStyle(isFocused ? theme.palette.textPrimary : theme.palette.textSecondary)
-            .lineLimit(4)
+            .font(theme.palette.id == NTVDesign.palette.id ? .body : .system(size: 25))
+            .foregroundStyle(isFocused || theme.palette.id == NTVDesign.palette.id ? theme.palette.textPrimary : theme.palette.textSecondary)
+            .lineLimit(theme.palette.id == NTVDesign.palette.id ? 3 : 4)
             .frame(maxWidth: 1000, alignment: .leading)
+            .shadow(color: .black.opacity(theme.palette.id == NTVDesign.palette.id ? 0.6 : 0), radius: 6, y: 2)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             // Soft glass highlight on focus — reads as selectable without

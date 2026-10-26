@@ -14,9 +14,10 @@ final class NTVDesignSmoke: XCTestCase {
 
     private func exerciseCatalogRapidMoves(seanime: Bool) {
         continueAfterFailure = false
+        executionTimeAllowance = 300
         let app = XCUIApplication()
         app.launchArguments = ["-homeDemo", "-ntvCatalogCategoriesDemo", "-ntvRowLayoutFixture"]
-        if seanime { app.launchArguments.append("-ntvSeanimeDemo") }
+        if seanime { app.launchArguments += ["-ntvSeanimeDemo", "-ntvCatalogThreeRowsFixture"] }
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
@@ -67,6 +68,44 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(rowFirst.hasFocus)
         XCTAssertFalse(app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch.exists)
         capture(seanime ? "ntv-seanime-catalog-rapid-row-moves" : "ntv-top-catalog-rapid-row-moves")
+        if seanime {
+            for _ in 0..<3 {
+                remote.press(.menu)
+                if focused(movies, timeout: 2) { break }
+            }
+            XCTAssertTrue(focused(movies, timeout: 5))
+            let series = app.buttons["ntv.navigation.6"]
+            remote.press(.down)
+            XCTAssertTrue(focused(series, timeout: 5))
+            remote.press(.select)
+            XCTAssertTrue(app.staticTexts["ntv.catalog.series.heading"].waitForExistence(timeout: 20))
+            let firsts = (0..<3).map {
+                app.buttons["ntv.poster.series.fixture.catalog.fixture-row-\($0).0"]
+            }
+            XCTAssertTrue(focused(firsts[0], timeout: 8))
+            for _ in 0..<9 { remote.press(.right) }
+            XCTAssertTrue(focused(app.buttons["ntv.poster.series.fixture.catalog.fixture-row-0.9"], timeout: 5))
+            remote.press(.down)
+            XCTAssertTrue(focused(firsts[1], timeout: 8), "Down must enter the immediate neighbouring shelf, at its first poster.")
+            for _ in 0..<9 { remote.press(.right) }
+            XCTAssertTrue(focused(app.buttons["ntv.poster.series.fixture.catalog.fixture-row-1.9"], timeout: 5))
+            remote.press(.down)
+            XCTAssertTrue(focused(firsts[2], timeout: 8))
+            remote.press(.up)
+            XCTAssertTrue(focused(firsts[1], timeout: 8), "A shelf scrolled horizontally must reset before receiving vertical focus.")
+            remote.press(.up)
+            XCTAssertTrue(focused(firsts[0], timeout: 8))
+            remote.press(.down)
+            XCTAssertTrue(focused(firsts[1], timeout: 8), "Down must not skip the middle shelf.")
+            remote.press(.up)
+            remote.press(.down)
+            remote.press(.up)
+            XCTAssertTrue(focused(firsts[0], timeout: 8))
+            Thread.sleep(forTimeInterval: 0.5)
+            XCTAssertTrue(firsts[0].hasFocus, "A stale row transition cannot override the last command.")
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(firsts[0].frame))
+            capture("ntv-seanime-series-three-adjacent-shelves")
+        }
     }
 
     func testSeanimeCategoriesAndMainRailHaveDistinctRemotePaths() {
@@ -1385,11 +1424,43 @@ final class NTVDesignSmoke: XCTestCase {
         }
         if !opened { capture("ntv-player-startup-failure") }
         XCTAssertTrue(opened, "The local video fixture must open nTV controls.")
-        // Keep the fixture paused while inspecting transport state. Live quick
-        // skips and their idle dwell have a separate, unpaused remote journey.
+        XCTAssertEqual(play.label, "Pause")
+        remote.press(.up)
+        let liveTimeline = app.buttons["ntv.player.timeline"]
+        XCTAssertTrue(focused(liveTimeline, timeout: 5))
+        remote.press(.select)
+        let livePreview = app.descendants(matching: .any)["ntv.player.seek.preview"].firstMatch
+        XCTAssertTrue(livePreview.waitForExistence(timeout: 5))
+        func previewTimes() -> (live: Int, target: Int) {
+            let value = (try? livePreview.snapshot().value) as? String ?? ""
+            let parts = value.components(separatedBy: ", cible ")
+            XCTAssertEqual(parts.count, 2, "The preview must distinguish real playback from its proposed target.")
+            return (seconds(parts.first?.replacingOccurrences(of: "Lecture ", with: "") ?? ""),
+                    seconds(parts.last ?? ""))
+        }
+        for _ in 0..<2 { remote.press(.right) }
+        let liveBeforePreview = previewTimes().live
+        var whilePreviewing = (live: liveBeforePreview, target: 0)
+        let previewClockAdvances = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let current = previewTimes()
+            guard current.live > liveBeforePreview else { return false }
+            whilePreviewing = current
+            return true
+        }, object: livePreview)
+        XCTAssertEqual(XCTWaiter.wait(for: [previewClockAdvances], timeout: 5), .completed,
+                       "Opening and moving the Nuvio timeline must keep the real video clock running.")
+        XCTAssertGreaterThan(whilePreviewing.target - whilePreviewing.live, 10,
+                             "Previewing must not seek the underlying video before confirmation.")
+        remote.press(.menu)
+        XCTAssertTrue(play.waitForExistence(timeout: 8))
+        XCTAssertEqual(play.label, "Pause", "Cancelling a running preview must preserve playback.")
+        // Pause only after cancellation so the remaining geometry and paused
+        // seek checks stay stable while the real running preview was verified.
         remote.press(.playPause)
         XCTAssertTrue(focused(play, timeout: 8))
         XCTAssertEqual(play.label, "Lecture")
+        XCTAssertLessThan(seconds(app.staticTexts["ntv.player.position"].firstMatch.label), whilePreviewing.target,
+                          "Cancelling must discard the proposed seek target.")
         let quickPosition = app.staticTexts["ntv.player.position"].firstMatch
         XCTAssertTrue(quickPosition.waitForExistence(timeout: 5))
         let beforeQuickSeek = quickPosition.label
@@ -1613,6 +1684,7 @@ final class NTVDesignSmoke: XCTestCase {
 
     func testHomeMoviesAndSeriesJourney() {
         continueAfterFailure = false
+        executionTimeAllowance = 420
         let app = XCUIApplication()
         app.launchArguments = ["-homeDemo", "-ntvXperienceHomeFixture"]
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
@@ -1697,6 +1769,7 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertEqual(play.frame.minY, openingPlayFrame.minY, accuracy: 2,
                        "Late metadata must not move the focused action or recenter the page.")
         capture("ntv-detail-settled")
+        assertDetailHeaderHierarchy(app)
         let sources = app.buttons["ntv.detail.sources"]
         remote.press(.right)
         XCTAssertTrue(focused(sources, timeout: 5), "Sources must be directly reachable beside Play.")
@@ -1762,6 +1835,17 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.series.backdrop",
                                       contentID: String(focusedSeries.identifier.dropFirst("ntv.poster.series.".count))))
         capture("ntv-series-focus-backdrop")
+        remote.press(.select)
+        XCTAssertTrue(app.descendants(matching: .any)["ntv.detail.screen"].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(focused(play, timeout: 8), "A series must share the movie detail's opening Play focus.")
+        let openingSeriesPlayFrame = play.frame
+        assertDetailHeaderHierarchy(app)
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(play.frame.minY, openingSeriesPlayFrame.minY, accuracy: 2,
+                       "Loading episodes and credits must not move the series actions.")
+        capture("ntv-series-detail-hierarchy")
+        remote.press(.menu)
+        XCTAssertTrue(app.staticTexts["ntv.catalog.series.heading"].waitForExistence(timeout: 15))
         for _ in 0..<3 {
             if series.hasFocus { break }
             remote.press(.menu)
@@ -1769,6 +1853,129 @@ final class NTVDesignSmoke: XCTestCase {
         }
         XCTAssertTrue(focused(series, timeout: 8))
         app.terminate()
+        exerciseSourcesLayoutFixture()
+    }
+
+    private func assertDetailHeaderHierarchy(_ app: XCUIApplication) {
+        let title = app.descendants(matching: .any)["ntv.detail.title"].firstMatch
+        let metadata = app.descendants(matching: .any)["ntv.detail.metadata"].firstMatch
+        let synopsis = app.buttons["ntv.detail.synopsis"]
+        let play = app.buttons["ntv.detail.play"]
+        XCTAssertTrue(app.descendants(matching: .any)["ntv.seanime.detail.header"].firstMatch.exists)
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(metadata.waitForExistence(timeout: 5))
+        XCTAssertTrue(synopsis.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(title.frame.maxY, metadata.frame.minY)
+        XCTAssertLessThanOrEqual(metadata.frame.maxY, synopsis.frame.minY)
+        XCTAssertLessThanOrEqual(synopsis.frame.maxY, play.frame.minY)
+        XCTAssertEqual(title.frame.minX, metadata.frame.minX, accuracy: 2)
+        XCTAssertEqual(metadata.frame.minX, synopsis.frame.minX, accuracy: 2)
+    }
+
+    private func exerciseSourcesLayoutFixture() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvRowLayoutFixture", "-ntvSourcesLayoutFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
+        let remote = XCUIRemote.shared
+        let firstShelfFocus = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND hasFocus == true",
+            "ntv.home.poster.movie.fixture.row.0.item.")).firstMatch
+        for _ in 0..<6 {
+            if firstShelfFocus.exists { break }
+            remote.press(.down)
+        }
+        XCTAssertTrue(firstShelfFocus.waitForExistence(timeout: 8))
+        let firstPoster = app.buttons["ntv.home.poster.movie.fixture.row.0.item.0"]
+        for _ in 0..<24 {
+            if firstPoster.hasFocus { break }
+            remote.press(.left)
+        }
+        XCTAssertTrue(focused(firstPoster, timeout: 8))
+        remote.press(.right)
+        XCTAssertTrue(focused(app.buttons["ntv.home.poster.movie.fixture.row.0.item.1"], timeout: 8))
+        remote.press(.select)
+        let play = app.buttons["ntv.detail.play"]
+        XCTAssertTrue(focused(play, timeout: 8))
+        assertDetailHeaderHierarchy(app)
+        let sources = app.buttons["ntv.detail.sources"]
+        remote.press(.right)
+        XCTAssertTrue(focused(sources, timeout: 5))
+        remote.press(.select)
+
+        XCTAssertTrue(app.staticTexts["ntv.sources.heading"].waitForExistence(timeout: 15))
+        let context = app.descendants(matching: .any)["ntv.sources.context"].firstMatch
+        let choices = app.descendants(matching: .any)["ntv.sources.choices"].firstMatch
+        let rows = app.buttons.matching(identifier: "ntv.sources.row")
+        XCTAssertTrue(focused(rows.firstMatch, timeout: 8))
+        XCTAssertTrue(context.exists && choices.exists)
+        XCTAssertLessThan(context.frame.maxX, choices.frame.minX)
+        XCTAssertLessThan(context.frame.width, choices.frame.width)
+        XCTAssertTrue(app.staticTexts["4 sources"].exists)
+        let screen = app.windows.firstMatch.frame
+        XCTAssertLessThanOrEqual(rows.firstMatch.frame.maxX, screen.maxX - 20)
+        XCTAssertLessThan(rows.firstMatch.frame.height, screen.height / 2)
+        capture("ntv-sources-quality-layout")
+
+        remote.press(.down)
+        XCTAssertTrue(focused(rows.element(boundBy: 1), timeout: 5))
+        remote.press(.up)
+        XCTAssertTrue(focused(rows.firstMatch, timeout: 5), "Up must return to the preceding source.")
+        for index in 1..<4 {
+            remote.press(.down)
+            XCTAssertTrue(focused(rows.element(boundBy: index), timeout: 5))
+        }
+        XCTAssertEqual(rows.count, 4)
+        let qualities = app.staticTexts.matching(identifier: "ntv.sources.quality").allElementsBoundByIndex.map(\.label)
+        XCTAssertEqual(Set(qualities), Set(["1080p", "720p", "Qualité non précisée"]))
+        capture("ntv-sources-quality-unknown-focus")
+        for index in (0..<3).reversed() {
+            remote.press(.up)
+            XCTAssertTrue(focused(rows.element(boundBy: index), timeout: 5))
+        }
+        remote.press(.up)
+        let focusedFilter = app.buttons.matching(NSPredicate(
+            format: "hasFocus == true AND label IN %@", ["Tous", "Démonstration", "Source sans résultat"])).firstMatch
+        XCTAssertTrue(focusedFilter.waitForExistence(timeout: 5), "Up from the list must reach an addon filter.")
+        let emptyFilter = app.buttons["Source sans résultat"]
+        for _ in 0..<3 {
+            if emptyFilter.hasFocus { break }
+            remote.press(.right)
+        }
+        XCTAssertTrue(focused(emptyFilter, timeout: 5))
+        // Select only filters: the example.invalid source rows are never activated.
+        remote.press(.select)
+        XCTAssertTrue(app.descendants(matching: .any)["ntv.sources.status"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(rows.firstMatch.exists)
+        XCTAssertTrue(focused(emptyFilter, timeout: 5), "Filtering must not steal focus from the selected chip.")
+        let retry = app.buttons["ntv.sources.retry"]
+        XCTAssertTrue(retry.exists)
+        XCTAssertTrue(app.buttons["ntv.sources.addons"].exists)
+        remote.press(.down)
+        XCTAssertTrue(focused(retry, timeout: 5), "The filtered empty state must retain a focusable recovery action.")
+        capture("ntv-sources-empty-addon-filter")
+        remote.press(.up)
+        XCTAssertTrue(focusedFilter.waitForExistence(timeout: 5))
+        let allFilter = app.buttons["Tous"]
+        for _ in 0..<3 {
+            if allFilter.hasFocus { break }
+            remote.press(.left)
+        }
+        XCTAssertTrue(focused(allFilter, timeout: 5))
+        remote.press(.select)
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(focused(allFilter, timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["ntv.sources.status"].firstMatch.exists)
+        remote.press(.down)
+        XCTAssertTrue(focused(rows.firstMatch, timeout: 5))
+        capture("ntv-sources-all-restored")
+        remote.press(.menu)
+        XCTAssertTrue(sources.waitForExistence(timeout: 8), "Back must return to the same detail without starting a source.")
+        XCTAssertFalse(app.staticTexts["ntv.sources.heading"].exists)
+        capture("ntv-sources-fixture-back-to-detail")
     }
 
     func testAddonsQRAndEnabledStatePersistence() {

@@ -36,7 +36,7 @@ struct NTVPlayerControls: View {
 
                 Button {
                     viewModel.noteSelectPressed()
-                    viewModel.beginScrub(pausing: true)
+                    viewModel.beginScrub()
                 } label: {
                     NTVPlayerTimeline(viewModel: viewModel, clock: viewModel.clock, highlighted: focus == .timeline)
                 }
@@ -50,7 +50,7 @@ struct NTVPlayerControls: View {
                     viewModel.noteSelectPressed()
                     switch direction {
                     case .left, .right:
-                        viewModel.beginScrub(pausing: true)
+                        viewModel.beginScrub()
                         viewModel.stepNTVScrub(forward: direction == .right)
                     case .down: focus = .play
                     default: break
@@ -358,7 +358,7 @@ private struct NTVPlayerTimeValue: View {
     var totalDuration = false
 
     private var target: Double {
-        min(max(clock.scrubTarget ?? clock.position + viewModel.pendingSeekDelta, 0), max(clock.duration, 1))
+        min(max(clock.scrubTarget ?? viewModel.pendingNTVSeekTarget ?? (clock.position + viewModel.pendingSeekDelta), 0), max(clock.duration, 1))
     }
 
     var body: some View {
@@ -376,7 +376,7 @@ private struct NTVPlayerTimeline: View {
     var scrubbing = false
 
     private var duration: Double { max(clock.duration, 1) }
-    private var target: Double { min(max(clock.scrubTarget ?? clock.position + viewModel.pendingSeekDelta, 0), duration) }
+    private var target: Double { min(max(clock.scrubTarget ?? viewModel.pendingNTVSeekTarget ?? (clock.position + viewModel.pendingSeekDelta), 0), duration) }
 
     var body: some View {
         GeometryReader { geometry in
@@ -412,7 +412,11 @@ private struct NTVPlayerTimeline: View {
         .frame(height: 28)
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
-        .accessibilityValue(TimeFormat.clock(target))
+        .accessibilityLabel(scrubbing ? "Aperçu de la recherche" : "Progression de lecture")
+        .accessibilityValue(scrubbing
+            ? "Lecture \(TimeFormat.clock(clock.position)), cible \(TimeFormat.clock(target))"
+            : TimeFormat.clock(target))
+        .accessibilityIdentifier(scrubbing ? "ntv.player.seek.preview" : "ntv.player.seek.progress")
     }
 }
 

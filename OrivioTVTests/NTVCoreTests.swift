@@ -247,6 +247,80 @@ private actor NTVIPTVDelayedReply {
 }
 
 final class NTVCoreTests: XCTestCase {
+    func testNuvioSeekBurstKeepsAnchorAcrossOldClockTicks() {
+        var seek = NTVAccumulatedSeek()
+        XCTAssertEqual(seek.append(10, position: 100, duration: 1000, at: 0), 110)
+        XCTAssertEqual(seek.append(10, position: 101, duration: 1000, at: 0.3), 120,
+                       "A decoder tick after the first batch cannot move the burst's anchor.")
+        XCTAssertEqual(seek.append(10, position: 90, duration: 1000, at: 0.65), 130,
+                       "A late clock from the previous seek cannot lose the third skip.")
+        XCTAssertEqual(seek.target, 130)
+    }
+
+    func testNuvioSeekBurstReanchorsOnDirectionChangeAndExpiry() {
+        var seek = NTVAccumulatedSeek()
+        XCTAssertEqual(seek.append(10, position: 100, duration: 1000, at: 0), 110)
+        XCTAssertEqual(seek.append(-10, position: 105, duration: 1000, at: 0.1), 95,
+                       "Like Nuvio, reversing uses the current playback snapshot, not the previous target.")
+        XCTAssertEqual(seek.append(-10, position: 106, duration: 1000, at: 0.2), 85)
+        XCTAssertEqual(seek.append(-10, position: 200, duration: 1000, at: 1), 190,
+                       "Eight hundred milliseconds without input ends the burst.")
+    }
+
+    func testNuvioSeekBurstClampsAndRejectsInvalidSamples() {
+        var seek = NTVAccumulatedSeek()
+        XCTAssertEqual(seek.append(10, position: 95, duration: 100, at: 0), 99)
+        XCTAssertEqual(seek.append(-10, position: 5, duration: 100, at: 0.1), 0)
+        XCTAssertNil(seek.append(.nan, position: 5, duration: 100, at: 0.2))
+        XCTAssertNil(seek.append(10, position: .infinity, duration: 100, at: 0.2))
+        XCTAssertNil(seek.append(10, position: 5, duration: .nan, at: 0.2))
+        XCTAssertNil(seek.append(10, position: 5, duration: 100, at: .infinity))
+        XCTAssertEqual(seek.target, 0, "Invalid input cannot replace the last valid target.")
+        XCTAssertEqual(seek.append(.greatestFiniteMagnitude, position: 5, duration: 100, at: 0.3), 99)
+        XCTAssertEqual(seek.append(.greatestFiniteMagnitude, position: 5, duration: 100, at: 0.4), 99)
+    }
+
+    func testNuvioSeekBurstResetDropsPreviousSourceTarget() {
+        var seek = NTVAccumulatedSeek()
+        _ = seek.append(10, position: 100, duration: 1000, at: 0)
+        seek.reset()
+        XCTAssertNil(seek.target)
+        XCTAssertEqual(seek.append(10, position: 500, duration: 1000, at: 0.1), 510,
+                       "A source change, explicit seek or scrub starts a fresh burst.")
+    }
+
+    @MainActor
+    func testShortTouchPanDeliversInitialTranslationAndCancellation() {
+        let input = TouchHostView()
+        var active = true
+        var events: [String] = []
+        var cancellations: [Bool] = []
+        input.configure(isActive: { active }, onBegan: { events.append("begin") },
+                        onMoved: { x, _ in events.append("move\(Int(x))") },
+                        onEnded: { x, _, cancelled in
+                            events.append("end\(Int(x))"); cancellations.append(cancelled)
+                        })
+        input.receivePan(state: .began, translation: .init(x: 40, y: 0))
+        input.receivePan(state: .ended, translation: .init(x: 80, y: 0))
+        XCTAssertEqual(events, ["begin", "move40", "end80"],
+                       "A short pan with no .changed must still preview its initial movement before release.")
+        XCTAssertEqual(cancellations, [false])
+        events.removeAll()
+        input.receivePan(state: .began, translation: .init(x: 40, y: 0))
+        input.receivePan(state: .cancelled, translation: .init(x: 80, y: 0))
+        XCTAssertEqual(events, ["begin", "move40", "end80"])
+        XCTAssertEqual(cancellations, [false, true], "Cancellation must never turn the short pan into a commit.")
+        input.receivePan(state: .began, translation: .init(x: 40, y: 0))
+        input.removeRecognizers()
+        XCTAssertEqual(cancellations, [false, true, true], "Detaching a window must also finish the accepted contact as cancelled.")
+        input.receivePan(state: .began, translation: .init(x: 40, y: 0))
+        active = false
+        input.receivePan(state: .changed, translation: .init(x: 60, y: 0))
+        input.removeRecognizers()
+        XCTAssertEqual(cancellations, [false, true, true, true],
+                       "Losing the gate before detaching still requires cancellation cleanup.")
+    }
+
     func testSeanimeNavigationStartsOnTheLeftWithoutReplacingReferencePreferences() throws {
         let suite = "ntv.seanime.navigation.tests." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -721,6 +795,31 @@ final class NTVCoreTests: XCTestCase {
     }
 
     @MainActor
+    func testCatalogLoadInputsObserveEveryRoutingDependency() throws {
+        func addon(catalog: String = "first", enabled: Bool = true) throws -> InstalledAddon {
+            let manifest = try JSONDecoder().decode(AddonManifest.self, from: JSONSerialization.data(withJSONObject: [
+                "id": "fixture", "name": "Fixture", "version": "1", "types": ["movie"],
+                "resources": ["catalog"], "catalogs": [["type": "movie", "id": catalog]]
+            ]))
+            return InstalledAddon(manifestURL: "https://example.invalid/manifest.json", manifest: manifest, enabled: enabled)
+        }
+        let installed = try [addon()]
+        func inputs(profile: Int = 1, addons: [InstalledAddon]? = nil, playlist: String = "",
+                    destinations: Set<NTVIPTVSection> = [.tv], untyped: NTVIPTVSection = .tv) -> NTVCatalogView.LoadInputs {
+            .init(profileID: profile, addons: addons ?? installed, playlist: playlist,
+                  destinations: destinations, untyped: untyped)
+        }
+        let initial = inputs()
+        XCTAssertEqual(initial, inputs(), "Focus-only redraws must keep the same catalog task input.")
+        XCTAssertNotEqual(initial, inputs(profile: 2))
+        XCTAssertNotEqual(initial, inputs(addons: try [addon(enabled: false)]))
+        XCTAssertNotEqual(initial, inputs(addons: try [addon(catalog: "changed")]))
+        XCTAssertNotEqual(initial, inputs(playlist: "https://example.invalid/list.m3u"))
+        XCTAssertNotEqual(initial, inputs(destinations: [.movie, .series]))
+        XCTAssertNotEqual(initial, inputs(untyped: .series))
+    }
+
+    @MainActor
     func testCatalogShelvesReuseTheirStateAcrossVisitsAndSeparateProfiles() throws {
         let manifest = try JSONDecoder().decode(AddonManifest.self, from: Data(#"{"id":"fixture","name":"Fixture","version":"1","types":["movie","series"],"resources":["catalog"],"catalogs":[{"type":"movie","id":"new","name":"Latest"},{"type":"series","id":"new"},{"type":"movie","id":"search","extraRequired":["search"]}]}"#.utf8))
         let addon = InstalledAddon(manifestURL: "https://example.invalid/manifest.json", manifest: manifest)
@@ -905,6 +1004,21 @@ final class NTVCoreTests: XCTestCase {
         active = true
         input.receivePan(state: .changed, translation: .init(x: 150, y: 0))
         XCTAssertEqual(moves, 1, "A late sample after cancellation is not a new contact")
+        input.receivePan(state: .began, translation: .zero)
+        input.receivePan(state: .changed, translation: .init(x: 20, y: 0))
+        active = false
+        input.receivePan(state: .changed, translation: .init(x: 80, y: 0))
+        active = true
+        input.receivePan(state: .changed, translation: .init(x: 120, y: 0))
+        input.receivePan(state: .ended, translation: .init(x: 120, y: 0))
+        XCTAssertEqual(moves, 2, "Closing a panel must not revive the contact it interrupted.")
+        XCTAssertEqual(ends, 2)
+        XCTAssertEqual(cancellations, [true, true], "The revived gate cannot turn the interrupted release into a seek.")
+        input.receivePan(state: .began, translation: .zero)
+        input.receivePan(state: .changed, translation: .init(x: 20, y: 0))
+        input.receivePan(state: .ended, translation: .init(x: 20, y: 0))
+        XCTAssertEqual(moves, 3, "A new contact must work normally after the interruption.")
+        XCTAssertEqual(cancellations, [true, true, false])
     }
 
     @MainActor

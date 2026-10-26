@@ -234,6 +234,33 @@ enum NTVTransportIdlePolicy {
     }
 }
 
+/// Nuvio's PlayerAccumulatedSeekState (GPL-3.0): same-direction taps share an 800 ms anchor.
+struct NTVAccumulatedSeek {
+    private var baseline = 0.0
+    private var amount = 0.0
+    private var lastInputAt: TimeInterval?
+    private(set) var target: Double?
+
+    mutating func append(_ step: Double, position: Double, duration: Double, at now: TimeInterval) -> Double? {
+        guard step.isFinite, step != 0, position.isFinite, duration.isFinite, now.isFinite else { return nil }
+        let continuing = lastInputAt.map { now >= $0 && now - $0 < 0.8 } ?? false
+        if !continuing || amount.sign != step.sign {
+            // Nuvio re-anchors to the current playback snapshot when direction changes.
+            baseline = max(position, 0)
+            amount = step
+        } else {
+            amount += step
+        }
+        lastInputAt = now
+        let end = duration > 0 ? max(duration - 1, 0) : Double.greatestFiniteMagnitude
+        let next = max(0, min(baseline + amount, end))
+        target = next
+        return next
+    }
+
+    mutating func reset() { self = Self() }
+}
+
 struct TrackOption: Identifiable, Equatable {
     enum Payload {
         case off
@@ -1139,6 +1166,9 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var isScrubbing = false
     @Published var toast: String?
     @Published var pendingSeekDelta: Double = 0
+    var pendingNTVSeekTarget: Double? {
+        usesNTVControls && pendingSeekDelta != 0 ? ntvAccumulatedSeek.target : nil
+    }
     /// Bumped whenever the underlying player (and thus its video view) may
     /// have changed, e.g. after engine failover.
     @Published private(set) var videoRefreshID = UUID()
@@ -4830,6 +4860,8 @@ final class PlayerViewModel: ObservableObject {
         seekDebounceTask = nil
         pendingSeekDelta = 0
         nudgeStreak = 0
+        ntvAccumulatedSeek.reset()
+        lastNudgeAt = nil
         scrubTimeoutTask?.cancel()
         scrubTimeoutTask = nil
         if isScrubbing || scrubValue != nil {
@@ -6193,7 +6225,7 @@ final class PlayerViewModel: ObservableObject {
     /// a debounce), with nothing on screen to explain it. Callers that must
     /// start playback — committing a fast-forward preview, restarting a
     /// finished title — pass `true` explicitly.
-    func seek(to seconds: Double, autoPlay: Bool? = nil) {
+    func seek(to seconds: Double, autoPlay: Bool? = nil, preservingNudge: Bool = false) {
         // ANY seek supersedes a nudge still sitting on its debounce.
         //
         // `nudgeSeek` gathers a run of skip presses and commits them 650ms
@@ -6211,6 +6243,10 @@ final class PlayerViewModel: ObservableObject {
         seekDebounceTask = nil
         pendingSeekDelta = 0
         nudgeStreak = 0
+        if !preservingNudge {
+            ntvAccumulatedSeek.reset()
+            lastNudgeAt = nil
+        }
         let target = max(0, min(seconds, duration > 0 ? duration - 1 : seconds))
         PlayerProbe.event("seek", String(format: "SEEK %.1f -> %.1f autoPlay=%@ (was playing=%@)",
                                          position, target,
@@ -6244,7 +6280,9 @@ final class PlayerViewModel: ObservableObject {
         // is looking at a picture that is supposed to be running; a skip taken
         // then would decide "we were paused" and leave it stopped for good.
         // Same reasoning as `togglePlayPause` — see its comment.
-        let play = autoPlay ?? (isPlaying || (!pauseIntent && hasStartedPlayback))
+        let play = autoPlay ?? (usesNTVControls
+            ? !pauseIntent && hasStartedPlayback
+            : isPlaying || (!pauseIntent && hasStartedPlayback))
         // engineSeek starts playback itself, bypassing enginePlay, so the
         // intent has to be cleared here or the buffer events that follow the
         // seek would be read as "still paused".
@@ -6598,6 +6636,7 @@ final class PlayerViewModel: ObservableObject {
     /// Playback was running when a bar click opened this scrub — the commit
     /// (and a cancel) put it back.
     private var resumeAfterScrub = false
+    private var scrubOpenedFromControls = false
     /// Set by the player host; existing themes keep their transport grammar.
     var usesNTVControls = false
 
@@ -6612,17 +6651,17 @@ final class PlayerViewModel: ObservableObject {
     /// pauses, the picture scrubs, the next click seeks and resumes); a swipe
     /// scrubs over whatever the transport is doing.
     func beginScrub(pausing: Bool = false) {
-        guard acceptsTransportInput else { return }
+        guard !isScrubbing, acceptsTransportInput else { return }
         guard overlay == .none || overlay == .controls || overlay == .pauseInfo else { return }
         var start = position
-        let wasPlaying = isPlaying || (usesNTVControls && !pauseIntent && hasStartedPlayback)
+        scrubOpenedFromControls = overlay == .controls || overlay == .pauseInfo
         if pausing, isPlaying {
             enginePause("bar click opening a scrub")
             markPaused()
             saveProgress()
             resumeAfterScrub = true
         } else {
-            resumeAfterScrub = usesNTVControls && wasPlaying
+            resumeAfterScrub = false
         }
         // ADOPT A GESTURE ALREADY IN FLIGHT. `touchIntent` is decided when the
         // touch BEGINS, so a finger already on the pad when the bar is clicked
@@ -6657,6 +6696,8 @@ final class PlayerViewModel: ObservableObject {
         seekDebounceTask = nil
         pendingSeekDelta = 0
         nudgeStreak = 0
+        ntvAccumulatedSeek.reset()
+        lastNudgeAt = nil
         isScrubbing = true
         scrubDragInContact = false   // only a real drag arms the commit click
         sceneWindowHadFrame = nil
@@ -6679,7 +6720,7 @@ final class PlayerViewModel: ObservableObject {
 
     func commitScrub(resume: Bool? = nil) {
         guard let target = scrubValue else { return }
-        let autoPlay = resume ?? (!usesNTVControls || resumeAfterScrub || isPlaying)
+        let autoPlay = resume ?? (!usesNTVControls || resumeAfterScrub || (!pauseIntent && hasStartedPlayback))
         PlayerProbe.event("scrub", String(format: "COMMIT -> %.1f (plays=%@)", target, autoPlay.probe))
         resumeAfterScrub = false
         // Nuvio retains pause/play intent across a seek; the physical Play key explicitly resumes.
@@ -6701,8 +6742,8 @@ final class PlayerViewModel: ObservableObject {
         // "Never mind" puts playback back the way the click found it.
         if resumeAfterScrub {
             resumeAfterScrub = false
-            if !isPlaying { resumePlayback() }
-        } else if !isPlaying {
+            if acceptsTransportInput, !isPlaying { resumePlayback() }
+        } else if !isPlaying, overlay == .none, acceptsTransportInput {
             // Cancelling a scrub the viewer started while ALREADY paused has
             // nothing to resume — and dropping the HUD then left a frozen frame
             // with no transport on it and no indication anything is paused.
@@ -6715,6 +6756,7 @@ final class PlayerViewModel: ObservableObject {
         resetWheel()
         clearFineThumbnails()
         scrubTimeoutTask?.cancel()
+        if usesNTVControls, scrubOpenedFromControls, overlay == .none { showControls() }
     }
 
     /// Coarse jump while in scrub mode: a left/right press moves the target by
@@ -7035,21 +7077,20 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    // MARK: - D-pad seeking (press-to-skip, accumulating, with hold-accel)
+    // MARK: - D-pad seeking (press-to-skip, accumulating)
 
     private var lastNudgeAt: Date?
     private var nudgeStreak = 0
+    private var ntvAccumulatedSeek = NTVAccumulatedSeek()
 
     /// One left/right press. `base` is the configured skip amount (signed).
-    /// Rapid consecutive presses accumulate into one bigger seek and, because
-    /// holding the D-pad repeats the command, holding accelerates (each quick
-    /// repeat grows the step) — a smooth "zoom" forward/back. Commits after a
-    /// short pause so the seek fires once, not on every tap.
+    /// Rapid consecutive presses accumulate fixed steps, then commit on a
+    /// debounce. nTV keeps Nuvio's anchor across those internal commits.
     ///
     /// `gesture` = this came from a TRACKPAD SWIPE, which is a different
     /// input entirely and was being made to behave like a button it isn't.
     /// A button can repeat while held, so the long debounce is what gathers a
-    /// hold into one accelerating seek; a swipe cannot repeat — by the time
+    /// hold into one seek; a swipe cannot repeat — by the time
     /// the app sees it, it is over. Waiting 650ms for a second one that the
     /// hardware will never send is dead air the viewer reads as a freeze, so
     /// the first swipe of a run commits AT ONCE and only a follow-up waits,
@@ -7062,7 +7103,7 @@ final class PlayerViewModel: ObservableObject {
         // a run of swipes arrives every 250-292ms, so a 0.35s window sat right
         // on top of the repeat interval and a run kept being re-classified as a
         // fresh gesture.
-        let continuing = lastNudgeAt.map { now.timeIntervalSince($0) < 0.6 } ?? false
+        let continuing = lastNudgeAt.map { now.timeIntervalSince($0) < (usesNTVControls ? 0.8 : 0.6) } ?? false
         nudgeStreak = continuing ? min(nudgeStreak + 1, 12) : 0
         lastNudgeAt = now
 
@@ -7071,7 +7112,13 @@ final class PlayerViewModel: ObservableObject {
         // moved 76 seconds rather than 40 — which is the same "why did it run
         // off" surprise as the sweep this replaced. The debounce still gathers
         // a run into ONE seek; it just adds up honestly now.
-        pendingSeekDelta += base
+        if usesNTVControls {
+            guard let target = ntvAccumulatedSeek.append(base, position: position, duration: duration,
+                                                        at: now.timeIntervalSinceReferenceDate) else { return }
+            pendingSeekDelta = target - position
+        } else {
+            pendingSeekDelta += base
+        }
         PlayerProbe.event("nudge", String(format: "nudge %+.0f -> pending %+.1f (%@)",
                                           base, pendingSeekDelta,
                                           gesture ? "swipe" : "press"))
@@ -7128,12 +7175,13 @@ final class PlayerViewModel: ObservableObject {
     /// Fire the accumulated nudge and clear the preview.
     private func commitPendingNudge() {
         let delta = pendingSeekDelta
+        let target = pendingNTVSeekTarget ?? position + delta
         pendingSeekDelta = 0
         nudgeStreak = 0
         guard delta != 0 else { return }
         lastNudgeCommitAt = Date()
         PlayerProbe.event("nudge", String(format: "COMMIT %+.1f", delta))
-        seek(to: position + delta)
+        seek(to: target, preservingNudge: usesNTVControls)
         // If the viewer opened the transport, its dwell starts at the last
         // committed skip, not at the first press in an accumulated burst.
         if overlay == .controls { restartHideTimer() }
@@ -9696,6 +9744,7 @@ final class PlayerViewModel: ObservableObject {
         // the only one the engine will ever announce (see isSwitchingSource).
         guard !isSwitchingSource else { pendingEndAfterSwitch = true; return }
         playedToEndHandled = true
+        cancelPendingTransportIntents()
         saveProgress()
         if let next = nextEpisode {
             autoAdvanceArmed = true
@@ -10087,6 +10136,7 @@ final class PlayerViewModel: ObservableObject {
         NTVResumeSuggestion.shared.clear(profile: resumeSuggestionProfile, session: resumeSuggestionSession)
         guard !isExiting else { return }
         isExiting = true
+        cancelPendingTransportIntents()
         endAdvanceLadder()
         PlayerProbe.event("player", "exit")
         unregisterProbes()
@@ -10211,6 +10261,7 @@ final class PlayerViewModel: ObservableObject {
         // must NOT restart playback from here (they all gate on isExiting).
         // Also swallows engine state callbacks arriving mid-teardown.
         isExiting = true
+        cancelPendingTransportIntents()
         // Stop the hybrid cache's download and reclaim its disk space — the
         // film being cached belongs to THIS playback.
         if ownedSharedState { MediaCacheServer.shared.endSession() }

@@ -102,10 +102,19 @@ struct NTVCatalogSource: Identifiable {
         return sources.prefix(index).reversed().first { !emptyVisibleSources.contains($0.id) }?.id
     }
     func configure(addons: [InstalledAddon], type: String, scope: String) {
-        let available = addons.flatMap { addon in
+        var available = addons.flatMap { addon in
             (addon.manifest.catalogs ?? []).filter { $0.type == type && !$0.requiresExtra && !NTVAnimeDomain.contains($0) }
                 .map { NTVCatalogSource(addon: addon, catalog: $0) }
         }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ntvCatalogThreeRowsFixture"), let addon = available.first?.addon {
+            available = (0..<3).map { index in
+                NTVCatalogSource(addon: addon, catalog: ManifestCatalog(type: type,
+                    id: "fixture-row-\(index)", name: "Rangée de démonstration \(index + 1)",
+                    extra: nil, extraRequired: nil, extraSupported: nil))
+            }
+        }
+        #endif
         let next = scope + "#" + available.map { "\($0.id)#\($0.catalog.hashValue)" }.joined(separator: "#")
         guard next != fingerprint else { return }
         fingerprint = next; shelves = [:]; order = []; lastSelection = nil; emptyVisibleSources = []
@@ -156,8 +165,17 @@ struct NTVCatalogView: View {
     @FocusState private var categoryFocus: String?
     @FocusState private var categoryTriggerFocused: Bool
     private var routerID: String { "ntv.catalog.\(mediaType).entry" }
-    private var loadKey: String {
-        String(profiles.activeProfileID) + "#" + iptv.routingFingerprint + "#" + addons.catalogAddons.map { "\($0.id)#\($0.manifest.catalogs?.hashValue ?? 0)" }.joined(separator: "#")
+    struct LoadInputs: Equatable {
+        let profileID: Int
+        let addons: [InstalledAddon]
+        let playlist: String
+        let destinations: Set<NTVIPTVSection>
+        let untyped: NTVIPTVSection
+    }
+    private var loadKey: LoadInputs {
+        // Keep the unchanged Array storage; focus must not rehash every manifest or rebuild the IPTV addon.
+        LoadInputs(profileID: profiles.activeProfileID, addons: addons.addons,
+            playlist: iptv.customPlaylistURL, destinations: iptv.destinations, untyped: iptv.untypedM3USection)
     }
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.catalog)

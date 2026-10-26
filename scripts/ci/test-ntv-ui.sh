@@ -114,6 +114,12 @@ if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
     -only-testing:OrivioTVUITests/NTVDesignSmoke/testRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable \
     -only-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable
 fi
+catalog_export_status=0
+if [[ -d "$results/catalog-focus.xcresult" ]]; then
+  xcrun xcresulttool export attachments --path "$results/catalog-focus.xcresult" \
+    --output-path "$output/results/catalog-screenshots" > "$output/logs/catalog-screenshots.log" 2>&1
+  catalog_export_status=$?
+fi
 if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
   run_test_bundle navigation \
     -only-testing:OrivioTVUITests/NTVDesignSmoke \
@@ -166,7 +172,7 @@ else
 fi
 
 # Exporting diagnostics must never turn a failed test into a green job.
-for status in "${test_pipeline[@]}" "$export_status" "$transport_export_status"; do
+for status in "${test_pipeline[@]}" "$export_status" "$transport_export_status" "$catalog_export_status"; do
   if ((status != 0)); then exit "$status"; fi
 done
 

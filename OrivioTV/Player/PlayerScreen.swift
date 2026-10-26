@@ -115,11 +115,11 @@ struct PlayerScreen: View {
             // the pause overlay, and while scrubbing.
             RemoteTouchCatcher(
                 isActive: {
-                    viewModel.overlay == .none
+                    viewModel.hasStartedPlayback && !viewModel.isSwitchingSource && !viewModel.isExiting
+                        && (viewModel.overlay == .none
                         || viewModel.overlay == .controls
                         || viewModel.overlay == .pauseInfo
-                        || viewModel.overlay == .info
-                        || viewModel.isScrubbing
+                        || viewModel.overlay == .info)
                 },
                 onBegan: { viewModel.remoteTouchBegan() },
                 onMoved: { dx, dy in viewModel.remoteTouchMoved(dx: dx, dy: dy) },

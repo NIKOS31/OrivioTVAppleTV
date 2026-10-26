@@ -615,6 +615,46 @@ final class StreamsViewModel: ObservableObject {
     /// during load) choke.
     func load(addonManager: AddonManager, debridEnabled: Bool, perTier: Int, filtersEnabled: Bool = true, forceRefresh: Bool = false, streamTimeout: TimeInterval = 45) async {
         isLoading = true
+        #if DEBUG
+        // Native layout proof only: no addon, scraper, cache or playable endpoint.
+        if ProcessInfo.processInfo.arguments.contains("-ntvSourcesLayoutFixture") {
+            let samples: [(String, String, Int64?)] = [
+                ("1080p · Une source de démonstration au nom volontairement très long pour vérifier la lisibilité",
+                 "Version de démonstration · Une description sur plusieurs lignes pour contrôler les espacements, la troncature et le focus pendant le choix d’une source.", 6 * 1_073_741_824),
+                ("1080p · Une seconde version de démonstration",
+                 "Version légère · Une autre description synthétique pour vérifier la navigation entre deux sources de même qualité.", 3 * 1_073_741_824),
+                ("720p · Une version de démonstration avec un intitulé qui dépasse une seule ligne",
+                 "Une description synthétique particulièrement longue pour vérifier que les métadonnées restent dans la carte, même lorsque leur texte remplit plusieurs lignes.", 2 * 1_073_741_824),
+                ("Source de démonstration sans définition annoncée",
+                 "Les informations absentes restent absentes : cette source ne fournit ni définition ni taille de fichier.", nil)
+            ]
+            pool = samples.enumerated().map { index, sample in
+                StreamEntry(addonName: "Démonstration", stream: Stream(
+                    name: sample.0, title: sample.1, description: nil,
+                    url: "https://example.invalid/source-\(index).mp4", infoHash: nil,
+                    behaviorHints: StreamBehaviorHints(videoSize: sample.2)
+                ))
+            }
+            queriedAddonNames = ["Démonstration", "Source sans résultat"]
+            requestOutcomes = Dictionary(uniqueKeysWithValues: queriedAddonNames.map {
+                ($0, (total: 1, finished: 1, failed: 0, reason: Optional<String>.none))
+            })
+            selectedAddon = nil
+            skippedAddons = []
+            failedAddons = [:]
+            finishedAddonNames = Set(queriedAddonNames)
+            totalAddons = queriedAddonNames.count
+            finishedAddons = totalAddons
+            self.perTier = 2
+            self.filtersEnabled = true
+            streamFilters = StreamFilterOptions()
+            rebuildGroups()
+            assert(groups.count == 2 && allEntries.count == 4)
+            assert(groups.first?.sections.map(\.title) == ["1080p", "720p", "Other"])
+            isLoading = false
+            return
+        }
+        #endif
         let fetchID = await effectiveStreamID()
         guard !Task.isCancelled else { isLoading = false; return }
         stage("stream id ready")
@@ -843,6 +883,7 @@ struct StreamsView: View {
     @EnvironmentObject private var profiles: ProfileStore
     @ObservedObject private var perf = PerformanceSettingsStore.shared
     @StateObject private var viewModel: StreamsViewModel
+    @ScaledMetric(relativeTo: .largeTitle) private var sourceHeadingSize: CGFloat = 48
 
     /// Manual mode (hold-Play / "Play Manually"): skip every auto-action so the
     /// user always lands on the source list, even with Auto Link Selector on.
@@ -995,7 +1036,7 @@ struct StreamsView: View {
                 AutoLinkLoadingScreen(
                     meta: viewModel.meta,
                     status: resolving
-                        ? "Resolving via \(debrid.resolverProvider?.displayName ?? (torrent.settings.isConfigured ? "TorrServer" : "debrid"))"
+                        ? "\(isNTV ? "Résolution avec" : "Resolving via") \(debrid.resolverProvider?.displayName ?? (torrent.settings.isConfigured ? "TorrServer" : "debrid"))"
                         : (isNTV ? "Recherche de la meilleure source" : "Recherche de la meilleure source")
                 )
                 .transition(.opacity)
@@ -1014,28 +1055,48 @@ struct StreamsView: View {
             ATVBackground()
             backdrop
 
-            // APK split layout: content info on the LEFT, sources panel on the RIGHT.
-            HStack(alignment: .top, spacing: OrivioSpacing.xl) {
-                titleBlock
-                    .frame(maxWidth: 620, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if isNTV {
+                HStack(alignment: .top, spacing: 64) {
+                    NTVSourceContext(meta: viewModel.meta, video: viewModel.video)
+                        .frame(width: 460, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 24) {
+                        HStack(alignment: .firstTextBaseline, spacing: 20) {
+                            Text("Sources")
+                                .font(.system(size: sourceHeadingSize, weight: .semibold))
+                                .foregroundStyle(NTVDesign.textPrimary)
+                                .accessibilityIdentifier("ntv.sources.heading")
+                            Spacer(minLength: 12)
+                            Text(viewModel.isLoading ? streamCountLabel : "\(viewModel.allEntries.count) source\(viewModel.allEntries.count > 1 ? "s" : "")")
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(NTVDesign.textSecondary)
+                                .lineLimit(1)
+                        }
+                        sourcesPanel
+                    }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("ntv.sources.choices")
+                }
+                .padding(.horizontal, OrivioSpacing.huge)
+                .padding(.vertical, OrivioSpacing.xxl)
+            } else {
+                HStack(alignment: .top, spacing: OrivioSpacing.xl) {
+                    titleBlock
+                        .frame(maxWidth: 620, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                sourcesPanel
-                    .frame(width: 900)
-                    .frame(maxHeight: .infinity)
-                    .background(
-                        // Opaque: a translucent panel over the full-screen
-                        // backdrop forced per-frame blending of the whole
-                        // panel while scrolling — a real cost on the A10X.
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(theme.palette.backgroundElevated)
-                    )
-                    // Keep the scrolling rows INSIDE the rounded panel —
-                    // without this they draw over its edges as you scroll.
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    sourcesPanel
+                        .frame(width: 900)
+                        .frame(maxHeight: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(theme.palette.backgroundElevated)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                }
+                .padding(.horizontal, OrivioSpacing.huge)
+                .padding(.vertical, OrivioSpacing.xxl)
             }
-            .padding(.horizontal, OrivioSpacing.huge)
-            .padding(.vertical, OrivioSpacing.xxl)
 
             // Only over the LIST — while the auto-link loading screen is up it
             // carries the resolve status itself, rather than stacking a second
@@ -1049,7 +1110,7 @@ struct StreamsView: View {
                         // buried under this dim — a press there could fire a
                         // SECOND source while one is already resolving.
                         OrivioLoadingView(
-                            label: "Resolving via \(debrid.resolverProvider?.displayName ?? (torrent.settings.isConfigured ? "TorrServer" : "debrid"))",
+                            label: "\(isNTV ? "Résolution avec" : "Resolving via") \(debrid.resolverProvider?.displayName ?? (torrent.settings.isConfigured ? "TorrServer" : "debrid"))",
                             holdsFocus: true
                         )
                         .frame(maxHeight: 220)
@@ -1082,6 +1143,13 @@ struct StreamsView: View {
             }
             let s = playerSettings.settings
             viewModel.streamFilters = s.streamFilterOptions
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-ntvSourcesLayoutFixture") {
+                autoLinkResolvingLatch = false
+                await viewModel.load(addonManager: addonManager, debridEnabled: false, perTier: 2)
+                return
+            }
+            #endif
             // A RESUME only qualifies when some automatic selection is actually
             // switched on. It used to qualify unconditionally, so a Continue
             // Watching row opened onto "Finding the best source…" and then
@@ -1327,7 +1395,9 @@ struct StreamsView: View {
     /// The right-hand source panel: loading / empty / grouped list.
     @ViewBuilder
     private var sourcesPanel: some View {
-        if autoLinkResolving {
+        if isNTV {
+            ntvSourcesPanel
+        } else if autoLinkResolving {
             OrivioLoadingView(label: isNTV ? "Recherche de la meilleure source…" : "Recherche de la meilleure source…", holdsFocus: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.groups.isEmpty {
@@ -1367,10 +1437,57 @@ struct StreamsView: View {
         }
     }
 
+    @ViewBuilder
+    private var ntvSourcesPanel: some View {
+        if viewModel.groups.isEmpty && viewModel.isLoading {
+            OrivioLoadingView(label: streamCountLabel, holdsFocus: true)
+                .frame(height: 240)
+                .background {
+                    NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                }
+        } else if viewModel.groups.isEmpty {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 24) {
+                    Label(viewModel.emptyStatus.title, systemImage: "play.slash")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(NTVDesign.textPrimary)
+                        .lineLimit(2)
+                    Text(viewModel.emptyStatus.message)
+                        .font(.body)
+                        .foregroundStyle(NTVDesign.textSecondary)
+                        .lineLimit(4)
+                    ForEach(viewModel.skippedAddons, id: \.id) { skip in
+                        Text("\(skip.name) : \(skip.reason)")
+                            .font(.callout)
+                            .foregroundStyle(NTVDesign.textSecondary)
+                            .lineLimit(3)
+                    }
+                    HStack(spacing: 20) {
+                        retryButton
+                        openAddonsButton
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(32)
+                .background {
+                    NTVGlassSurface(shape: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("ntv.sources.empty")
+                .padding(6)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 20) {
+                if viewModel.addonNames.count > 1 { addonFilterBar }
+                streamList
+            }
+        }
+    }
+
     /// The retry affordance, shared by the empty state and by the diagnostic
     /// list (see `streamList`) — the page's guaranteed focusable control.
     private var retryButton: some View {
-        Button {
+        let button = Button {
             Task {
                 // Re-arm the one-shot focus grab: every entry id is about to be
                 // regenerated, so nothing that currently holds focus will still
@@ -1390,15 +1507,14 @@ struct StreamsView: View {
         } label: {
             if isNTV {
                 Label("Réessayer", systemImage: "arrow.clockwise")
-                    .font(.system(size: 24, weight: .semibold))
-                    .padding(.horizontal, 26)
-                    .frame(height: 60)
-                    .foregroundStyle(theme.palette.textPrimary)
             } else {
                 RetryLabel()
             }
         }
-        .buttonStyle(PlainCardButtonStyle())
+        return Group {
+            if isNTV { button.buttonStyle(NTVActionButtonStyle()) }
+            else { button.buttonStyle(PlainCardButtonStyle()) }
+        }
         .accessibilityIdentifier("ntv.sources.retry")
     }
 
@@ -1706,9 +1822,10 @@ struct StreamsView: View {
                     RemoteImage(url: viewModel.meta.background ?? viewModel.meta.poster,
                             maxPixels: PerformanceProfile.backdropPixelCap)
                     .frame(width: geo.size.width, height: geo.size.height)
-                    .opacity(0.5)
+                    .opacity(isNTV ? 0.24 : 0.5)
                 }
                 HeroGradient(background: theme.palette.background, fullBleed: true)
+                if isNTV { NTVDesign.background.opacity(0.28) }
             }
         }
         .ignoresSafeArea()
@@ -1716,23 +1833,10 @@ struct StreamsView: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: OrivioSpacing.xs) {
-            if isNTV {
-                Text("Sources")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(NTVDesign.accent)
-                    .accessibilityIdentifier("ntv.sources.heading")
-                    .padding(.bottom, 12)
-                NTVPosterArtwork(
-                    imageURL: viewModel.meta.poster, title: viewModel.meta.name,
-                    width: 180, height: 270, focused: false, watched: false,
-                    progress: nil, shadowsEnabled: false
-                )
-                .padding(.bottom, 20)
-            }
             Text(viewModel.meta.name)
                 .font(FusionType.pageTitle(theme.font))
                 .foregroundStyle(theme.palette.textPrimary)
-                .lineLimit(isNTV ? 3 : 1)
+                .lineLimit(1)
             if let video = viewModel.video {
                 Text("\(video.seasonEpisodeCode)\(video.title.map { " • \($0)" } ?? "")")
                     .font(.system(size: 27, weight: .medium))
@@ -1744,12 +1848,6 @@ struct StreamsView: View {
                     .font(.system(size: 21))
                     .foregroundStyle(theme.palette.textTertiary)
             }
-            if isNTV {
-                Text(viewModel.isLoading ? "Choisis un lien proposé par tes addons." : "\(viewModel.allEntries.count) source\(viewModel.allEntries.count > 1 ? "s" : "") proposée\(viewModel.allEntries.count > 1 ? "s" : "") par tes addons.")
-                    .font(.system(size: 23))
-                    .foregroundStyle(NTVDesign.textSecondary)
-                    .padding(.top, 20)
-            }
         }
     }
 
@@ -1759,8 +1857,10 @@ struct StreamsView: View {
                 if !viewModel.isLoading && !viewModel.hasPlayableEntries {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(viewModel.emptyStatus.title).font(.system(size: 30, weight: .semibold))
+                            .lineLimit(isNTV ? 2 : nil)
                         Text(viewModel.emptyStatus.message).font(.system(size: 26))
                             .foregroundStyle(theme.palette.textSecondary)
+                            .lineLimit(isNTV ? 4 : nil)
                     }
                     .accessibilityIdentifier("ntv.sources.status")
                 }
@@ -1768,16 +1868,19 @@ struct StreamsView: View {
                     VStack(alignment: .leading, spacing: OrivioSpacing.md) {
                         // Level 1: addon.
                         Text(group.addonName.uppercased())
-                            .font(.system(size: 24, weight: .heavy))
-                            .foregroundStyle(theme.palette.textPrimary)
+                            .font(isNTV ? .callout.weight(.semibold) : .system(size: 24, weight: .heavy))
+                            .foregroundStyle(isNTV ? theme.palette.textSecondary : theme.palette.textPrimary)
+                            .lineLimit(isNTV ? 1 : nil)
                             .padding(.leading, 4)
                         ForEach(group.sections) { section in
                             VStack(alignment: .leading, spacing: OrivioSpacing.sm) {
                                 // Level 2: resolution (hidden when untiered).
                                 if !section.title.isEmpty {
-                                    Text(section.title.uppercased())
-                                        .font(.system(size: 20, weight: .heavy))
+                                    Text(isNTV ? (section.title == "Other" ? "Qualité non précisée" : section.title) : section.title.uppercased())
+                                        .font(isNTV ? .body.weight(.semibold) : .system(size: 20, weight: .heavy))
                                         .foregroundStyle(theme.palette.secondary)
+                                        .lineLimit(1)
+                                        .accessibilityIdentifier("ntv.sources.quality")
                                         .padding(.leading, 8)
                                         .padding(.top, 2)
                                 }
@@ -1792,18 +1895,19 @@ struct StreamsView: View {
                         if group.entries.isEmpty,
                            !viewModel.finishedAddonNames.contains(group.addonName) {
                             Text("Recherche…")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(isNTV ? .callout : .system(size: 18, weight: .semibold))
                                 .foregroundStyle(theme.palette.textTertiary)
                                 .padding(.leading, 8)
                         } else if group.entries.isEmpty,
                            let reason = viewModel.failedAddons[group.addonName] {
                             Text("Indisponible : \(reason)")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(isNTV ? .callout : .system(size: 18, weight: .semibold))
                                 .foregroundStyle(theme.palette.textSecondary)
+                                .lineLimit(isNTV ? 3 : nil)
                                 .padding(.leading, 8)
                         } else if group.entries.isEmpty {
                             Text("Aucune source trouvée.")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(isNTV ? .callout : .system(size: 18, weight: .semibold))
                                 .foregroundStyle(theme.palette.textSecondary)
                                 .padding(.leading, 8)
                         }
@@ -1814,12 +1918,14 @@ struct StreamsView: View {
                 ForEach(viewModel.skippedAddons, id: \.id) { skip in
                     VStack(alignment: .leading, spacing: OrivioSpacing.sm) {
                         Text(skip.name.uppercased())
-                            .font(.system(size: 24, weight: .heavy))
+                            .font(isNTV ? .callout.weight(.semibold) : .system(size: 24, weight: .heavy))
                             .foregroundStyle(theme.palette.textSecondary)
+                            .lineLimit(isNTV ? 1 : nil)
                             .padding(.leading, 4)
                         Text(skip.reason)
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(isNTV ? .callout : .system(size: 18, weight: .semibold))
                             .foregroundStyle(theme.palette.textSecondary)
+                            .lineLimit(isNTV ? 3 : nil)
                             .padding(.leading, 8)
                     }
                 }
@@ -1841,7 +1947,7 @@ struct StreamsView: View {
             }
             .padding(.vertical, OrivioSpacing.lg)
         }
-        .onChange(of: viewModel.groups.count) { _, _ in
+        .onChange(of: viewModel.groups.count, initial: isNTV) { _, _ in
             // Only grab focus on the FIRST results arriving — otherwise changing
             // the addon filter (which rebuilds groups) would yank focus off the
             // chip you just picked and down into the list.
@@ -1870,6 +1976,7 @@ struct StreamsView: View {
         }
         .buttonStyle(PlainCardButtonStyle())
         .focused($focusedEntry, equals: entry.id)
+        .accessibilityIdentifier("ntv.sources.row")
         // Hold Select → context actions.
         .contextMenu {
             if entry.stream.isPlayable, let streamURL = entry.stream.url,
@@ -1884,6 +1991,43 @@ struct StreamsView: View {
     }
 }
 
+private struct NTVSourceContext: View {
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 46
+    let meta: MetaItem
+    let video: MetaVideo?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            NTVPosterArtwork(
+                imageURL: meta.poster, title: meta.name,
+                width: 168, height: 252, focused: false, watched: false,
+                progress: nil, shadowsEnabled: false
+            )
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 14) {
+                Text(meta.name)
+                    .font(.system(size: titleSize, weight: .semibold))
+                    .foregroundStyle(NTVDesign.textPrimary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let video {
+                    Text("\(video.seasonEpisodeCode)\(video.title.map { " · \($0)" } ?? "")")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(NTVDesign.textSecondary)
+                        .lineLimit(2)
+                }
+            }
+            Text("Choisis une source selon la qualité souhaitée.")
+                .font(.body)
+                .foregroundStyle(NTVDesign.textSecondary)
+                .lineLimit(3)
+                .padding(.top, 8)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ntv.sources.context")
+    }
+}
+
 struct StreamRowView: View {
     @ObservedObject private var perf = PerformanceSettingsStore.shared
     @EnvironmentObject private var theme: ThemeManager
@@ -1895,7 +2039,74 @@ struct StreamRowView: View {
     /// Badger badge chips matched for this link (see StreamBadgeStore).
     var badges: [StreamBadge] = []
 
+    @ViewBuilder
     var body: some View {
+        if theme.palette.id == NTVDesign.palette.id {
+            ntvRow
+        } else {
+            legacyRow
+        }
+    }
+
+    private var ntvRow: some View {
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(entry.resolutionLabel ?? "Source")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(NTVDesign.textPrimary)
+                    .lineLimit(1)
+                if let size = entry.fileSizeLabel {
+                    Text(size)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(NTVDesign.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 128, alignment: .leading)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(entry.stream.name == nil ? "Source vidéo" : entry.displayName)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(NTVDesign.textPrimary)
+                    .lineLimit(homeCatalogSettings.fullStreamTitles ? 3 : 1)
+                if !entry.displayDetail.isEmpty {
+                    Text(entry.displayDetail)
+                        .font(.callout)
+                        .foregroundStyle(NTVDesign.textSecondary)
+                        .lineLimit(homeCatalogSettings.fullStreamTitles ? 4 : 2)
+                }
+                if entry.stream.isTorrent && entry.isInstant || debridShortName != nil {
+                    HStack(spacing: 18) {
+                        if entry.stream.isTorrent, entry.isInstant {
+                            Label("Disponible", systemImage: "bolt.fill")
+                        }
+                        if let debridShortName { Text(debridShortName) }
+                    }
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(NTVDesign.textSecondary)
+                    .lineLimit(1)
+                }
+                if !badges.isEmpty { StreamBadgeChips(badges: badges) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: entry.stream.isTorrent ? "bolt.horizontal.circle.fill" : "play.circle.fill")
+                .font(.title2)
+                .foregroundStyle(isFocused ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+                .accessibilityHidden(true)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(isFocused ? theme.palette.focusBackground : theme.palette.backgroundCard)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(isFocused ? theme.palette.focusRing : .clear, lineWidth: 3)
+        }
+        .animation(perf.motion(FusionFocus.liftAnimation), value: isFocused)
+    }
+
+    private var legacyRow: some View {
         // Layout → "Full stream names": rows grow to fit the whole release
         // string instead of truncating it. `fixedSize` matters as much as the
         // lifted line limits — inside the list's lazy stack a Text is happy to
@@ -2013,7 +2224,7 @@ private struct AddonFilterChipLabel: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 21, weight: .semibold))
+            .font(theme.palette.id == NTVDesign.palette.id ? .callout.weight(.semibold) : .system(size: 21, weight: .semibold))
             .foregroundStyle(foreground)
             .lineLimit(1)
             .padding(.horizontal, OrivioSpacing.lg)

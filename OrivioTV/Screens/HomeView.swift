@@ -3078,9 +3078,8 @@ private struct HomeRowDefaultFocus: ViewModifier {
     }
 }
 
-/// Bridge vertical commands that leave focus in the same shelf: a SwiftUI
-/// command handler need not produce UIKit's movementDidFail notification.
-/// Real remote commands cancel old landings; failed boundary moves still notify RootView.
+/// Catalog vertical commands use the ordered shelf neighbor even when UIKit
+/// finds a geometric candidate in a more distant row. Home keeps native movement.
 /// `enabled` is fixed for the lifetime of a row, preserving its view identity.
 private struct CatalogRowMovementObserver: ViewModifier {
     let enabled: Bool
@@ -3096,14 +3095,7 @@ private struct CatalogRowMovementObserver: ViewModifier {
                 // could otherwise pull the viewer back to the first card.
                 router.noteUserMovement(in: rowID)
                 guard direction == .up || direction == .down else { return }
-                let generation = router.interactionGeneration
-                // Let UIKit finish this move before bridging it. A newer
-                // command or a successful row crossing supersedes this turn.
-                DispatchQueue.main.async {
-                    guard router.interactionGeneration == generation,
-                          router.lastRowID == rowID else { return }
-                    onVerticalMove?(direction)
-                }
+                onVerticalMove?(direction)
             }
         } else {
             content

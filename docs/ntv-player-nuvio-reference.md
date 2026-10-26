@@ -92,3 +92,36 @@ Validation covers linear targets, duration ranges, bounds, invalid inputs,
 normal release versus cancellation, paused seeks and explicit playback
 resumption. Actual touch sensitivity and frame pacing still require a
 physical Siri Remote test.
+
+## Focused seek comparison for build 49
+
+The installed JAR was rebound through REA and its SHA-256 checked again on
+27 October 2026: the identity above is unchanged. REA's exact inventory view
+for `PlayerScreenRuntimeUiKt.class` and
+`PlayerScreenRuntimeGestureActionsKt.class` is
+`ev_158018ec297f811c584b13c3aaf51ac48d077cf8f2aae18234f2653396b3a58e`.
+Inventory verifies those bytes; the following rules come from fresh local
+`javap -c -p` reads, not from inventory names or a running Nuvio session.
+Fourteen focused class dumps and their hashes are retained in the workspace
+under `outputs/nTV-feedback-2026-10-26/nuvio-seek-rea-49/`, with the comparison
+in `comparaison-seek.md` and identities in `manifest.json`.
+
+| Installed Nuvio rule and bytecode entry | nTV correspondence and remaining adaptation |
+| --- | --- |
+| `PlayerTimelineKt.PlayerTimeline$lambda$7$1$0` clamps and reports a proposed position; `$lambda$7$2$0` reports its final value. `PlayerScreenRuntimeUiKt.handlePlayerControlsScrubChange` only stores preview state, without pausing. | Both nTV timeline entry points now call `beginScrub()` without imposing a pause. A running video keeps running; a paused one stays paused. The Siri Remote still uses a dedicated preview HUD. |
+| `handlePlayerControlsScrubFinished` calls `finishTimelineScrub`, `seekTo` and progress sync, without calling `play`. | Commit keeps the current pause/play intent, including a buffer transition. Explicit physical Play during a preview still commits and resumes as a TV adaptation. |
+| `PlayerScreenRuntimeGestureActionsKt.handleDoubleTapSeek` stores direction, a fixed playback-snapshot baseline and accumulated 10-second steps. Its reset coroutine clears that state after 800 ms without input. Direction reversal starts from the current playback snapshot. | `NTVAccumulatedSeek` ports that rule for nTV's configured directional skip. The anchor survives the existing internal debounce commits, so an old engine clock cannot lose a same-direction step. The pending timeline/time labels read the absolute target. A reversal uses the current playback position, matching Nuvio; it does not subtract from an unconfirmed previous target. The existing 280 ms discrete-click debounce remains a TV adaptation. |
+| `togglePlayback` updates `shouldPlay` before calling the engine. `updatePlaybackSnapshot` rejects a snapshot whose `PlaybackKey` belongs to another source. | nTV keeps its existing source-generation and KSPlayer completion guards. Its nTV seek defaults now use the current pause intent, including when an older playing-state callback has not caught up. These guards are nTV implementations, not a copied Nuvio engine. |
+| Horizontal surface preview and final seek are separate callbacks. | UIKit's initial nonzero pan translation is now delivered even if no `.changed` follows. A contact rejected or interrupted by a blocking panel cannot later revive; detaching its window delivers cancellation. Loading before first playback, source replacement and exit block input; buffering after playback has begun remains usable. |
+| `clearLiveGestureFeedback` clears feedback without starting playback. | Cancelling nTV's running preview no longer restarts the engine. A timeline preview returns to its controls; a blocking panel keeps ownership. Source changes, explicit seeks, new scrubs, end and exit retire old accumulated targets. |
+| `BindPlayerUiVisibilityEffects$1$1` hides controls after 3500 ms only while playing, not loading or scrubbing, without an error or parental guide. `requestBack` releases the retained player before navigation. | nTV retains its five-second idle policy, native focus/pickers and Back hierarchy: cancel preview, close a panel or controls, then exit. These TV choices and native lifecycle are not claimed as identical Nuvio implementations. |
+
+The native journey now checks that the **real playback clock** advances during
+a running timeline preview, then cancels without applying its proposed target.
+The preview's French accessibility value distinguishes current playback from
+the target; it is not an FPS measurement. The paused preview/cancel/commit,
+explicit Play, advancing post-commit clock and picker checks are preserved.
+Five focused model/input tests cover the burst anchor, direction and expiry,
+bounds and invalid input, reset, initial pan delivery and cancellation.
+These are prepared assertions; native execution and physical Siri Remote
+calibration remain required before claiming the new build is validated.

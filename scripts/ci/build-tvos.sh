@@ -71,6 +71,8 @@ xcrun actool OrivioTV/Assets.xcassets --compile "$icon_probe" \
   --compress-pngs --target-device tv --minimum-deployment-target 17.0 --platform appletvos \
   2>&1 | tee "$output/logs/icon-preflight.log"
 python3 scripts/ci/verify-ntv-icon-assets.py "$icon_probe/Info.plist" "$icon_probe/Assets.car"
+xcrun assetutil --info "$icon_probe/Assets.car" > "$output/logs/icon-preflight-renditions.json"
+shasum -a 256 "$icon_probe/Assets.car" > "$output/logs/icon-preflight-renditions.sha256"
 
 bash scripts/ci/prepare-ffmpeg.sh 2>&1 | tee "$output/logs/ffmpeg-prepare.log"
 
@@ -89,6 +91,8 @@ xcodebuild build \
 python3 scripts/ci/verify-ntv-icon-assets.py \
   "$derived_data/Build/Products/Release-appletvos/OrivioTV.app/Info.plist" \
   "$derived_data/Build/Products/Release-appletvos/OrivioTV.app/Assets.car"
+xcrun assetutil --info "$derived_data/Build/Products/Release-appletvos/OrivioTV.app/Assets.car" > "$output/logs/icon-device-renditions.json"
+shasum -a 256 "$derived_data/Build/Products/Release-appletvos/OrivioTV.app/Assets.car" > "$output/logs/icon-device-renditions.sha256"
 
 xcodebuild build \
   -project OrivioTV.xcodeproj -scheme OrivioTV \
@@ -101,6 +105,12 @@ xcodebuild build \
   CODE_SIGN_ENTITLEMENTS="$task_root/Config/NTV-CI-Simulator.entitlements" \
   ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
   2>&1 | tee "$output/logs/simulator.log"
+
+python3 scripts/ci/verify-ntv-icon-assets.py \
+  "$derived_data/Build/Products/Debug-appletvsimulator/OrivioTV.app/Info.plist" \
+  "$derived_data/Build/Products/Debug-appletvsimulator/OrivioTV.app/Assets.car"
+xcrun assetutil --info "$derived_data/Build/Products/Debug-appletvsimulator/OrivioTV.app/Assets.car" > "$output/logs/icon-simulator-renditions.json"
+shasum -a 256 "$derived_data/Build/Products/Debug-appletvsimulator/OrivioTV.app/Assets.car" > "$output/logs/icon-simulator-renditions.sha256"
 
 python3 - "$output/build-info.json" <<'PY'
 import json

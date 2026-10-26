@@ -2113,7 +2113,7 @@ struct StreamRowView: View {
         // truncate at its proposed height unless told the full height is
         // required.
         let fullNames = homeCatalogSettings.fullStreamTitles
-        HStack(spacing: OrivioSpacing.lg) {
+        return HStack(spacing: OrivioSpacing.lg) {
             Image(systemName: entry.stream.isTorrent ? "bolt.horizontal.circle.fill" : "play.circle.fill")
                 .font(.system(size: 34))
                 .foregroundStyle(isFocused ? theme.palette.secondary : theme.palette.textTertiary)

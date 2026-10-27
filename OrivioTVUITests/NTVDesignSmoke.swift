@@ -1783,12 +1783,15 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(openAddons.waitForExistence(timeout: 60), "With no stream addon installed, offer a real route to Addons.")
         XCTAssertTrue(app.descendants(matching: .any)["ntv.sources.empty"].firstMatch.exists)
         capture("ntv-sources-empty-recovery")
-        for _ in 0..<4 {
-            if openAddons.hasFocus { break }
-            remote.press(.down)
-            if focused(openAddons, timeout: 2) { break }
-        }
+        let retry = app.buttons["ntv.sources.retry"]
+        XCTAssertTrue(focused(retry, timeout: 5), "The empty source page must open on its recovery action.")
+        XCTAssertGreaterThan(openAddons.frame.minX, retry.frame.maxX,
+                             "Addons must sit to the right of Retry in the compact empty state.")
+        XCTAssertEqual(openAddons.frame.midY, retry.frame.midY, accuracy: 2)
+        remote.press(.right)
+        XCTAssertTrue(focused(openAddons, timeout: 5), "Right from Retry must reach the adjacent Addons action.")
         XCTAssertTrue(openAddons.hasFocus)
+        capture("ntv-sources-empty-addons-focus")
         remote.press(.select)
         XCTAssertTrue(app.staticTexts["ntv.addons.heading"].waitForExistence(timeout: 15))
         remote.press(.menu)

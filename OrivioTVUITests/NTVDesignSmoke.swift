@@ -1401,7 +1401,7 @@ final class NTVDesignSmoke: XCTestCase {
         app.terminate()
     }
 
-    func testPlayerTimelineCancelAndCommit() {
+    func testPlayerTimelineCancelAndCommit() throws {
         continueAfterFailure = false
         func seconds(_ value: String) -> Int {
             let parts = value.split(separator: ":").compactMap { Int($0) }
@@ -1417,14 +1417,17 @@ final class NTVDesignSmoke: XCTestCase {
         let play = app.buttons["ntv.player.play"]
         // A fresh video starts without chrome. Open it as a viewer does;
         // early Up presses are ignored while the local fixture is loading.
-        var opened = false
+        var openingControl: XCUIElementSnapshot?
         for _ in 0..<10 {
             remote.press(.up)
-            if play.waitForExistence(timeout: 2) { opened = true; break }
+            if let snapshot = try? play.snapshot() { openingControl = snapshot; break }
         }
-        if !opened { capture("ntv-player-startup-failure") }
-        XCTAssertTrue(opened, "The local video fixture must open nTV controls.")
-        XCTAssertEqual(play.label, "Pause")
+        if openingControl == nil { capture("ntv-player-startup-failure") }
+        // Like the live quick-skip journey, read presence and state atomically:
+        // another accessibility query can outlast the five-second idle dwell.
+        let runningControl = try XCTUnwrap(openingControl, "The local video fixture must open nTV controls.")
+        XCTAssertEqual(runningControl.identifier, "ntv.player.play")
+        XCTAssertEqual(runningControl.label, "Pause")
         remote.press(.up)
         let liveTimeline = app.buttons["ntv.player.timeline"]
         XCTAssertTrue(focused(liveTimeline, timeout: 5))
@@ -1452,8 +1455,9 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertGreaterThan(whilePreviewing.target - whilePreviewing.live, 10,
                              "Previewing must not seek the underlying video before confirmation.")
         remote.press(.menu)
-        XCTAssertTrue(play.waitForExistence(timeout: 8))
-        XCTAssertEqual(play.label, "Pause", "Cancelling a running preview must preserve playback.")
+        let cancelledControl = try play.snapshot()
+        XCTAssertEqual(cancelledControl.identifier, "ntv.player.play", "Cancelling the preview must restore the controls.")
+        XCTAssertEqual(cancelledControl.label, "Pause", "Cancelling a running preview must preserve playback.")
         // Pause only after cancellation so the remaining geometry and paused
         // seek checks stay stable while the real running preview was verified.
         remote.press(.playPause)

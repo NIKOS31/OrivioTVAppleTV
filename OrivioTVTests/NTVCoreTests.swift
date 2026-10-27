@@ -293,9 +293,10 @@ final class NTVCoreTests: XCTestCase {
     func testShortTouchPanDeliversInitialTranslationAndCancellation() {
         let input = TouchHostView()
         var active = true
+        var sourceGeneration = 0
         var events: [String] = []
         var cancellations: [Bool] = []
-        input.configure(isActive: { active }, onBegan: { events.append("begin") },
+        input.configure(isActive: { active }, sourceGeneration: { sourceGeneration }, onBegan: { events.append("begin") },
                         onMoved: { x, _ in events.append("move\(Int(x))") },
                         onEnded: { x, _, cancelled in
                             events.append("end\(Int(x))"); cancellations.append(cancelled)
@@ -319,6 +320,39 @@ final class NTVCoreTests: XCTestCase {
         input.removeRecognizers()
         XCTAssertEqual(cancellations, [false, true, true, true],
                        "Losing the gate before detaching still requires cancellation cleanup.")
+        events.removeAll()
+        active = true
+        input.receivePan(state: .began, translation: .init(x: 12, y: 0))
+        active = false
+        sourceGeneration += 1
+        active = true
+        input.receivePan(state: .changed, translation: .init(x: 100, y: 0))
+        input.receivePan(state: .ended, translation: .init(x: 100, y: 0))
+        XCTAssertEqual(events, ["begin", "move12", "end100"],
+                       "A source change must reject the old contact even without a sample while input was blocked.")
+        XCTAssertEqual(cancellations, [false, true, true, true, true])
+        events.removeAll()
+        input.receivePan(state: .began, translation: .init(x: 40, y: 0))
+        input.receivePan(state: .changed, translation: .init(x: 80, y: 0))
+        input.receivePan(state: .ended, translation: .init(x: 100, y: 0))
+        XCTAssertEqual(events, ["begin", "move40", "move80", "end100"])
+        XCTAssertEqual(cancellations, [false, true, true, true, true, false],
+                       "The next new contact on the new source must remain usable.")
+        events.removeAll()
+        input.receivePan(state: .began, translation: .init(x: 12, y: 0))
+        active = false
+        sourceGeneration += 1
+        active = true
+        input.receivePan(state: .ended, translation: .init(x: 100, y: 0))
+        XCTAssertEqual(events, ["begin", "move12", "end100"])
+        XCTAssertEqual(cancellations.last, true,
+                       "A source change followed directly by release must cancel too.")
+        events.removeAll()
+        input.receivePan(state: .began, translation: .init(x: 40, y: 0))
+        input.receivePan(state: .ended, translation: .init(x: 80, y: 0))
+        XCTAssertEqual(events, ["begin", "move40", "end80"])
+        XCTAssertEqual(cancellations, [false, true, true, true, true, false, true, false],
+                       "Direct-release cancellation must not block the next contact either.")
     }
 
     func testSeanimeNavigationStartsOnTheLeftWithoutReplacingReferencePreferences() throws {
@@ -963,7 +997,7 @@ final class NTVCoreTests: XCTestCase {
         var active = false
         var begins = 0, moves = 0, ends = 0
         var cancellations: [Bool] = []
-        input.configure(isActive: { active }, onBegan: { begins += 1 },
+        input.configure(isActive: { active }, sourceGeneration: { 0 }, onBegan: { begins += 1 },
                         onMoved: { _, _ in moves += 1 }, onEnded: { _, _, cancelled in
                             ends += 1; cancellations.append(cancelled)
                         })
@@ -989,7 +1023,7 @@ final class NTVCoreTests: XCTestCase {
         var active = true
         var moves = 0, ends = 0
         var cancellations: [Bool] = []
-        input.configure(isActive: { active }, onBegan: {},
+        input.configure(isActive: { active }, sourceGeneration: { 0 }, onBegan: {},
                         onMoved: { _, _ in moves += 1 }, onEnded: { _, _, cancelled in
                             ends += 1; cancellations.append(cancelled)
                         })

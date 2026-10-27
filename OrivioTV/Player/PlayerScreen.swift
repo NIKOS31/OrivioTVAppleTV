@@ -121,6 +121,7 @@ struct PlayerScreen: View {
                         || viewModel.overlay == .pauseInfo
                         || viewModel.overlay == .info)
                 },
+                sourceGeneration: { viewModel.loadGeneration },
                 onBegan: { viewModel.remoteTouchBegan() },
                 onMoved: { dx, dy in viewModel.remoteTouchMoved(dx: dx, dy: dy) },
                 onEnded: { dx, dy, cancelled in viewModel.remoteTouchEnded(dx: dx, dy: dy, cancelled: cancelled) }

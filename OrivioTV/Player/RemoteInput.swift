@@ -13,17 +13,18 @@ import UIKit
 /// Gated by `isActive` so it never affects browsing UI.
 struct RemoteTouchCatcher: UIViewRepresentable {
     let isActive: () -> Bool
+    let sourceGeneration: () -> Int
     let onBegan: () -> Void
     let onMoved: (CGFloat, CGFloat) -> Void   // translation tx, ty (points)
     let onEnded: (CGFloat, CGFloat, Bool) -> Void    // final translation tx, ty, cancelled
 
     func makeUIView(context: Context) -> TouchHostView {
         let view = TouchHostView()
-        view.configure(isActive: isActive, onBegan: onBegan, onMoved: onMoved, onEnded: onEnded)
+        view.configure(isActive: isActive, sourceGeneration: sourceGeneration, onBegan: onBegan, onMoved: onMoved, onEnded: onEnded)
         return view
     }
     func updateUIView(_ uiView: TouchHostView, context: Context) {
-        uiView.configure(isActive: isActive, onBegan: onBegan, onMoved: onMoved, onEnded: onEnded)
+        uiView.configure(isActive: isActive, sourceGeneration: sourceGeneration, onBegan: onBegan, onMoved: onMoved, onEnded: onEnded)
     }
     static func dismantleUIView(_ uiView: TouchHostView, coordinator: ()) {
         uiView.removeRecognizers()
@@ -35,16 +36,19 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
     private weak var attachedWindow: UIWindow?
     private var acceptedPan = false
     private var panNeedsCleanup = false
+    private var panSourceGeneration: Int?
 
     private var isActive: () -> Bool = { false }
+    private var sourceGeneration: () -> Int = { 0 }
     private var onBegan: () -> Void = {}
     private var onMoved: (CGFloat, CGFloat) -> Void = { _, _ in }
     private var onEnded: (CGFloat, CGFloat, Bool) -> Void = { _, _, _ in }
 
-    func configure(isActive: @escaping () -> Bool, onBegan: @escaping () -> Void,
+    func configure(isActive: @escaping () -> Bool, sourceGeneration: @escaping () -> Int, onBegan: @escaping () -> Void,
                    onMoved: @escaping (CGFloat, CGFloat) -> Void,
                    onEnded: @escaping (CGFloat, CGFloat, Bool) -> Void) {
         self.isActive = isActive
+        self.sourceGeneration = sourceGeneration
         self.onBegan = onBegan
         self.onMoved = onMoved
         self.onEnded = onEnded
@@ -92,6 +96,7 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
             // overlay was up — and they are indistinguishable downstream.
             acceptedPan = isActive()
             panNeedsCleanup = acceptedPan
+            panSourceGeneration = sourceGeneration()
             PlayerProbe.event("remote", "pad DOWN (active=\(acceptedPan.probe))")
             if acceptedPan {
                 onBegan()
@@ -101,7 +106,8 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
         case .changed:
             guard acceptedPan else { return }
             // Closing a blocking panel cannot revive the contact it interrupted.
-            guard isActive() else { acceptedPan = false; return }
+            // A source may change while the thumb rests, with no blocked sample.
+            guard isActive(), panSourceGeneration == sourceGeneration() else { acceptedPan = false; return }
             onMoved(t.x, t.y)
         // The END is delivered UNCONDITIONALLY. `isActive` reads the live
         // overlay, so a gesture that began over active UI and ended after an
@@ -113,9 +119,10 @@ final class TouchHostView: UIView, UIGestureRecognizerDelegate {
             PlayerProbe.event("remote", String(format: "pad UP %@ (%+.0f,%+.0f)",
                                                state == .ended ? "ended" : "cancelled",
                                                t.x, t.y))
-            let cancelled = state != .ended || !acceptedPan || !isActive()
+            let cancelled = state != .ended || !acceptedPan || !isActive() || panSourceGeneration != sourceGeneration()
             acceptedPan = false
             panNeedsCleanup = false
+            panSourceGeneration = nil
             onEnded(t.x, t.y, cancelled)
         default: break
         }

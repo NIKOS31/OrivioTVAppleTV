@@ -4840,7 +4840,7 @@ final class PlayerViewModel: ObservableObject {
     /// a DIFFERENT film". `dvFirstGeneration` already does exactly this for the
     /// Dolby Vision preflight; this generalises it to the rest of the per-load
     /// async work.
-    private var loadGeneration = 0
+    private(set) var loadGeneration = 0
 
     /// True when `generation` is still the stream currently loaded.
     private func isCurrentLoad(_ generation: Int) -> Bool {

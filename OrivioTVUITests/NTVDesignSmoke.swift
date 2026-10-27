@@ -1433,25 +1433,28 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(liveTimeline, timeout: 5))
         remote.press(.select)
         let livePreview = app.descendants(matching: .any)["ntv.player.seek.preview"].firstMatch
-        XCTAssertTrue(livePreview.waitForExistence(timeout: 5))
-        func previewTimes() -> (live: Int, target: Int) {
-            let value = (try? livePreview.snapshot().value) as? String ?? ""
+        func previewTimes() throws -> (live: Int, target: Int) {
+            let snapshot = try livePreview.snapshot()
+            XCTAssertEqual(snapshot.identifier, "ntv.player.seek.preview")
+            let value = try XCTUnwrap(snapshot.value as? String, "The preview must expose its playback and target times.")
+            XCTAssertTrue(value.hasPrefix("Lecture "), "The preview must identify the real playback time.")
             let parts = value.components(separatedBy: ", cible ")
             XCTAssertEqual(parts.count, 2, "The preview must distinguish real playback from its proposed target.")
             return (seconds(parts.first?.replacingOccurrences(of: "Lecture ", with: "") ?? ""),
                     seconds(parts.last ?? ""))
         }
+        // Keep adjusting as a viewer does: a passive AX wait can outlast the
+        // six-second preview timeout before its existence result is returned.
         for _ in 0..<2 { remote.press(.right) }
-        let liveBeforePreview = previewTimes().live
+        let liveBeforePreview = try previewTimes().live
         var whilePreviewing = (live: liveBeforePreview, target: 0)
-        let previewClockAdvances = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            let current = previewTimes()
-            guard current.live > liveBeforePreview else { return false }
-            whilePreviewing = current
-            return true
-        }, object: livePreview)
-        XCTAssertEqual(XCTWaiter.wait(for: [previewClockAdvances], timeout: 5), .completed,
-                       "Opening and moving the Nuvio timeline must keep the real video clock running.")
+        let previewDeadline = Date().addingTimeInterval(5)
+        repeat {
+            remote.press(.right)
+            whilePreviewing = try previewTimes()
+        } while whilePreviewing.live <= liveBeforePreview && Date() < previewDeadline
+        XCTAssertGreaterThan(whilePreviewing.live, liveBeforePreview,
+                             "Opening and moving the Nuvio timeline must keep the real video clock running.")
         XCTAssertGreaterThan(whilePreviewing.target - whilePreviewing.live, 10,
                              "Previewing must not seek the underlying video before confirmation.")
         remote.press(.menu)
@@ -1478,13 +1481,15 @@ final class NTVDesignSmoke: XCTestCase {
         let scrubStart = seconds(quickPosition.label)
         remote.press(.right)
         let position = app.staticTexts["ntv.player.position"].firstMatch
-        XCTAssertTrue(position.waitForExistence(timeout: 8))
-        let first = position.label
+        let firstPosition = try position.snapshot()
+        XCTAssertEqual(firstPosition.identifier, "ntv.player.position")
+        let first = firstPosition.label
         XCTAssertLessThanOrEqual(abs(seconds(first) - scrubStart - 10), 1,
                                  "Entering the timeline must use the same precise 10-second step as quick skips.")
         remote.press(.right)
-        XCTAssertNotEqual(position.label, first, "Right must move the seek preview before committing.")
-        let repeatedStart = seconds(position.label)
+        let adjustedPosition = try position.snapshot()
+        XCTAssertNotEqual(adjustedPosition.label, first, "Right must move the seek preview before committing.")
+        let repeatedStart = seconds(adjustedPosition.label)
         for _ in 0..<8 { remote.press(.right) }
         XCTAssertLessThanOrEqual(seconds(position.label) - repeatedStart, 81,
                                  "Rapid presses must never accelerate into minute-sized jumps.")
@@ -1596,8 +1601,8 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.up)
         XCTAssertTrue(focused(timeline, timeout: 5))
         remote.press(.select)
-        XCTAssertTrue(position.waitForExistence(timeout: 8))
         remote.press(.right)
+        _ = try previewTimes()
         remote.press(.select)
         XCTAssertTrue(play.waitForExistence(timeout: 8))
         // Keep the real transport clock mounted while playback continues.

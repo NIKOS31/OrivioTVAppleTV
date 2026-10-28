@@ -321,6 +321,9 @@ enum StremioAPI {
     }
 
     static func meta(addon: InstalledAddon, type: String, id: String) async throws -> MetaItem {
+        #if DEBUG
+        if addon.id == NTVAnimeFixture.addon.id, let value = NTVAnimeFixture.meta(id: id) { return value }
+        #endif
         if NTVIPTVConfiguration.isBridge(addon) {
             let config = try await NTVIPTVConfiguration.current(for: addon)
             let value = try await NTVIPTVCatalogService.shared.meta(config: config, type: type, id: id)
@@ -344,6 +347,9 @@ enum StremioAPI {
 
     static func streams(addon: InstalledAddon, type: String, id: String,
                         timeout: TimeInterval = 45) async throws -> [Stream] {
+        #if DEBUG
+        if addon.id == NTVAnimeFixture.addon.id, let value = NTVAnimeFixture.streams(id: id) { return value }
+        #endif
         if NTVIPTVConfiguration.isBridge(addon) {
             let config = try await NTVIPTVConfiguration.current(for: addon)
             let value = try await NTVIPTVCatalogService.shared.streams(config: config, type: type, id: id)

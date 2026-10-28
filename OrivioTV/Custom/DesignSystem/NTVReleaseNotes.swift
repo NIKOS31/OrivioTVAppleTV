@@ -10,11 +10,13 @@ struct NTVReleaseNotes: Sendable {
     static let current = NTVReleaseNotes(build: "51", improvements: [
         "Depuis la barre, lever le doigt conserve l’aperçu : OK valide et Retour annule.",
         "L’aperçu ouvert depuis la barre reste disponible entre deux glissements.",
-        "Ces nouveautés et tests restent accessibles dans Réglages → À propos."
+        "Ces nouveautés et tests restent accessibles dans Réglages → À propos.",
+        "Animés ouvre la fiche de lecture habituelle quand le titre est reconnu, avec les épisodes et les sources de tes addons."
     ], checks: [
         "Lecteur : monter sur la barre, glisser, lever le doigt, attendre 10 secondes puis glisser à nouveau. L’aperçu doit rester ouvert sans appliquer la cible.",
         "Annuler avec Retour ; recommencer et valider avec OK. Essayer en lecture puis en pause : le choix lecture/pause doit être conservé.",
-        "Menus : parcourir une rangée puis monter et descendre. Comparer le compteur UI pendant les mouvements et après 10 secondes immobile ; relever max ms et retards. La fluidité reste à vérifier."
+        "Menus : parcourir une rangée puis monter et descendre. Comparer le compteur UI pendant les mouvements et après 10 secondes immobile ; relever max ms et retards. La fluidité reste à vérifier.",
+        "Animés : ouvrir une série, choisir l’épisode et ses sources, puis essayer un film. Un appui long sur une affiche donne accès à la fiche et au suivi."
     ])
 
     func shouldPresent(installedBuild: String, seenBuild: String, arguments: [String] = []) -> Bool {

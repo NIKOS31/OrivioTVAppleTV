@@ -4,6 +4,71 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testAnimeOpensSharedMovieAndEpisodeSourcesWithoutAddonSearch() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-ntvTopMenuDemo", "-ntvAnimeDirectFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        let settings = app.buttons["ntv.navigation.3"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 20))
+        for _ in 0..<3 {
+            if settings.hasFocus { break }
+            remote.press(.menu)
+            if focused(settings, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(settings, timeout: 5))
+        let anime = app.buttons["ntv.navigation.8"]
+        for _ in 0..<8 {
+            if anime.hasFocus { break }
+            remote.press(.left)
+        }
+        XCTAssertTrue(focused(anime, timeout: 5))
+        remote.press(.select)
+        let featured = app.buttons["ntv.anime.featured"]
+        XCTAssertTrue(featured.waitForExistence(timeout: 20))
+        XCTAssertTrue(focused(app.buttons["ntv.anime.season"], timeout: 8))
+        remote.press(.down)
+        remote.press(.down)
+        XCTAssertTrue(focused(featured, timeout: 5))
+        for _ in 0..<6 {
+            if featured.value as? String == "Proposition 1 sur 6" { break }
+            remote.press(.left)
+        }
+        XCTAssertEqual(featured.value as? String, "Proposition 1 sur 6")
+        for movie in [false, true] {
+            remote.press(.select)
+            let play = app.buttons["ntv.detail.play"]
+            let sources = app.buttons["ntv.detail.sources"]
+            XCTAssertTrue(play.waitForExistence(timeout: 15), "A click must open the same playable detail as Home.")
+            XCTAssertFalse(app.buttons["ntv.anime.searchSources"].exists)
+            XCTAssertFalse(app.textFields["ntv.search.field"].exists)
+            XCTAssertTrue(focused(play, timeout: 8))
+            remote.press(.right)
+            XCTAssertTrue(focused(sources, timeout: 5))
+            remote.press(.select)
+            let row = app.buttons.matching(identifier: "ntv.sources.row").firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 15))
+            XCTAssertTrue(focused(row, timeout: 5))
+            let expected = movie ? "Film de test · 1080p" : "Épisode 3.7 de test · 1080p"
+            XCTAssertTrue(app.staticTexts[expected].exists, "The requested source must belong to the mapped movie or the addon's actual episode.")
+            capture(movie ? "ntv-anime-direct-movie-sources" : "ntv-anime-direct-episode-sources")
+            remote.press(.menu)
+            XCTAssertTrue(play.waitForExistence(timeout: 8))
+            remote.press(.menu)
+            XCTAssertTrue(featured.waitForExistence(timeout: 8))
+            XCTAssertTrue(focused(featured, timeout: 8))
+            if !movie {
+                remote.press(.right)
+                XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "value == %@", "Proposition 2 sur 6"), object: featured)], timeout: 5), .completed)
+            }
+        }
+    }
+
     func testSeanimeCatalogRapidMovesYieldToNewNavigation() {
         exerciseCatalogRapidMoves(seanime: true)
     }

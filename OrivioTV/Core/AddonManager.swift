@@ -340,7 +340,10 @@ final class AddonManager: ObservableObject {
     }
 
     var streamAddons: [InstalledAddon] {
-        addons.filter { $0.enabled && $0.manifest.providesStreams } + [LiveTVSettingsStore.shared.localCatalogAddon].compactMap { $0 }
+        #if DEBUG
+        if NTVAnimeFixture.directPlayback { return [NTVAnimeFixture.addon] }
+        #endif
+        return addons.filter { $0.enabled && $0.manifest.providesStreams } + [LiveTVSettingsStore.shared.localCatalogAddon].compactMap { $0 }
     }
 
     var catalogAddons: [InstalledAddon] {
@@ -368,6 +371,9 @@ final class AddonManager: ObservableObject {
     /// Ordered: add-ons that declare the id prefix first, then the rest as a
     /// long shot — the same two-tier logic `metaAddon` had, spelled out.
     func metaAddons(for type: String, id: String) -> [InstalledAddon] {
+        #if DEBUG
+        if NTVAnimeFixture.meta(id: id) != nil { return [NTVAnimeFixture.addon] }
+        #endif
         if id.hasPrefix(NTVIPTVConfiguration.idPrefix) {
             return [LiveTVSettingsStore.shared.localCatalogAddon].compactMap { $0 }.filter { $0.handles(id: id) }
         }

@@ -9,6 +9,7 @@ struct NTVAnimeSavedLibrary: View {
     @EnvironmentObject private var profiles: ProfileStore
     let onSelect: (MetaItem) -> Void
     var onSelectFollow: (NTVAnimeMedia) -> Void = { _ in }
+    var onShowInfo: (NTVAnimeMedia) -> Void = { _ in }
 
     private struct Entry: Identifiable {
         let meta: MetaItem
@@ -55,6 +56,7 @@ struct NTVAnimeSavedLibrary: View {
                             .buttonStyle(PlainCardButtonStyle())
                             .accessibilityLabel(media.displayTitle)
                             .accessibilityIdentifier("ntv.anime.followed.\(media.id)")
+                            .contextMenu { Button("Fiche et suivi") { onShowInfo(media) } }
                         }
                     }.focusSection()
                 }

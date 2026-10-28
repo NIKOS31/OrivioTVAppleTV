@@ -26,7 +26,7 @@ final class NTVAnimeModel: ObservableObject {
 
     init(loader: @escaping Loader = { request, page in
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-ntvAnimeFixture") {
+        if ProcessInfo.processInfo.arguments.contains("-ntvAnimeFixture") || NTVAnimeFixture.directPlayback {
             return NTVAnimeFixture.feed(for: request, page: page)
         }
         #endif
@@ -121,6 +121,7 @@ struct NTVAnimeView: View {
     @State private var followsCurrentWeek = true
     @State private var followingOnly = false
     @State private var selection: NTVAnimeMedia?
+    @State private var opening: NTVAnimeMedia?
     @State private var selectedEntryID: String?
     @State private var pendingSearch: String?
     @State private var refresh = 0
@@ -132,6 +133,7 @@ struct NTVAnimeView: View {
     @Environment(\.ntvBackdropCanvas) private var canvas
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var profiles: ProfileStore
+    @EnvironmentObject private var addonManager: AddonManager
     @ObservedObject private var follows = NTVAnimeFollows.shared
     let onSearch: (String) -> Void
     let onOpenItem: (MetaItem) -> Void
@@ -152,7 +154,7 @@ struct NTVAnimeView: View {
     private var usesSharedBackdrop: Bool { theme.palette.id == NTVDesign.palette.id }
     private var canRotateFeatured: Bool {
         section == .season && scenePhase == .active && !reduceMotion && !featuredFocused
-            && !model.loading && selection == nil && featuredEntries.count > 1
+            && !model.loading && selection == nil && opening == nil && featuredEntries.count > 1
             && (focus == nil || focus == Section.season.rawValue)
     }
     private func reportFeaturedBackdrop() {
@@ -218,10 +220,9 @@ struct NTVAnimeView: View {
             }
 
             if section == .library {
-                NTVAnimeSavedLibrary(onSelect: onOpenItem, onSelectFollow: { media in
-                    selectedEntryID = nil
-                    selection = media
-                })
+                NTVAnimeSavedLibrary(onSelect: onOpenItem,
+                    onSelectFollow: { open($0, focusID: nil) },
+                    onShowInfo: { showInfo($0, focusID: nil) })
             } else { content }
         }
         .padding(.horizontal, NTVViewport.horizontalInset)
@@ -248,7 +249,44 @@ struct NTVAnimeView: View {
             await model.load(request, refresh: refresh)
         }
         .onChange(of: followingRevision) { _, _ in model.filterFollowing(profileFollowing) }
-        .onDisappear { model.suspend() }
+        .onDisappear { opening = nil; model.suspend() }
+        .task(id: opening?.id) {
+            guard let media = opening else { return }
+            let profile = profiles.activeProfileID
+            let item: MetaItem?
+            do {
+                #if DEBUG
+                if NTVAnimeFixture.directPlayback {
+                    item = try await NTVAnimePlaybackResolver.resolve(media, addons: [NTVAnimeFixture.addon]) { _ in
+                        NTVAnimeFixture.mapping(for: media)
+                    }
+                } else if ProcessInfo.processInfo.arguments.contains("-ntvAnimeFixture") {
+                    item = nil
+                } else {
+                    item = try await NTVAnimePlaybackResolver.resolve(media, addons: addonManager.addons)
+                }
+                #else
+                item = try await NTVAnimePlaybackResolver.resolve(media, addons: addonManager.addons)
+                #endif
+            } catch {
+                guard !Task.isCancelled else { return }
+                item = nil
+            }
+            guard !Task.isCancelled, opening?.id == media.id, profiles.activeProfileID == profile else { return }
+            opening = nil
+            if let item {
+                NTVAnimeLibrary.shared.remember(item, profile: profile)
+                onOpenItem(item)
+            } else { selection = media }
+        }
+        .overlay(alignment: .bottom) {
+            if opening != nil {
+                HStack(spacing: 16) { ProgressView(); Text("Ouverture de la fiche…") }
+                    .font(.system(size: 26)).padding(24)
+                    .background(NTVDesign.surface, in: Capsule())
+                    .accessibilityIdentifier("ntv.anime.opening")
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 if followsCurrentSeason { seasonRequest = .season(at: Date()) }
@@ -259,7 +297,10 @@ struct NTVAnimeView: View {
             }
         }
         .defaultFocus($focus, Section.season.rawValue)
-        .onExitCommand { onBackAtRoot() }
+        .onExitCommand {
+            if opening != nil { opening = nil }
+            else { onBackAtRoot() }
+        }
         .fullScreenCover(item: $selection, onDismiss: {
             if let title = pendingSearch {
                 pendingSearch = nil
@@ -355,8 +396,12 @@ struct NTVAnimeView: View {
                 if section == .season, let entry = featuredEntry {
                     NTVAnimeFeature(media: entry.media, focus: $featuredFocused,
                         index: featuredIndex, count: featuredEntries.count,
-                        onSelect: { open(entry, focusID: "featured") }, onStep: stepFeatured,
-                        onBack: onBackAtRoot)
+                        onSelect: { open(entry.media, focusID: "featured") }, onStep: stepFeatured,
+                        onBack: {
+                            if opening != nil { opening = nil }
+                            else { onBackAtRoot() }
+                        })
+                        .contextMenu { Button("Fiche et suivi") { showInfo(entry.media, focusID: "featured") } }
                         .padding(.bottom, 24)
                         .focusSection()
                     HStack(alignment: .firstTextBaseline) {
@@ -376,7 +421,7 @@ struct NTVAnimeView: View {
                           ? [GridItem(.flexible(), spacing: 28), GridItem(.flexible(), spacing: 28)]
                           : [GridItem(.adaptive(minimum: 238), spacing: 28)], spacing: 28) {
                     ForEach(model.snapshot.visibleEntries) { entry in
-                        Button { open(entry, focusID: entry.id) } label: {
+                        Button { open(entry.media, focusID: entry.id) } label: {
                             if section == .calendar { NTVAnimeCard(entry: entry) }
                             else { NTVAnimePoster(media: entry.media) }
                         }
@@ -385,6 +430,7 @@ struct NTVAnimeView: View {
                             .accessibilityLabel(entry.media.displayTitle + (entry.episode.map { ", épisode \($0)" } ?? "")
                                 + (entry.airingAt.map { ", " + $0.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) } ?? ""))
                             .accessibilityIdentifier("ntv.anime.card.\(entry.id)")
+                            .contextMenu { Button("Fiche et suivi") { showInfo(entry.media, focusID: entry.id) } }
                     }
                 }
                 if model.snapshot.visibleEntries.isEmpty {
@@ -429,9 +475,15 @@ struct NTVAnimeView: View {
         }
     }
 
-    private func open(_ entry: NTVAnimeEntry, focusID: String) {
+    private func open(_ media: NTVAnimeMedia, focusID: String?) {
         selectedEntryID = focusID
-        selection = entry.media
+        opening = media
+    }
+
+    private func showInfo(_ media: NTVAnimeMedia, focusID: String?) {
+        opening = nil
+        selectedEntryID = focusID
+        selection = media
     }
 }
 

@@ -386,8 +386,8 @@ final class NTVDesignSmoke: XCTestCase {
         // Stabilize startup snapshots paused, then exercise the live skip and dwell.
         remote.press(.playPause)
         for _ in 0..<10 {
-            remote.press(.up)
             if play.waitForExistence(timeout: 2) { break }
+            remote.press(.up)
         }
         XCTAssertTrue(play.exists)
         XCTAssertTrue(focused(play, timeout: 8))

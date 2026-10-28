@@ -96,7 +96,6 @@ struct NTVReleaseNotesView: View {
         }
         .background(NTVDesign.background.ignoresSafeArea())
         .foregroundStyle(NTVDesign.textPrimary)
-        .accessibilityIdentifier("ntv.releaseNotes")
         .onAppear { continueFocused = true }
         .onExitCommand(perform: onContinue)
     }

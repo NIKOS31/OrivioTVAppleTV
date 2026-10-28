@@ -41,14 +41,14 @@ final class NTVPlayerTouchTests: XCTestCase {
         model.controlsFocusOnBar = true
         let session = model.controlsSession
         drag(model, points: 400)
-        let first = try XCTUnwrap(model.scrubValue)
+        let first = try XCTUnwrap(model.clock.scrubTarget)
         XCTAssertTrue(model.isScrubbing, "Lifting a finger on the bar must not validate the proposed position.")
         XCTAssertEqual(model.controlsSession, session, "A lift must not reopen transport and reset its focus to Play.")
         try await Task.sleep(for: .milliseconds(6300))
         XCTAssertTrue(model.isScrubbing, "The bar preview must survive both the five-second hide and six-second scrub timers.")
-        XCTAssertEqual(model.scrubValue, first)
+        XCTAssertEqual(model.clock.scrubTarget, first)
         drag(model, points: 200)
-        let second = try XCTUnwrap(model.scrubValue)
+        let second = try XCTUnwrap(model.clock.scrubTarget)
         XCTAssertGreaterThan(second, first, "The next contact must continue from the previous preview target.")
         XCTAssertLessThan(model.clock.position, second - 5, "Previewing must not seek the real player.")
         model.cancelScrub()
@@ -67,7 +67,7 @@ final class NTVPlayerTouchTests: XCTestCase {
         model.showControls()
         model.controlsFocusOnBar = true
         drag(model, points: 400)
-        let target = try XCTUnwrap(model.scrubValue)
+        let target = try XCTUnwrap(model.clock.scrubTarget)
         XCTAssertTrue(model.isScrubbing)
         XCTAssertFalse(model.isPlaying)
         model.commitScrub()
@@ -85,7 +85,7 @@ final class NTVPlayerTouchTests: XCTestCase {
         model.controlsFocusOnBar = false
         model.remoteTouchBegan()
         model.remoteTouchMoved(dx: 400, dy: 0)
-        let target = try XCTUnwrap(model.scrubValue)
+        let target = try XCTUnwrap(model.clock.scrubTarget)
         model.remoteTouchEnded(dx: 400, dy: 0, cancelled: false)
         XCTAssertFalse(model.isScrubbing, "A discreet gesture on bare video keeps its existing release-to-seek behavior.")
         XCTAssertNil(model.clock.scrubTarget)
@@ -100,7 +100,7 @@ final class NTVPlayerTouchTests: XCTestCase {
         model.controlsFocusOnBar = true
         model.remoteTouchBegan()
         model.remoteTouchMoved(dx: 400, dy: 0)
-        let target = try XCTUnwrap(model.scrubValue)
+        let target = try XCTUnwrap(model.clock.scrubTarget)
         model.remoteTouchEnded(dx: 400, dy: 0, cancelled: true)
         XCTAssertFalse(model.isScrubbing)
         XCTAssertNil(model.clock.scrubTarget)

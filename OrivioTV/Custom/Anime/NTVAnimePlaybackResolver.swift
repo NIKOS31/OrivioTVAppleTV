@@ -39,19 +39,23 @@ enum NTVAnimePlaybackResolver {
             candidates.append(("kitsu:\(kitsu)", type))
             if type == "series" { candidates.append(("kitsu:\(kitsu)", "anime")) }
         }
-        guard let (id, contentType) = candidates.first(where: { id, type in
-            addons.contains { supportsMeta($0, id: id, type: type) }
-        }) else { return nil }
+        let playable = candidates.filter { id, type in
+            addons.contains { supports($0, resource: "meta", id: id, type: type) }
+        }
+        let withStreamProvider = playable.first { id, type in
+            addons.contains { supports($0, resource: "stream", id: id, type: type) }
+        }
+        guard let (id, contentType) = withStreamProvider ?? playable.first else { return nil }
         // The normal detail obtains episodes from the addon; calendar numbers
         // must never be treated as an IMDb season or an episode stream ID.
         return MetaItem(id: id, type: contentType, name: media.displayTitle,
             poster: media.artwork, background: media.backdrop, description: media.summary, genres: ["Anime"])
     }
 
-    private static func supportsMeta(_ addon: InstalledAddon, id: String, type: String) -> Bool {
+    private static func supports(_ addon: InstalledAddon, resource name: String, id: String, type: String) -> Bool {
         guard addon.enabled else { return false }
         return (addon.manifest.resources ?? []).contains { resource in
-            guard resource.name == "meta" else { return false }
+            guard resource.name == name else { return false }
             let types: [String]?
             let prefixes: [String]?
             switch resource {

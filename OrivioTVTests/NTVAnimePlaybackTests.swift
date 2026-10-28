@@ -5,11 +5,11 @@ extension NTVAnimeTests {
     private func playbackMedia(_ format: String = "TV") throws -> NTVAnimeMedia {
         try JSONDecoder().decode(NTVAnimeMedia.self, from: Data("{\"id\":1,\"title\":{\"romaji\":\"Titre test\"},\"format\":\"\(format)\",\"isAdult\":false}".utf8))
     }
-    private func addon(types: [String], prefixes: [String], enabled: Bool = true) -> InstalledAddon {
+    private func addon(types: [String], prefixes: [String], enabled: Bool = true, resource: String = "meta") -> InstalledAddon {
         InstalledAddon(manifestURL: "https://example.invalid/manifest.json",
             manifest: AddonManifest(id: "fixture", name: "Fixture", version: "1", description: nil,
                 logo: nil, types: types, idPrefixes: nil, catalogs: nil,
-                resources: [.detailed(name: "meta", types: types, idPrefixes: prefixes)]), enabled: enabled)
+                resources: [.detailed(name: resource, types: types, idPrefixes: prefixes)]), enabled: enabled)
     }
 
     func testExactIMDbMappingOpensTheSharedDetailWithoutInventingEpisodes() throws {
@@ -30,6 +30,11 @@ extension NTVAnimeTests {
             addons: [addon(types: ["series"], prefixes: ["tt"], enabled: false), addon(types: ["anime"], prefixes: ["kitsu:"])])
         XCTAssertEqual(item?.id, "kitsu:42")
         XCTAssertEqual(item?.type, "anime")
+        let kitsu = addon(types: ["anime"], prefixes: ["kitsu:"])
+        let kitsuStreams = addon(types: ["anime"], prefixes: ["kitsu:"], resource: "stream")
+        XCTAssertEqual(try NTVAnimePlaybackResolver.item(from: series, media: playbackMedia(),
+            addons: [addon(types: ["series"], prefixes: ["tt"]), kitsu, kitsuStreams])?.id, "kitsu:42",
+            "IMDb metadata alone must not bypass the installed anime stream provider.")
         XCTAssertNil(try NTVAnimePlaybackResolver.item(from: data, media: playbackMedia("MOVIE"), addons: [addon(types: ["series"], prefixes: ["tt"])]))
     }
 

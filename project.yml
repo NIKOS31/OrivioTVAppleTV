@@ -299,7 +299,13 @@ targets:
     type: bundle.unit-test
     platform: tvOS
     sources:
-      - OrivioTVTests
+      - path: OrivioTVTests
+        excludes:
+          - Fixtures
+          - Fixtures/**
+      - path: OrivioTVTests/Fixtures
+        type: folder
+        buildPhase: resources
       - OrivioTopShelf/TopShelfProvider.swift
     dependencies:
       - target: OrivioTV

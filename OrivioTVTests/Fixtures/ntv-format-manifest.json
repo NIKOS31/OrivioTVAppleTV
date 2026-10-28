@@ -1,0 +1,125 @@
+[
+  {
+    "file": "ntv-format-h264.mp4",
+    "bytes": 1192064,
+    "sha256": "4630b9c196d12a8f79305fd48a1910469304571c43b4188f497c8ec1bc062cb3",
+    "expected": {
+      "video": "h264",
+      "width": 1280,
+      "height": 720,
+      "rate": 30,
+      "audio": "aac"
+    }
+  },
+  {
+    "file": "ntv-format-hevc10.mp4",
+    "bytes": 1169603,
+    "sha256": "728821fa8fe5d4f371d005013e72e230335cd089bb57ca2b54af9fd5237a25d5",
+    "expected": {
+      "video": "hevc",
+      "width": 3840,
+      "height": 2160,
+      "rate": 60,
+      "depth": 10,
+      "primaries": "bt2020",
+      "transfer": "smpte2084",
+      "visualHDRReference": false
+    }
+  },
+  {
+    "file": "ntv-format-hevc10.mkv",
+    "bytes": 1168895,
+    "sha256": "f5856533f47f3657da8f75877b79c154d846f07a1da4439aaa7d76331a38079e",
+    "expected": {
+      "video": "hevc",
+      "width": 3840,
+      "height": 2160,
+      "rate": 60,
+      "depth": 10
+    }
+  },
+  {
+    "file": "ntv-format-h264.ts",
+    "bytes": 1231212,
+    "sha256": "c46fa1b61f0ae06d24cb69e36764177a715177d7eed574aed50e936e2a1924c1",
+    "expected": {
+      "video": "h264",
+      "width": 1280,
+      "height": 720,
+      "rate": 30,
+      "audio": "aac"
+    }
+  },
+  {
+    "file": "ntv-format-h264.mov",
+    "bytes": 1192115,
+    "sha256": "76328d0b2f661de35ef58370aaed4f39ebaecccfc06f90c6bf18e7d2e5c804a9",
+    "expected": {
+      "video": "h264",
+      "width": 1280,
+      "height": 720,
+      "rate": 30,
+      "audio": "aac"
+    }
+  },
+  {
+    "file": "ntv-format-aac.m4a",
+    "bytes": 85226,
+    "sha256": "60282d7cf9d9fd1a2f52a0223cf7b9a63dc1a648726b641b982a4ce4ca4aeba7",
+    "expected": {
+      "audio": "aac",
+      "channels": 6,
+      "rate": 48000
+    }
+  },
+  {
+    "file": "ntv-format-ac3.mka",
+    "bytes": 113903,
+    "sha256": "b7c24b10b54dd0da71fd053a8f4aa8d80654c97fa0eed34240a82ff25cc299e0",
+    "expected": {
+      "audio": "ac3",
+      "channels": 6,
+      "rate": 48000
+    }
+  },
+  {
+    "file": "ntv-format-eac3.mka",
+    "bytes": 113892,
+    "sha256": "fda04985ee864e3cbe551158591102ba13013287adf5ce0cee28bf8082ca731a",
+    "expected": {
+      "audio": "eac3",
+      "channels": 6,
+      "rate": 48000
+    }
+  },
+  {
+    "file": "ntv-format-flac.flac",
+    "bytes": 479769,
+    "sha256": "62be9cd629336d4885d4dbc9e056038f454dcd676da814d8069c62ba300a9bf3",
+    "expected": {
+      "audio": "flac",
+      "channels": 6,
+      "rate": 48000
+    }
+  },
+  {
+    "file": "ntv-format-truehd.mka",
+    "bytes": 563053,
+    "sha256": "af8f59b8f85e1c2f88ac225cd19512254fe9a768562608fa3f0dd5095a2f7fc5",
+    "expected": {
+      "audio": "truehd",
+      "channels": 6,
+      "rate": 48000
+    }
+  },
+  {
+    "file": "ntv-format-dca.mka",
+    "bytes": 356054,
+    "sha256": "dd802da9521f413775f2fe97c9ffd9da8a99f950b97709bfb0c0fd131ca5ede6",
+    "expected": {
+      "audio": "dts",
+      "channels": 6,
+      "rate": 48000
+    }
+  }
+]

@@ -58,6 +58,13 @@ final class NTVPlayerBarTests: XCTestCase {
                            "Cancel and commit must preserve the paused transport.")
             let playFocused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasFocus == true"), object: play)
             XCTAssertEqual(XCTWaiter.wait(for: [playFocused], timeout: 5), .completed)
+            remote.press(.down)
+            let infoFocused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasFocus == true"), object: app.buttons["ntv.player.info"])
+            XCTAssertEqual(XCTWaiter.wait(for: [infoFocused], timeout: 5), .completed,
+                           "The restored information pill must expose its actual focus after cancel and commit.")
+            remote.press(.up)
+            let restoredPlayFocused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasFocus == true"), object: play)
+            XCTAssertEqual(XCTWaiter.wait(for: [restoredPlayFocused], timeout: 5), .completed)
             if !confirm {
                 remote.press(.up)
                 let timelineFocused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasFocus == true"), object: timeline)

@@ -88,49 +88,49 @@ struct NTVPlayerControls: View {
                 .frame(height: 42)
                 .disabled(viewModel.isScrubbing)
 
-                HStack(spacing: 14) {
-                    pillControl(.info, title: "Infos", label: "Informations") { viewModel.showInfoPanel() }
-                    if viewModel.nextEpisodeAvailable {
-                        pillControl(.next, title: "Suivant", label: "Épisode suivant") { viewModel.playNextEpisodeFromControls() }
-                    }
-                    Spacer()
-                    // Nuvio's lower action rail: keep tools next to the
-                    // timeline instead of a second floating cluster by the title.
-                    HStack(spacing: 14) {
-                        circleControl(.video, symbol: "arrow.up.left.and.arrow.down.right",
-                                      label: viewModel.aspectMode == .fit ? "Remplir l’écran" : "Ajuster à l’écran") {
-                            viewModel.setAspect(viewModel.aspectMode == .fit ? .zoom : .fit)
-                        }
-                        circleControl(.speed, symbol: "speedometer", label: "Vitesse de lecture") {
-                            openPicker(.speed, overlay: .speed)
-                        }
-                        .accessibilityValue(String(format: "%gx", viewModel.playbackSpeed))
-                        circleControl(.subtitles, symbol: "captions.bubble", label: "Sous-titres") { viewModel.overlay = .subtitles }
-                        circleControl(.audio, symbol: "speaker.wave.2", label: "Audio") { viewModel.overlay = .audio }
-                        circleControl(.sources, symbol: "cloud", label: "Sources") {
-                            viewModel.loadSourcesIfNeeded()
-                            openPicker(.sources, overlay: .sources)
-                        }
-                        if viewModel.currentVideo?.season != nil {
-                            circleControl(.episodes, symbol: "rectangle.stack", label: "Épisodes") {
-                                openPicker(.episodes, overlay: .episodes)
-                            }
-                        }
-                        circleControl(.more, symbol: "ellipsis", label: "Options de lecture") { viewModel.showInfoPanel() }
-                    }
-                }
-                .frame(height: 52)
-                .focusSection()
-                .disabled(viewModel.isScrubbing)
-                .opacity(viewModel.isScrubbing ? 0 : 1)
-                .accessibilityHidden(viewModel.isScrubbing)
-                .overlay(alignment: .leading) {
+                Group {
                     if viewModel.isScrubbing {
                         Text("Glisser pour parcourir   ·   Relâcher ou OK Valider   ·   Retour Annuler")
                             .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(.white.opacity(0.7))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        // Recreate the footer's accessible focus targets after the preview.
+                        HStack(spacing: 14) {
+                            pillControl(.info, title: "Infos", label: "Informations") { viewModel.showInfoPanel() }
+                            if viewModel.nextEpisodeAvailable {
+                                pillControl(.next, title: "Suivant", label: "Épisode suivant") { viewModel.playNextEpisodeFromControls() }
+                            }
+                            Spacer()
+                            // Nuvio's lower action rail: keep tools next to the
+                            // timeline instead of a second floating cluster by the title.
+                            HStack(spacing: 14) {
+                                circleControl(.video, symbol: "arrow.up.left.and.arrow.down.right",
+                                              label: viewModel.aspectMode == .fit ? "Remplir l’écran" : "Ajuster à l’écran") {
+                                    viewModel.setAspect(viewModel.aspectMode == .fit ? .zoom : .fit)
+                                }
+                                circleControl(.speed, symbol: "speedometer", label: "Vitesse de lecture") {
+                                    openPicker(.speed, overlay: .speed)
+                                }
+                                .accessibilityValue(String(format: "%gx", viewModel.playbackSpeed))
+                                circleControl(.subtitles, symbol: "captions.bubble", label: "Sous-titres") { viewModel.overlay = .subtitles }
+                                circleControl(.audio, symbol: "speaker.wave.2", label: "Audio") { viewModel.overlay = .audio }
+                                circleControl(.sources, symbol: "cloud", label: "Sources") {
+                                    viewModel.loadSourcesIfNeeded()
+                                    openPicker(.sources, overlay: .sources)
+                                }
+                                if viewModel.currentVideo?.season != nil {
+                                    circleControl(.episodes, symbol: "rectangle.stack", label: "Épisodes") {
+                                        openPicker(.episodes, overlay: .episodes)
+                                    }
+                                }
+                                circleControl(.more, symbol: "ellipsis", label: "Options de lecture") { viewModel.showInfoPanel() }
+                            }
+                        }
+                        .focusSection()
                     }
                 }
+                .frame(height: 52)
             }
             .disabled(pickingTracks)
             .accessibilityElement(children: .contain)

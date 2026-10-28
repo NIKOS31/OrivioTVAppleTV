@@ -6602,7 +6602,8 @@ final class PlayerViewModel: ObservableObject {
         if touchIntent == .scrub { endScrubGesture() }
         touchIntent = .undecided
         if usesNTVControls, dragged, isScrubbing {
-            if cancelled { cancelScrub() } else { commitScrub() }
+            if cancelled { cancelScrub() }
+            else if !scrubOpenedFromControls { commitScrub() }
         }
     }
 
@@ -7061,6 +7062,8 @@ final class PlayerViewModel: ObservableObject {
 
     private func restartScrubTimeout() {
         scrubTimeoutTask?.cancel()
+        // A preview opened from the nTV bar belongs to OK/Back, including rests between swipes.
+        guard !usesNTVControls || !scrubOpenedFromControls else { return }
         scrubTimeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 6_000_000_000)
             guard !Task.isCancelled, let self else { return }

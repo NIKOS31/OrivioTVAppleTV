@@ -1689,6 +1689,7 @@ private struct TrashCircle: View {
 struct AboutDetail: View {
     @EnvironmentObject private var theme: ThemeManager
     @State private var info: AboutInfo?
+    @State private var showReleaseNotes = false
     // Starts empty and is filled by .task below. The default value used to be
     // `DiagnosticsService.cacheSizeLabel()`, which walks the whole cache
     // directory synchronously on the main thread — and a @State default is
@@ -1716,6 +1717,10 @@ struct AboutDetail: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, OrivioSpacing.md)
 
+                Button { showReleaseNotes = true } label: {
+                    SettingsValueCard(title: "Nouveautés et tests", subtitle: "Revoir les améliorations et ce qu’il faut vérifier sur la TV", value: "", icon: "checklist")
+                }.buttonStyle(PlainCardButtonStyle())
+                    .accessibilityIdentifier("ntv.settings.releaseNotes")
                 Button { info = .privacy } label: {
                     SettingsValueCard(title: "Confidentialité", subtitle: "Consulter notre politique de confidentialité", value: "", icon: "hand.raised.fill")
                 }.buttonStyle(PlainCardButtonStyle())
@@ -1761,6 +1766,9 @@ struct AboutDetail: View {
         .fullScreenCover(item: $info) { item in
             AboutInfoView(info: item)
                 .environmentObject(theme)
+        }
+        .fullScreenCover(isPresented: $showReleaseNotes) {
+            NTVReleaseNotesView(notes: .current) { showReleaseNotes = false }
         }
     }
 

@@ -47,7 +47,7 @@ struct NTVPlayerControls: View {
                     .buttonStyle(PlainCardButtonStyle())
                     .focused($focus, equals: .timeline)
                     .accessibilityLabel("Parcourir la vidéo")
-                    .accessibilityHint("Glissez pour prévisualiser, puis relâchez pour valider. Gauche ou droite pour ajuster, OK pour confirmer, Retour pour annuler.")
+                    .accessibilityHint("Glissez ou utilisez gauche et droite pour prévisualiser. OK pour confirmer, Retour pour annuler.")
                     .accessibilityIdentifier("ntv.player.timeline")
                     .onMoveCommand { direction in
                         guard !viewModel.moveSuppressed else { return }
@@ -90,7 +90,7 @@ struct NTVPlayerControls: View {
 
                 Group {
                     if viewModel.isScrubbing {
-                        Text("Glisser pour parcourir   ·   Relâcher ou OK Valider   ·   Retour Annuler")
+                        Text("Glisser pour parcourir   ·   OK Valider   ·   Retour Annuler")
                             .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(.white.opacity(0.7))
                             .frame(maxWidth: .infinity, alignment: .leading)

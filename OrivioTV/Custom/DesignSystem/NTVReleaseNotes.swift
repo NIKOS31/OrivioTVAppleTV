@@ -7,15 +7,14 @@ struct NTVReleaseNotes: Sendable {
     let checks: [String]
 
     // Keep this entry and the app/extension build number together at release.
-    static let current = NTVReleaseNotes(build: "50", improvements: [
-        "La barre de lecture reste en place pendant l’avance et le retour.",
-        "Les déplacements entre les rangées ont été corrigés.",
-        "Les fiches utilisent les portraits disponibles et le synopsis fourni dans la langue choisie.",
-        "Ces notes apparaissent une seule fois après chaque mise à jour."
+    static let current = NTVReleaseNotes(build: "51", improvements: [
+        "Depuis la barre, lever le doigt conserve l’aperçu : OK valide et Retour annule.",
+        "L’aperçu ouvert depuis la barre reste disponible entre deux glissements.",
+        "Ces nouveautés et tests restent accessibles dans Réglages → À propos."
     ], checks: [
-        "Monter et descendre entre les rangées après un déplacement horizontal.",
-        "Avancer, annuler avec Retour, puis valider une nouvelle position.",
-        "Vérifier les portraits, les descriptions et la fluidité sur l’Apple TV."
+        "Lecteur : monter sur la barre, glisser, lever le doigt, attendre 10 secondes puis glisser à nouveau. L’aperçu doit rester ouvert sans appliquer la cible.",
+        "Annuler avec Retour ; recommencer et valider avec OK. Essayer en lecture puis en pause : le choix lecture/pause doit être conservé.",
+        "Menus : parcourir une rangée puis monter et descendre. Comparer le compteur UI pendant les mouvements et après 10 secondes immobile ; relever max ms et retards. La fluidité reste à vérifier."
     ])
 
     func shouldPresent(installedBuild: String, seenBuild: String, arguments: [String] = []) -> Bool {

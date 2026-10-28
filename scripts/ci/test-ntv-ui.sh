@@ -137,6 +137,7 @@ if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
     -only-testing:OrivioTVTests/NTVCoreTests \
     -only-testing:OrivioTVUITests/NTVPlayerBarTests \
     -only-testing:OrivioTVUITests/NTVReleaseNotesUITests \
+    -only-testing:OrivioTVUITests/NTVFailedCatalogRowTests \
     -only-testing:OrivioTVTests/NTVCatalogRowTransitionTests \
     -only-testing:OrivioTVTests/NTVDetailMetadataTests \
     -only-testing:OrivioTVTests/NTVReleaseNotesTests \

@@ -34,6 +34,10 @@ struct NTVCatalogSource: Identifiable {
     init(source: NTVCatalogSource, scope: String,
          fetch: @escaping @Sendable (NTVCatalogSource) async throws -> [MetaItem] = {
              #if DEBUG
+             if ProcessInfo.processInfo.arguments.contains("-ntvCatalogRetryFixture"),
+                $0.catalog.id == "fixture-row-1" {
+                 throw URLError(.notConnectedToInternet)
+             }
              if ProcessInfo.processInfo.arguments.contains("-ntvRowLayoutFixture") {
                  let source = $0
                  return (0..<24).map { index in
@@ -466,7 +470,8 @@ private struct NTVCategoryButtonStyle: ButtonStyle {
 
 private struct NTVCatalogShelf: View {
     @EnvironmentObject private var layout: HomeCatalogSettingsStore
-    @FocusState private var emptyFocus: Bool
+    private enum EmptyFocus: Hashable { case retry, categories }
+    @FocusState private var emptyFocus: EmptyFocus?
     @ObservedObject var model: NTVCatalogShelfModel
     let hero: HeroFocus
     let onSelect: (MetaItem) -> Void
@@ -502,7 +507,14 @@ private struct NTVCatalogShelf: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(model.source.title).font(.system(size: 28, weight: .semibold))
                     if model.failed {
-                        Button("Réessayer ce catalogue") { Task { await model.load() } }.buttonStyle(NTVActionButtonStyle())
+                        Button("Réessayer ce catalogue") {
+                            ContentFocusRouter.shared.noteUserMovement(in: "ntv.catalog.shelf.\(model.source.id)")
+                            Task { await model.load() }
+                        }
+                        .buttonStyle(NTVActionButtonStyle())
+                        .focused($emptyFocus, equals: .retry)
+                        .accessibilityIdentifier("ntv.catalog.retry.\(model.source.id)")
+                        .onMoveCommand(perform: moveFromEmptyRow)
                     } else if model.loading { ProgressView("Chargement") }
                     else { Text("Aucun titre disponible").foregroundStyle(NTVDesign.textSecondary) }
                     if !model.loading {
@@ -510,21 +522,16 @@ private struct NTVCatalogShelf: View {
                             Label("Catégories", systemImage: "line.3.horizontal.decrease")
                         }
                         .buttonStyle(NTVActionButtonStyle())
-                        .focused($emptyFocus)
+                        .focused($emptyFocus, equals: .categories)
                         .accessibilityIdentifier("ntv.catalog.empty.\(model.source.id)")
+                        .onMoveCommand(perform: moveFromEmptyRow)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: layout.posterSize.posterWidth * 1.5 + 148, alignment: .leading)
                 .padding(.horizontal, NTVViewport.horizontalInset)
                 .onExitCommand(perform: onBackAtRoot)
-                .onMoveCommand { direction in
-                    guard emptyFocus else { return }
-                    ContentFocusRouter.shared.noteUserMovement(in: "ntv.catalog.shelf.\(model.source.id)")
-                    if direction == .up || direction == .down { onVerticalMove(direction) }
-                    if direction == .left { onLeftAtStart() }
-                }
                 .onChange(of: emptyFocus) { _, focused in
-                    if focused { ContentFocusRouter.shared.noteFocused(row: "ntv.catalog.shelf.\(model.source.id)") }
+                    if focused != nil { ContentFocusRouter.shared.noteFocused(row: "ntv.catalog.shelf.\(model.source.id)") }
                 }
                 .task(id: focusRequest) { claimEmptyEntry() }
                 .onChange(of: model.loading) { _, loading in
@@ -536,10 +543,15 @@ private struct NTVCatalogShelf: View {
                 if !loading && !model.failed && model.hasLoaded && model.items.isEmpty { firstVisibleChanged?(nil) }
             }
     }
+    private func moveFromEmptyRow(_ direction: MoveCommandDirection) {
+        ContentFocusRouter.shared.noteUserMovement(in: "ntv.catalog.shelf.\(model.source.id)")
+        if direction == .up || direction == .down { onVerticalMove(direction) }
+        if direction == .left { onLeftAtStart() }
+    }
     private func claimEmptyEntry() {
         guard !model.loading, model.items.isEmpty, model.hasLoaded || model.failed,
               let focusRequest,
               ContentFocusRouter.shared.consumeEntry(focusRequest) else { return }
-        emptyFocus = true
+        emptyFocus = model.failed ? .retry : .categories
     }
 }

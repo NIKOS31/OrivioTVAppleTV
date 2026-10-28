@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct NTVReleaseNotes: Sendable {
+    static let seenBuildKey = "ntv.releaseNotes.lastSeenBuild"
     let build: String
     let improvements: [String]
     let checks: [String]
@@ -17,8 +18,13 @@ struct NTVReleaseNotes: Sendable {
         "Vérifier les portraits, les descriptions et la fluidité sur l’Apple TV."
     ])
 
-    func shouldPresent(installedBuild: String, seenBuild: String) -> Bool {
-        installedBuild == build && seenBuild != build
+    func shouldPresent(installedBuild: String, seenBuild: String, arguments: [String] = []) -> Bool {
+        #if DEBUG
+        if !arguments.contains("-ntvReleaseNotesDemo"), arguments.contains(where: {
+            $0.localizedCaseInsensitiveContains("demo") || $0.contains("Probe") || $0 == "-ntvLaunchTest"
+        }) { return false }
+        #endif
+        return installedBuild == build && seenBuild != build
     }
 }
 
@@ -26,26 +32,18 @@ struct NTVReleaseNotesPresentation: ViewModifier {
     let eligible: Bool
     @Binding var isPresented: Bool
     let onDismiss: () -> Void
-    @AppStorage("ntv.releaseNotes.lastSeenBuild") private var seenBuild = ""
+    @AppStorage(NTVReleaseNotes.seenBuildKey) private var seenBuild = ""
 
     private var installedBuild: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
     }
 
-    private var enabled: Bool {
-        #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
-        if args.contains("-ntvReleaseNotesDemo") { return true }
-        if args.contains(where: { $0.localizedCaseInsensitiveContains("demo") || $0.contains("Probe") }) { return false }
-        #endif
-        return true
-    }
-
     func body(content: Content) -> some View {
         content
             .task(id: eligible) {
-                guard eligible, enabled,
-                      NTVReleaseNotes.current.shouldPresent(installedBuild: installedBuild, seenBuild: seenBuild) else { return }
+                guard eligible, NTVReleaseNotes.current.shouldPresent(
+                    installedBuild: installedBuild, seenBuild: seenBuild,
+                    arguments: ProcessInfo.processInfo.arguments) else { return }
                 // Let the welcome/profile cover finish dismissing first.
                 do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
                 guard !Task.isCancelled else { return }

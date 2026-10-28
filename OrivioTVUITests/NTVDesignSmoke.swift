@@ -1428,9 +1428,14 @@ final class NTVDesignSmoke: XCTestCase {
         let runningControl = try XCTUnwrap(openingControl, "The local video fixture must open nTV controls.")
         XCTAssertEqual(runningControl.identifier, "ntv.player.play")
         XCTAssertEqual(runningControl.label, "Pause")
+        // Pause for the focus read: slow AX snapshots can outlast the live chrome's idle dwell.
+        remote.press(.playPause)
+        XCTAssertEqual(try play.snapshot().label, "Lecture")
         remote.press(.up)
         let liveTimeline = app.buttons["ntv.player.timeline"]
         XCTAssertTrue(focused(liveTimeline, timeout: 5))
+        // Resume before opening the preview so its real-clock assertions still exercise playback.
+        remote.press(.playPause)
         remote.press(.select)
         let livePreview = app.descendants(matching: .any)["ntv.player.seek.preview"].firstMatch
         func previewTimes() throws -> (live: Int, target: Int) {

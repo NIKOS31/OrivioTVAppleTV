@@ -206,7 +206,8 @@ struct PlayerScreen: View {
             // The transport. Paused (.pauseInfo) is the same screen — Infuse
             // keeps the bar up while paused — and the audio / subtitle
             // popovers are this screen with a panel over one glyph.
-            if controlsVisible {
+            // Keep nTV's timeline mounted while its target is being adjusted.
+            if controlsVisible || (usesNTVControls && viewModel.isScrubbing) {
                 if usesNTVControls {
                     NTVPlayerControls(viewModel: viewModel, initialControlID: ntvReturnControlID,
                                       onOpenPicker: { ntvReturnControlID = $0 },
@@ -320,9 +321,9 @@ struct PlayerScreen: View {
         }
         // These four were 0.16/0.16/0.2/0.16 — a 40ms spread nobody can see,
         // multiplying transactions over the same stack for no gain. One token.
-        .animation(FusionMotion.controlsAppear, value: viewModel.isScrubbing)
+        .animation(usesNTVControls ? nil : FusionMotion.controlsAppear, value: viewModel.isScrubbing)
         .animation(FusionMotion.controlsAppear, value: viewModel.showBufferSpinner)
-        .animation(FusionMotion.controlsAppear, value: viewModel.pendingSeekDelta != 0)
+        .animation(usesNTVControls ? nil : FusionMotion.controlsAppear, value: viewModel.pendingSeekDelta != 0)
         // The first frame appearing is a page-scale moment, not a control one.
         .animation(FusionMotion.pageEnter, value: viewModel.hasStartedPlayback)
         .onAppear { viewModel.usesNTVControls = usesNTVControls }
@@ -359,6 +360,7 @@ struct PlayerScreen: View {
             // the very next click REOPENS the menu instead of landing on the
             // stale play button (which read as "trying to hide the menu").
             if newValue == .none {
+                if usesNTVControls, viewModel.isScrubbing { return }
                 // ...unless the Skip Intro pill is the thing that should hold
                 // it, in which case stealing focus back would un-highlight it.
                 guard !viewModel.skipIntroFocused else { return }
@@ -370,7 +372,7 @@ struct PlayerScreen: View {
         .onChange(of: viewModel.skipIntroFocused) { _, focused in
             if focused {
                 skipIntroFocused = true
-            } else if viewModel.overlay == .none {
+            } else if viewModel.overlay == .none, !usesNTVControls || !viewModel.isScrubbing {
                 // The pill let go — the invisible catcher has to take focus
                 // back or the remote goes dead over bare video.
                 DispatchQueue.main.async { catcherFocused = true }
@@ -717,12 +719,8 @@ struct PlayerScreen: View {
 
     @ViewBuilder
     private var scrubHUD: some View {
-        if viewModel.isScrubbing {
-            if usesNTVControls {
-                NTVPlayerSeekOverlay(viewModel: viewModel, scrubbing: true).transition(.opacity)
-            } else {
-                FusionInertOverlay(viewModel: viewModel, forcedScrub: true).transition(.opacity)
-            }
+        if viewModel.isScrubbing, !usesNTVControls {
+            FusionInertOverlay(viewModel: viewModel, forcedScrub: true).transition(.opacity)
         }
     }
 

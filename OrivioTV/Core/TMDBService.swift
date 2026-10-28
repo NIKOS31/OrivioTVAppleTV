@@ -11,7 +11,7 @@ struct TMDBSettings: Codable, Equatable {
     var useCredits: Bool = true
     var useTrailers: Bool = true
     var useMoreLikeThis: Bool = true
-    /// Country / spoken-language detail fields.
+    /// Localized synopsis, country and spoken-language detail fields.
     var useDetails: Bool = true
     /// Release-date field.
     var useReleaseDates: Bool = true
@@ -1042,6 +1042,7 @@ enum TMDBService {
 
     /// Everything the Detail screen pulls from TMDB in one call.
     struct Detail {
+        var overview: String?
         var cast: [CastMember] = []
         var crew: [CastMember] = []      // director + writers, shown first in "Creator and Cast"
         var moreLikeThis: [MetaItem] = []
@@ -1147,6 +1148,7 @@ enum TMDBService {
             let production_companies: [CompanyDTO]?
             let production_countries: [CountryDTO]?
             let original_language: String?
+            let overview: String?
             let release_date: String?
             let first_air_date: String?
             let videos: Videos?
@@ -1186,6 +1188,8 @@ enum TMDBService {
         }
 
         var detail = Detail()
+        let overview = body.overview?.trimmingCharacters(in: .whitespacesAndNewlines)
+        detail.overview = overview?.isEmpty == false ? overview : nil
         var castMembers = (body.credits?.cast ?? []).prefix(24).map {
             CastMember(id: $0.id, name: $0.name, character: $0.character,
                        profileURL: imageURL($0.profile_path, size: "w300"))

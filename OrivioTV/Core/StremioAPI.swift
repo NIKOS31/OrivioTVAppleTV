@@ -142,7 +142,7 @@ enum StremioAPI {
     /// modest so a currently-airing show still picks up new episodes soon.
     // Old bodies predate secondary-link validation; they cannot enter this
     // namespace. Re-fetching a title costs one request, without losing addons.
-    private static let metaDiskCache = DiskCache<MetaItem>(name: "meta-checked-v1")
+    private static let metaDiskCache = DiskCache<MetaItem>(name: "meta-checked-v2")
     private static let metaDiskTTL: TimeInterval = 30 * 60
 
     /// `ttl` = how long a cached body stays fresh (0 disables caching for this

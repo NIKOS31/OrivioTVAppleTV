@@ -412,7 +412,8 @@ struct NTVCatalogView: View {
         }
         requestRow(sourceID, proxy: proxy)
     }
-    private func requestRow(_ sourceID: String, proxy: ScrollViewProxy) {
+    private func requestRow(_ sourceID: String, proxy: ScrollViewProxy,
+                            kind: ContentFocusRouter.EntryKind = .rowStart) {
         initialEntryGeneration = nil
         let keepViewport = menuVisible && menuSourceID == sourceID
         categoryFocus = nil; menuVisible = false
@@ -420,7 +421,7 @@ struct NTVCatalogView: View {
         // The drawer is entered from the first poster. Returning to that same
         // row needs focus only: scrollTo(.leading) would rewrite its native
         // horizontal offset and make the posters slide after the drawer closes.
-        let entry = ContentFocusRouter.shared.makeEntryRequest(in: "ntv.catalog.shelf.\(sourceID)")
+        let entry = ContentFocusRouter.shared.makeEntryRequest(in: "ntv.catalog.shelf.\(sourceID)", kind: kind)
         requestedCategory = FocusRequest(sourceID: sourceID, entry: entry, scrollToStart: !keepViewport)
         if !keepViewport { proxy.scrollTo(sourceID, anchor: .top) }
     }
@@ -431,7 +432,7 @@ struct NTVCatalogView: View {
     private func moveFromRow(_ sourceID: String, direction: MoveCommandDirection, proxy: ScrollViewProxy) {
         guard direction == .up || direction == .down else { return }
         if let target = viewModel.adjacentNavigableSourceID(to: sourceID, forward: direction == .down) {
-            requestRow(target, proxy: proxy)
+            requestRow(target, proxy: proxy, kind: .orderedRow)
         } else if direction == .up {
             if navigationIsTop { onBackAtRoot() }
             else {
@@ -518,6 +519,7 @@ private struct NTVCatalogShelf: View {
                 .onExitCommand(perform: onBackAtRoot)
                 .onMoveCommand { direction in
                     guard emptyFocus else { return }
+                    ContentFocusRouter.shared.noteUserMovement(in: "ntv.catalog.shelf.\(model.source.id)")
                     if direction == .up || direction == .down { onVerticalMove(direction) }
                     if direction == .left { onLeftAtStart() }
                 }

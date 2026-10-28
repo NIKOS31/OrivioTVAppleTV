@@ -307,6 +307,7 @@ struct RootView: View {
     /// everything, including the profile gate.
     @State private var showWelcome = false
     @State private var launchSetupComplete = false
+    @State private var showReleaseNotes = false
     @State private var pendingShelfResume: URL?
     /// True when the gate was opened from the rail / Settings (Back closes
     /// it); false for the cold-launch gate, where Back stays a no-op.
@@ -344,6 +345,10 @@ struct RootView: View {
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.root)
         content
+            .modifier(NTVReleaseNotesPresentation(
+                eligible: launchSetupComplete && !showWelcome && !showProfileGate && playback == nil
+                    && pendingShelfResume == nil && pendingAddonInstall == nil,
+                isPresented: $showReleaseNotes, onDismiss: consumePendingShelfResume))
             .onOpenURL { handleDeepLink($0) }
             .onChange(of: sidebarFocus) { old, new in traceSidebar(old, new) }
             .onChange(of: sidebarEnabled) { _, new in traceSidebarEnabled(new) }
@@ -606,6 +611,11 @@ struct RootView: View {
                     AppProbe.life("root appeared — tab=\(Self.tabName(selectedTab))")
                     // Skipped in the demo modes so the screen isn't covered.
                     let args = ProcessInfo.processInfo.arguments
+                    #if DEBUG
+                    if args.contains("-ntvReleaseNotesReset") {
+                        UserDefaults.standard.removeObject(forKey: "ntv.releaseNotes.lastSeenBuild")
+                    }
+                    #endif
                     let demoArgs = ["-detailDemo", "-detailDemoSeries", "-homeDemo", "-settingsDemo", "-liveTVDemo", "-searchDemo", "-libraryDemo", "-discoverDemo", "-traktQRDemo", "-simklQRDemo", "-accountDemo", "-settingsTabDemo", "-ntvTopMenuDemo", "-ntvSeanimeDemo", "-ntvProfileDemo", "-ntvPlayerDemo", "-ntvTwitchDemo", "-ntvCatalogCategoriesDemo"]
                     let demoMode = demoArgs.contains { args.contains($0) }
                     #if DEBUG
@@ -2619,7 +2629,7 @@ struct RootView: View {
         case .resume(let type, let id):
             // Only the current profile's authoritative progress can supply a
             // playable source or position. A stale shelf never supplies either.
-            guard launchSetupComplete, !showWelcome, !showProfileGate else {
+            guard launchSetupComplete, !showWelcome, !showProfileGate, !showReleaseNotes else {
                 pendingShelfResume = url
                 return
             }
@@ -2664,7 +2674,7 @@ struct RootView: View {
     }
 
     private func consumePendingShelfResume() {
-        guard launchSetupComplete, !showWelcome, !showProfileGate,
+        guard launchSetupComplete, !showWelcome, !showProfileGate, !showReleaseNotes,
               let url = pendingShelfResume else { return }
         pendingShelfResume = nil
         handleDeepLink(url)

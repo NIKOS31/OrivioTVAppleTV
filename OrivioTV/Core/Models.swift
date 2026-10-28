@@ -352,6 +352,40 @@ struct InstalledAddon: Codable, Identifiable, Hashable {
 
 // MARK: - Meta
 
+/// Optional portraits supplied with addon metadata; a name never becomes a guessed person ID.
+struct MetaCastMember: Codable, Hashable, Identifiable {
+    let name: String
+    let character: String?
+    let profileURL: String?
+    let tmdbID: Int?
+    var id: String { tmdbID.map { "tmdb:\($0)" } ?? "name:\(name)" }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, character, profileURL = "photo", tmdbID = "tmdbId"
+    }
+
+    init(name: String, character: String?, profileURL: String?, tmdbID: Int?) {
+        self.name = name
+        self.character = character
+        self.profileURL = profileURL
+        self.tmdbID = tmdbID.flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: .name, in: c, debugDescription: "Cast name is empty")
+        }
+        character = try? c.decode(String.self, forKey: .character)
+        let photo = try? c.decode(String.self, forKey: .profileURL).trimmingCharacters(in: .whitespacesAndNewlines)
+        profileURL = photo?.isEmpty == false ? photo : nil
+        let rawID = (try? c.decode(Int.self, forKey: .tmdbID))
+            ?? (try? c.decode(String.self, forKey: .tmdbID)).flatMap(Int.init)
+        tmdbID = rawID.flatMap { $0 > 0 ? $0 : nil }
+    }
+}
+
 struct MetaItem: Codable, Identifiable, Hashable {
     let id: String
     let type: String
@@ -360,7 +394,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
     var poster: String?
     let background: String?
     let logo: String?
-    let description: String?
+    var description: String?
     let releaseInfo: String?
     /// Precise addon date, separate from the display year/range.
     let released: String?
@@ -368,6 +402,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
     let runtime: String?
     let genres: [String]?
     let cast: [String]?
+    let castDetails: [MetaCastMember]?
     let videos: [MetaVideo]?
     /// An undecorated poster some add-ons send beside `poster` — see
     /// `withPlainPoster()`.
@@ -376,8 +411,9 @@ struct MetaItem: Codable, Identifiable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case id, type, name, poster, background, logo, description
         case releaseInfo, released, imdbRating, runtime, genres, cast, videos, year
-        case posterFallback
+        case posterFallback, appExtras = "app_extras"
     }
+    private enum ExtraCodingKeys: String, CodingKey { case cast }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -408,6 +444,10 @@ struct MetaItem: Codable, Identifiable, Hashable {
         runtime = try? c.decode(String.self, forKey: .runtime)
         genres = try? c.decode([String].self, forKey: .genres)
         cast = try? c.decode([String].self, forKey: .cast)
+        let extras = try? c.nestedContainer(keyedBy: ExtraCodingKeys.self, forKey: .appExtras)
+        let members = extras?.lossyArrayHelper(MetaCastMember.self, forKey: .cast)
+        var seenCast = Set<String>()
+        castDetails = members?.filter { seenCast.insert($0.id).inserted }
         // Element-wise: one episode with a numeric/missing id used to nil the
         // WHOLE list, so the Detail page showed no episodes for that show.
         videos = c.lossyArrayHelper(MetaVideo.self, forKey: .videos)
@@ -429,6 +469,10 @@ struct MetaItem: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(runtime, forKey: .runtime)
         try c.encodeIfPresent(genres, forKey: .genres)
         try c.encodeIfPresent(cast, forKey: .cast)
+        if let castDetails {
+            var extras = c.nestedContainer(keyedBy: ExtraCodingKeys.self, forKey: .appExtras)
+            try extras.encode(castDetails, forKey: .cast)
+        }
         try c.encodeIfPresent(videos, forKey: .videos)
         try c.encodeIfPresent(posterFallback, forKey: .posterFallback)
     }
@@ -438,7 +482,8 @@ struct MetaItem: Codable, Identifiable, Hashable {
         poster: String? = nil, background: String? = nil, logo: String? = nil,
         description: String? = nil, releaseInfo: String? = nil, imdbRating: String? = nil,
         runtime: String? = nil, genres: [String]? = nil, cast: [String]? = nil,
-        videos: [MetaVideo]? = nil, posterFallback: String? = nil, released: String? = nil
+        videos: [MetaVideo]? = nil, posterFallback: String? = nil, released: String? = nil,
+        castDetails: [MetaCastMember]? = nil
     ) {
         self.id = id
         self.type = type
@@ -453,6 +498,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         self.runtime = runtime
         self.genres = genres
         self.cast = cast
+        self.castDetails = castDetails
         self.videos = videos
         self.posterFallback = posterFallback
     }
@@ -474,7 +520,7 @@ struct MetaItem: Codable, Identifiable, Hashable {
         MetaItem(id: newID, type: type, name: name, poster: poster, background: background,
                  logo: logo, description: description, releaseInfo: releaseInfo,
                  imdbRating: imdbRating, runtime: runtime, genres: genres, cast: cast,
-                 videos: videos, posterFallback: posterFallback, released: released)
+                 videos: videos, posterFallback: posterFallback, released: released, castDetails: castDetails)
     }
 
     /// The show behind an add-on's synthesised "Up Next" id, or nil when `id`

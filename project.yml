@@ -6,7 +6,7 @@ options:
 settings:
   base:
     # The containing app and its Top Shelf extension must ship together.
-    CURRENT_PROJECT_VERSION: "49"
+    CURRENT_PROJECT_VERSION: "50"
 packages:
   # VENDORED with two Orivio patches (see "ORIVIO PATCH" comments): a
   # lost-wakeup fix in MEPlayerItem's reader teardown and a display-link

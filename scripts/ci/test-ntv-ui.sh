@@ -135,6 +135,11 @@ if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
     -skip-testing:OrivioTVUITests/NTVDesignSmoke/testRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable \
     -skip-testing:OrivioTVUITests/NTVDesignSmoke/testSeanimeRepeatedHomeRowMovesKeepFocusVisibleAndViewportStable \
     -only-testing:OrivioTVTests/NTVCoreTests \
+    -only-testing:OrivioTVUITests/NTVPlayerBarTests \
+    -only-testing:OrivioTVUITests/NTVReleaseNotesUITests \
+    -only-testing:OrivioTVTests/NTVCatalogRowTransitionTests \
+    -only-testing:OrivioTVTests/NTVDetailMetadataTests \
+    -only-testing:OrivioTVTests/NTVReleaseNotesTests \
     -only-testing:OrivioTVTests/NTVPlayerComfortTests \
     -only-testing:OrivioTVTests/NTVSeekCompletionTests \
     -only-testing:OrivioTVTests/NTVPlayerDiagnosticsTests \

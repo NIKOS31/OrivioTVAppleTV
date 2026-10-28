@@ -380,7 +380,7 @@ actor NTVIPTVCatalogService {
         MetaItem(id: meta.id, type: meta.type, name: meta.name, poster: meta.poster, background: meta.background,
             logo: meta.logo, description: meta.description, releaseInfo: meta.releaseInfo, imdbRating: meta.imdbRating,
             runtime: meta.runtime, genres: meta.genres, cast: meta.cast, videos: videos,
-            posterFallback: meta.posterFallback, released: meta.released)
+            posterFallback: meta.posterFallback, released: meta.released, castDetails: meta.castDetails)
     }
     func validateAccount(config: NTVIPTVConfiguration) async throws {
         let data = try await load(config.apiURL())

@@ -891,10 +891,16 @@ struct ProfileEditView: View {
                     ],
                     onSelect: { autoBind(\.maxSizeGB).wrappedValue = Double(Int($0) ?? 0) }
                 )
-                Toggle("Sources disponibles immédiatement", isOn: autoBind(\.cachedOnly))
+                Toggle("Sources immédiates pour la lecture auto", isOn: autoBind(\.cachedOnly))
                     .font(.system(size: 24, weight: .medium))
                     .tint(theme.palette.secondary)
                     .frame(maxWidth: 560)
+
+                Text("Ce choix concerne le lancement automatique. Les affiches se filtrent avec « Masquer les titres sans source ».")
+                    .font(.system(size: 23))
+                    .foregroundStyle(theme.palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 560, alignment: .leading)
 
                 Toggle("Éviter le Dolby Vision", isOn: autoBind(\.avoidDolbyVision))
                     .font(.system(size: 24, weight: .medium))

@@ -40,6 +40,17 @@ final class DetailViewModel: ObservableObject {
     @Published var selectedSeason: Int?
     @Published var isLoading = true
     @Published var cast: [TMDBService.CastMember] = []
+    var displayCast: [MetaCastMember] {
+        let enriched = crew + cast
+        let supplied = meta.castDetails ?? []
+        guard !enriched.isEmpty else {
+            return supplied.contains(where: { $0.profileURL != nil }) ? supplied : []
+        }
+        return enriched.map { member in
+            let photo = member.profileURL ?? supplied.first(where: { $0.tmdbID == member.id })?.profileURL
+            return MetaCastMember(name: member.name, character: member.character, profileURL: photo, tmdbID: member.id)
+        }
+    }
     @Published var moreLikeThis: [MetaItem] = []
     @Published var collection: TMDBService.CollectionRef?
     @Published var collectionParts: [MetaItem] = []
@@ -117,14 +128,15 @@ final class DetailViewModel: ObservableObject {
                 poster: meta.poster, background: meta.background, logo: meta.logo,
                 description: meta.description, releaseInfo: meta.releaseInfo,
                 imdbRating: meta.imdbRating, runtime: meta.runtime,
-                genres: meta.genres, cast: meta.cast, videos: meta.videos
+                genres: meta.genres, cast: meta.cast, videos: meta.videos,
+                posterFallback: meta.posterFallback, released: meta.released, castDetails: meta.castDetails
             )
         }
         // Kick off TMDB enrichment + Trakt comments in parallel with the meta fetch.
         // No key, no enrichment: TMDB now runs on the viewer's own key, and
         // without one every one of these requests is a guaranteed 401.
-        let enrichTask = TMDBService.hasAPIKey
-            ? Task { await TMDBService.detail(imdbID: meta.id, type: meta.type) }
+        let enrichTask = tmdb.isUsable
+            ? Task { await TMDBService.detail(imdbID: meta.id, type: meta.type, language: tmdb.language) }
             : nil
         let commentsTask = Task { await TraktService.comments(imdbID: meta.id, type: meta.type) }
         let ratingsTask = Task { await loadMDBRatings(settings: mdbSettings) }
@@ -171,7 +183,8 @@ final class DetailViewModel: ObservableObject {
                     poster: meta.poster, background: meta.background, logo: meta.logo,
                     description: meta.description, releaseInfo: meta.releaseInfo,
                     imdbRating: meta.imdbRating, runtime: meta.runtime,
-                    genres: meta.genres, cast: meta.cast, videos: episodes
+                    genres: meta.genres, cast: meta.cast, videos: episodes,
+                    posterFallback: meta.posterFallback, released: meta.released, castDetails: meta.castDetails
                 )
             }
         }
@@ -220,11 +233,12 @@ final class DetailViewModel: ObservableObject {
     /// `enrichmentPending` while it has not succeeded, so a reappearance of
     /// the page tries again instead of leaving the sections empty for good.
     private func enrich(tmdb: TMDBSettings) async {
-        guard TMDBService.hasAPIKey else { enrichmentPending = false; return }
-        await apply(detail: await TMDBService.detail(imdbID: meta.id, type: meta.type), tmdb: tmdb)
+        guard tmdb.isUsable else { enrichmentPending = false; return }
+        await apply(detail: await TMDBService.detail(imdbID: meta.id, type: meta.type, language: tmdb.language), tmdb: tmdb)
     }
 
-    private func apply(detail: TMDBService.Detail?, tmdb: TMDBSettings) async {
+    func apply(detail: TMDBService.Detail?, tmdb: TMDBSettings) async {
+        guard tmdb.isUsable else { enrichmentPending = false; return }
         guard let detail else {
             // Nothing came back (network flake, TMDB hiccup). Remember to
             // retry — but only when a key exists and enrichment was expected.
@@ -239,6 +253,9 @@ final class DetailViewModel: ObservableObject {
             director = detail.director
         }
         if tmdb.useDetails {
+            if let overview = detail.overview?.trimmingCharacters(in: .whitespacesAndNewlines), !overview.isEmpty {
+                meta.description = overview
+            }
             country = detail.country
             language = detail.language
         }
@@ -1513,8 +1530,9 @@ struct DetailView: View {
 
     @ViewBuilder
     private var castSection: some View {
-        let people = viewModel.crew + viewModel.cast
-        let fallbackNames = (viewModel.meta.cast ?? [])
+        let people = viewModel.displayCast
+        let namedCast = viewModel.meta.cast ?? []
+        let fallbackNames = (namedCast.isEmpty ? (viewModel.meta.castDetails ?? []).map(\.name) : namedCast)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if layout.detailShowCast, !people.isEmpty {
             VStack(alignment: .leading, spacing: OrivioSpacing.md) {
@@ -1525,12 +1543,18 @@ struct DetailView: View {
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: OrivioSpacing.lg) {
                         ForEach(people) { member in
-                            Button {
-                                onSelectPerson(member.id, member.name)
-                            } label: {
-                                CastChip(member: member)
+                            if let id = member.tmdbID {
+                                Button {
+                                    onSelectPerson(id, member.name)
+                                } label: {
+                                    CastChip(name: member.name, character: member.character, profileURL: member.profileURL)
+                                }
+                                .buttonStyle(PlainCardButtonStyle())
+                            } else {
+                                CastChip(name: member.name, character: member.character, profileURL: member.profileURL)
+                                    .focusable()
+                                    .accessibilityAddTraits(.isImage)
                             }
-                            .buttonStyle(PlainCardButtonStyle())
                         }
                     }
                     .padding(.horizontal, OrivioSpacing.huge)
@@ -1761,11 +1785,21 @@ struct CastChip: View {
     @ObservedObject private var perf = PerformanceSettingsStore.shared
     @Environment(\.isFocused) private var isFocused
 
-    let member: TMDBService.CastMember
+    let name: String
+    let character: String?
+    let profileURL: String?
 
     var body: some View {
         VStack(spacing: OrivioSpacing.sm) {
-            RemoteImage(url: member.profileURL, maxDimension: 150)
+            Group {
+                if let profileURL {
+                    RemoteImage(url: profileURL, maxDimension: 150)
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .foregroundStyle(theme.palette.textTertiary)
+                }
+            }
                 .frame(width: 150, height: 150)
                 .background(theme.palette.backgroundCard)
                 .clipShape(Circle())
@@ -1780,12 +1814,13 @@ struct CastChip: View {
                 .shadow(color: perf.settings.cardShadows
                             ? .black.opacity(isFocused ? 0.6 : 0.3) : .clear,
                         radius: perf.settings.cardShadows ? (isFocused ? 18 : 8) : 0, y: 6)
+                .accessibilityHidden(true)
 
-            Text(member.name)
+            Text(name)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(isFocused ? theme.palette.textPrimary : theme.palette.textSecondary)
                 .lineLimit(1)
-            if let character = member.character, !character.isEmpty {
+            if let character, !character.isEmpty {
                 Text(character)
                     .font(.system(size: 17))
                     .foregroundStyle(theme.palette.textTertiary)

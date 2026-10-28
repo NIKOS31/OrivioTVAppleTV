@@ -21,15 +21,16 @@ final class ContentFocusRouter {
     private var landingTask: Task<Void, Never>?
     private var landingRowID: String?
     private var landingGeneration: UUID?
+    private var landingKind: EntryKind = .rowStart
     private(set) var interactionGeneration: UInt64 = 0
     /// A view can be mounted again with the same task ID. The request lives
     /// here, outside that view's lifecycle, and can be claimed only once.
-    enum EntryKind: Equatable { case rowStart, restoration }
+    enum EntryKind: Equatable { case rowStart, restoration, orderedRow }
     struct EntryRequest: Equatable {
         fileprivate let id = UUID()
         fileprivate let rowID: String
         fileprivate let sequence: UInt64
-        fileprivate let kind: EntryKind
+        let kind: EntryKind
     }
     private var pendingEntry: EntryRequest?
     private var entrySequence: UInt64 = 0
@@ -40,6 +41,11 @@ final class ContentFocusRouter {
     }
 
     var hasPendingRestoration: Bool { pendingEntry?.kind == .restoration }
+
+    var movingToRowID: String? {
+        if let pendingEntry, pendingEntry.kind == .orderedRow { return pendingEntry.rowID }
+        return landingKind == .orderedRow ? landingRowID : nil
+    }
 
     func isLanding(in rowID: String) -> Bool {
         landingRowID == rowID && landingGeneration != nil
@@ -80,10 +86,10 @@ final class ContentFocusRouter {
     /// too, including a task still waiting for a navigation pop to settle.
     func noteUserMovement(in rowID: String? = nil) {
         interactionGeneration &+= 1
-        // onMoveCommand may arrive after UIKit has already entered another
-        // row for this same gesture. The departing row must not cancel the
-        // destination's newly issued correction.
-        if rowID == nil || landingRowID == rowID || pendingEntry?.rowID == rowID || hasPendingRestoration { cancelLanding() }
+        // Explicit row navigation yields to a new command anywhere. Ordinary
+        // native entry still tolerates the departing row's late notification.
+        if rowID == nil || landingRowID == rowID || pendingEntry?.rowID == rowID ||
+            hasPendingRestoration || movingToRowID != nil { cancelLanding() }
     }
 
     /// Normalize entry from another catalog row or its Categories header,
@@ -122,9 +128,13 @@ final class ContentFocusRouter {
     func noteFocused(row rowID: String) {
         // A delayed retry belongs to one row. Once focus is in another row,
         // it must not scroll the previous row and reclaim focus behind us.
-        if let landingRowID, landingRowID != rowID { cancelLanding() }
+        let catalogRow = rowID.hasPrefix("ntv.catalog.shelf.")
+        // Scrolling to an ordered neighbor can briefly focus a third shelf.
+        // Only a new command, page exit or unmount supersedes that destination.
+        if let landingRowID, landingRowID != rowID,
+           landingKind != .orderedRow || !catalogRow { cancelLanding() }
         if let pendingEntry, pendingEntry.rowID != rowID,
-           pendingEntry.kind != .restoration || !rowID.hasPrefix("ntv.catalog.shelf.") { cancelLanding() }
+           pendingEntry.kind == .rowStart || !catalogRow { cancelLanding() }
         // During a navigation pop UIKit can briefly choose a nearby shelf
         // before the remembered poster mounts. That automatic fallback alone
         // does not cancel restoration; a real move command in ANY row does.
@@ -175,7 +185,7 @@ final class ContentFocusRouter {
     /// running means someone chose it, and re-assigning would yank them back
     /// to card 1 and snap the platter raise mid-move (up to six times over
     /// 360ms — one face of the "frozen poster" fight).
-    func land(in rowID: String, prepare: () -> Void = {}, assign: @escaping () -> Void,
+    func land(in rowID: String, kind: EntryKind = .rowStart, prepare: () -> Void = {}, assign: @escaping () -> Void,
                      landed: @escaping () -> Bool,
                      focusToken: (() -> String?)? = nil) {
         cancelLanding()
@@ -184,6 +194,7 @@ final class ContentFocusRouter {
         let sequence = landingSequence
         landingGeneration = generation
         landingRowID = rowID
+        landingKind = kind
         // Only local sequence numbers and fixed labels in these diagnostics:
         // no title, media identifier, addon configuration or URL.
         AppProbe.focus("landing #\(sequence) started")
@@ -212,7 +223,7 @@ final class ContentFocusRouter {
                     if attempt > 1 { AppProbe.focus("land: took \(attempt) tries") }
                     return
                 }
-                if let token = focusToken?(), token == previous {
+                if kind != .orderedRow, let token = focusToken?(), token == previous {
                     AppProbe.focus("landing #\(sequence) yielded to settled focus")
                     PlayerProbe.count("focus.landing.yielded")
                     AppProbe.focus("land: gave up after \(attempt) — focus is resting on"
@@ -243,5 +254,6 @@ final class ContentFocusRouter {
         landingTask = nil
         landingRowID = nil
         landingGeneration = nil
+        landingKind = .rowStart
     }
 }

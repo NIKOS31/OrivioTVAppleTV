@@ -186,11 +186,22 @@ enum NTVAddonPayloadPolicy {
     private static func metaCollections(_ meta: [String: Any]) throws {
         _ = try array(meta, key: "videos", limit: 5_000)
         _ = try array(meta, key: "cast", limit: 256)
+        if let extras = meta["app_extras"] as? [String: Any] {
+            _ = try array(extras, key: "cast", limit: 256)
+        }
         _ = try array(meta, key: "genres", limit: 128)
     }
 
     private static func cleanMeta(_ meta: inout [String: Any], source: URL, changed: inout Bool) {
         cleanLinks(&meta, keys: ["poster", "posterFallback", "background", "logo"], source: source, changed: &changed)
+        if var extras = meta["app_extras"] as? [String: Any], let entries = extras["cast"] as? [Any] {
+            extras["cast"] = entries.map { value -> Any in
+                guard var member = value as? [String: Any] else { return value }
+                cleanLinks(&member, keys: ["photo"], source: source, changed: &changed)
+                return member
+            }
+            meta["app_extras"] = extras
+        }
         if let entries = meta["videos"] as? [Any] {
             meta["videos"] = entries.map { value -> Any in
                 guard var video = value as? [String: Any] else { return value }

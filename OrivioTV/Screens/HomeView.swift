@@ -1904,7 +1904,7 @@ struct HomeView: View {
                 logo: full.logo ?? bare.logo,
                 description: full.description, releaseInfo: full.releaseInfo,
                 imdbRating: full.imdbRating, runtime: full.runtime,
-                genres: full.genres, cast: full.cast, videos: full.videos
+                genres: full.genres, cast: full.cast, videos: full.videos, castDetails: full.castDetails
             )
         }
         await reload()
@@ -2843,6 +2843,9 @@ private struct HomePosterRowContent: View {
                                 .buttonStyle(NTVActionButtonStyle())
                                 .focused($emptyRowFocused)
                                 .accessibilityIdentifier("ntv.catalog.filteredEmpty.\(row.id)")
+                                .modifier(CatalogRowMovementObserver(
+                                    enabled: resetsRowEntry || onVerticalMove != nil,
+                                    rowID: row.id, onVerticalMove: onVerticalMove))
                             }
                             .frame(minHeight: homeCatalogSettings.posterSize.posterWidth * 1.5, alignment: .topLeading)
                         }
@@ -2967,7 +2970,7 @@ private struct HomePosterRowContent: View {
                     // This task belongs to ONE catalog move. A newer move, a
                     // detail push or disappearance cancels it; no detached
                     // router retry may drag focus back to an obsolete row.
-                    ContentFocusRouter.shared.land(in: row.id, prepare: {
+                    ContentFocusRouter.shared.land(in: row.id, kind: focusFirstRequest.kind, prepare: {
                         if focusFirstScroll { proxy.scrollTo(first, anchor: .leading) }
                     }, assign: { focusedID = first }, landed: { actualFocusedID == first },
                        focusToken: resetsRowEntry ? nil : { actualFocusedID })
@@ -2999,7 +3002,8 @@ private struct HomePosterRowContent: View {
 
     private func startsRowEntry(previousItem: String?) -> Bool {
         let router = ContentFocusRouter.shared
-        guard !router.hasPendingRestoration, !router.isLanding(in: row.id) else { return false }
+        guard !router.hasPendingRestoration, router.movingToRowID == nil,
+              !router.isLanding(in: row.id) else { return false }
         if resetsRowEntry {
             return router.lastRowID != nil && router.lastRowID != row.id
         }
@@ -3049,12 +3053,15 @@ private struct HomePosterRowContent: View {
             if let addon = row.addon, let catalog = row.catalog {
                 Spacer()
                 Button {
+                    ContentFocusRouter.shared.noteUserMovement()
                     onSeeAll(addon, catalog, row.title)
                 } label: {
                     SeeAllLabel()
                 }
                 .buttonStyle(PlainCardButtonStyle())
                 .focused($seeAllFocused)
+                .modifier(CatalogRowMovementObserver(
+                    enabled: resetsRowEntry || onVerticalMove != nil, rowID: row.id, onVerticalMove: onVerticalMove))
                 .padding(.trailing, theme.palette.id == NTVDesign.palette.id
                          ? NTVViewport.horizontalInset : OrivioSpacing.huge)
             }

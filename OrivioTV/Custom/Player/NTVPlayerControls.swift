@@ -34,26 +34,34 @@ struct NTVPlayerControls: View {
                 }
                 .frame(height: 64)
 
-                Button {
-                    viewModel.noteSelectPressed()
-                    viewModel.beginScrub()
-                } label: {
-                    NTVPlayerTimeline(viewModel: viewModel, clock: viewModel.clock, highlighted: focus == .timeline)
-                }
-                .buttonStyle(PlainCardButtonStyle())
-                .focused($focus, equals: .timeline)
-                .accessibilityLabel("Parcourir la vidéo")
-                .accessibilityHint("Glissez pour prévisualiser, puis relâchez pour valider. Gauche ou droite pour ajuster, OK pour confirmer, Retour pour annuler.")
-                .accessibilityIdentifier("ntv.player.timeline")
-                .onMoveCommand { direction in
-                    guard !viewModel.moveSuppressed else { return }
-                    viewModel.noteSelectPressed()
-                    switch direction {
-                    case .left, .right:
-                        viewModel.beginScrub()
-                        viewModel.stepNTVScrub(forward: direction == .right)
-                    case .down: focus = .play
-                    default: break
+                ZStack {
+                    NTVPlayerTimeline(viewModel: viewModel, clock: viewModel.clock,
+                                      highlighted: viewModel.isScrubbing || focus == .timeline,
+                                      scrubbing: viewModel.isScrubbing)
+                    // Keep the clock's accessible value outside the focus button's label.
+                    Button {
+                        viewModel.noteSelectPressed()
+                        if viewModel.isScrubbing { viewModel.commitScrub() }
+                        else { viewModel.beginScrub() }
+                    } label: { Color.clear.frame(height: 28) }
+                    .buttonStyle(PlainCardButtonStyle())
+                    .focused($focus, equals: .timeline)
+                    .accessibilityLabel("Parcourir la vidéo")
+                    .accessibilityHint("Glissez pour prévisualiser, puis relâchez pour valider. Gauche ou droite pour ajuster, OK pour confirmer, Retour pour annuler.")
+                    .accessibilityIdentifier("ntv.player.timeline")
+                    .onMoveCommand { direction in
+                        guard !viewModel.moveSuppressed else { return }
+                        viewModel.noteSelectPressed()
+                        switch direction {
+                        case .left, .right:
+                            viewModel.beginScrub()
+                            viewModel.stepNTVScrub(forward: direction == .right)
+                        case .down:
+                            if viewModel.isScrubbing { viewModel.cancelScrub() }
+                            else { focus = .play }
+                        case .up where viewModel.isScrubbing: viewModel.cancelScrub()
+                        default: break
+                        }
                     }
                 }
 
@@ -78,6 +86,7 @@ struct NTVPlayerControls: View {
                     }
                 }
                 .frame(height: 42)
+                .disabled(viewModel.isScrubbing)
 
                 HStack(spacing: 14) {
                     pillControl(.info, title: "Infos", label: "Informations") { viewModel.showInfoPanel() }
@@ -112,6 +121,16 @@ struct NTVPlayerControls: View {
                 }
                 .frame(height: 52)
                 .focusSection()
+                .disabled(viewModel.isScrubbing)
+                .opacity(viewModel.isScrubbing ? 0 : 1)
+                .accessibilityHidden(viewModel.isScrubbing)
+                .overlay(alignment: .leading) {
+                    if viewModel.isScrubbing {
+                        Text("Glisser pour parcourir   ·   Relâcher ou OK Valider   ·   Retour Annuler")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
             }
             .disabled(pickingTracks)
             .accessibilityElement(children: .contain)
@@ -122,10 +141,13 @@ struct NTVPlayerControls: View {
         .padding(.bottom, 48)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .ignoresSafeArea()
-        .defaultFocus($focus, .play)
+        .defaultFocus($focus, viewModel.isScrubbing ? .timeline : .play)
         .onAppear {
-            focus = initialControlID.flatMap(Control.init(rawValue:)) ?? .play
+            focus = viewModel.isScrubbing ? .timeline : initialControlID.flatMap(Control.init(rawValue:)) ?? .play
             onRestoreFocus()
+        }
+        .onChange(of: viewModel.isScrubbing) { _, scrubbing in
+            if scrubbing { focus = .timeline }
         }
         .onChange(of: viewModel.controlsSession) { _, _ in focus = .play }
         .onChange(of: focus) { _, selected in
@@ -281,43 +303,6 @@ private struct NTVPlayerHeading: View {
     }
 }
 
-struct NTVPlayerSeekOverlay: View {
-    @ObservedObject var viewModel: PlayerViewModel
-    var scrubbing = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .bottom) {
-                NTVPlayerHeading(viewModel: viewModel)
-                Spacer()
-                if !scrubbing {
-                    Text(TimeFormat.signedDelta(viewModel.pendingSeekDelta))
-                        .font(.system(size: 25, weight: .medium).monospacedDigit())
-                        .padding(.bottom, 4)
-                }
-            }
-            .frame(height: 64)
-            NTVPlayerTimeline(viewModel: viewModel, clock: viewModel.clock, highlighted: true, scrubbing: scrubbing)
-            HStack {
-                NTVPlayerTimeValue(viewModel: viewModel, clock: viewModel.clock)
-                Spacer()
-                NTVPlayerTimeValue(viewModel: viewModel, clock: viewModel.clock, totalDuration: true)
-            }
-            .frame(height: 42)
-            Text(scrubbing ? "Glisser pour parcourir   ·   Relâcher ou OK Valider   ·   Retour Annuler" : "← → Sauts rapides")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
-                .frame(height: 52, alignment: .leading)
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 72)
-        .padding(.bottom, 48)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-    }
-}
-
 /// Nuvio's runtime toggle, adapted to the remote. Only this leaf observes
 /// the playback clock; ticking time does not rebuild the action/focus rail.
 private struct NTVPlayerRuntimeControl: View {
@@ -355,17 +340,16 @@ private struct NTVPlayerRuntimeLabel: View {
 private struct NTVPlayerTimeValue: View {
     @ObservedObject var viewModel: PlayerViewModel
     @ObservedObject var clock: PlaybackClock
-    var totalDuration = false
 
     private var target: Double {
         min(max(clock.scrubTarget ?? viewModel.pendingNTVSeekTarget ?? (clock.position + viewModel.pendingSeekDelta), 0), max(clock.duration, 1))
     }
 
     var body: some View {
-        Text(TimeFormat.clock(totalDuration ? max(clock.duration, 0) : target))
+        Text(TimeFormat.clock(target))
             .font(.system(size: 20, weight: .medium).monospacedDigit())
             .foregroundStyle(.white.opacity(0.9))
-            .accessibilityIdentifier(totalDuration ? "ntv.player.duration" : "ntv.player.position")
+            .accessibilityIdentifier("ntv.player.position")
     }
 }
 
@@ -417,6 +401,8 @@ private struct NTVPlayerTimeline: View {
             ? "Lecture \(TimeFormat.clock(clock.position)), cible \(TimeFormat.clock(target))"
             : TimeFormat.clock(target))
         .accessibilityIdentifier(scrubbing ? "ntv.player.seek.preview" : "ntv.player.seek.progress")
+        // The playhead follows the requested position, never an overlay's fade transaction.
+        .transaction { $0.animation = nil }
     }
 }
 

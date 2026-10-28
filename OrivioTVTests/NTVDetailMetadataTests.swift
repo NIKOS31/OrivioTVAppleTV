@@ -69,7 +69,7 @@ final class NTVDetailMetadataTests: XCTestCase {
     func testPortraitsSurviveCacheRoundTripIdentityAndPosterCopies() throws {
         let person = MetaCastMember(name: "Personne", character: nil, profileURL: "https://images.example.invalid/a.jpg", tmdbID: 42)
         let item = MetaItem(id: "fixture", type: "series", name: "Série", poster: "https://images.example.invalid/decorated.jpg",
-            description: "Résumé fourni.", cast: [person.name], videos: [MetaVideo(id: "fixture:1:1", season: 1, episode: 1)],
+            description: "Résumé fourni.", cast: [person.name], videos: [MetaVideo(id: "fixture:1:1", title: nil, season: 1, episode: 1)],
             posterFallback: "https://images.example.invalid/plain.jpg", released: "2026-01-01", castDetails: [person])
         let restored = try JSONDecoder().decode(MetaItem.self, from: JSONEncoder().encode(item))
         XCTAssertEqual(restored, item)
@@ -105,7 +105,7 @@ final class NTVDetailMetadataTests: XCTestCase {
 
     @MainActor
     func testLocalizedOverviewReplacesAddonTextWithoutChangingIdentityArtworkOrEpisodes() async {
-        let episode = MetaVideo(id: "tt0000001:1:1", season: 1, episode: 1)
+        let episode = MetaVideo(id: "tt0000001:1:1", title: nil, season: 1, episode: 1)
         let person = MetaCastMember(name: "Personne", character: nil, profileURL: "https://images.example.invalid/a.jpg", tmdbID: 42)
         let item = MetaItem(id: "tt0000001", type: "series", name: "Série", poster: "https://images.example.invalid/poster.jpg",
             background: "https://images.example.invalid/backdrop.jpg", logo: "https://images.example.invalid/logo.png",

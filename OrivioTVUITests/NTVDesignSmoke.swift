@@ -383,12 +383,12 @@ final class NTVDesignSmoke: XCTestCase {
         defer { app.terminate() }
         let remote = XCUIRemote.shared
         let play = app.buttons["ntv.player.play"]
+        // Stabilize startup snapshots paused, then exercise the live skip and dwell.
+        remote.press(.playPause)
         for _ in 0..<10 {
             remote.press(.up)
             if play.waitForExistence(timeout: 2) { break }
         }
-        // Stabilize startup snapshots paused, then exercise the live skip and dwell.
-        remote.press(.playPause)
         XCTAssertTrue(play.exists)
         XCTAssertTrue(focused(play, timeout: 8))
         XCTAssertEqual(play.label, "Lecture")

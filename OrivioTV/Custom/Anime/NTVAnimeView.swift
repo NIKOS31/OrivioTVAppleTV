@@ -250,35 +250,7 @@ struct NTVAnimeView: View {
         }
         .onChange(of: followingRevision) { _, _ in model.filterFollowing(profileFollowing) }
         .onDisappear { opening = nil; model.suspend() }
-        .task(id: opening?.id) {
-            guard let media = opening else { return }
-            let profile = profiles.activeProfileID
-            let item: MetaItem?
-            do {
-                #if DEBUG
-                if NTVAnimeFixture.directPlayback {
-                    item = try await NTVAnimePlaybackResolver.resolve(media, addons: [NTVAnimeFixture.addon]) { _ in
-                        NTVAnimeFixture.mapping(for: media)
-                    }
-                } else if ProcessInfo.processInfo.arguments.contains("-ntvAnimeFixture") {
-                    item = nil
-                } else {
-                    item = try await NTVAnimePlaybackResolver.resolve(media, addons: addonManager.addons)
-                }
-                #else
-                item = try await NTVAnimePlaybackResolver.resolve(media, addons: addonManager.addons)
-                #endif
-            } catch {
-                guard !Task.isCancelled else { return }
-                item = nil
-            }
-            guard !Task.isCancelled, opening?.id == media.id, profiles.activeProfileID == profile else { return }
-            opening = nil
-            if let item {
-                NTVAnimeLibrary.shared.remember(item, profile: profile)
-                onOpenItem(item)
-            } else { selection = media }
-        }
+        .task(id: opening?.id) { await openSelection() }
         .overlay(alignment: .bottom) {
             if opening != nil {
                 HStack(spacing: 16) { ProgressView(); Text("Ouverture de la fiche…") }
@@ -473,6 +445,37 @@ struct NTVAnimeView: View {
             .padding(.horizontal, -12)
             .padding(.bottom, 48)
         }
+    }
+
+    @MainActor
+    private func openSelection() async {
+        guard let media = opening else { return }
+        let profile = profiles.activeProfileID
+        let item: MetaItem?
+        do {
+            #if DEBUG
+            if NTVAnimeFixture.directPlayback {
+                item = try await NTVAnimePlaybackResolver.resolve(media, addons: [NTVAnimeFixture.addon]) { _ in
+                    NTVAnimeFixture.mapping(for: media)
+                }
+            } else if ProcessInfo.processInfo.arguments.contains("-ntvAnimeFixture") {
+                item = nil
+            } else {
+                item = try await NTVAnimePlaybackResolver.resolve(media, addons: addonManager.addons)
+            }
+            #else
+            item = try await NTVAnimePlaybackResolver.resolve(media, addons: addonManager.addons)
+            #endif
+        } catch {
+            guard !Task.isCancelled else { return }
+            item = nil
+        }
+        guard !Task.isCancelled, opening?.id == media.id, profiles.activeProfileID == profile else { return }
+        opening = nil
+        if let item {
+            NTVAnimeLibrary.shared.remember(item, profile: profile)
+            onOpenItem(item)
+        } else { selection = media }
     }
 
     private func open(_ media: NTVAnimeMedia, focusID: String?) {

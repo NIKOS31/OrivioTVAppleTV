@@ -64,13 +64,15 @@ final class NTVMediaFormatTests: XCTestCase {
             }
             let player = AVPlayer(playerItem: item)
             defer { observation.invalidate(); player.pause(); player.replaceCurrentItem(with: nil) }
-            player.play()
             await fulfillment(of: [ready], timeout: 15)
             XCTAssertEqual(item.status, .readyToPlay, fixture.file)
+            // Prepare playback, then decode the image without two active native decoders.
+            NSLog("[NTVFormat] native image %@ ready=%ld", fixture.file, item.status.rawValue)
             let generator = AVAssetImageGenerator(asset: asset)
             let (image, _) = try await generator.image(at: CMTime(seconds: 0.5, preferredTimescale: 600))
             XCTAssertEqual(image.width, fixture.expected.width, fixture.file)
             XCTAssertEqual(image.height, fixture.expected.height, fixture.file)
+            player.play()
         }
     }
 

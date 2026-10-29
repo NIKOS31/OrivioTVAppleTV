@@ -88,6 +88,7 @@ fi
 set +e
 # A native startup failure must surface before the longer remote journeys.
 run_test_bundle native-video \
+  -only-testing:OrivioTVTests/NTVMediaFormatTests \
   -only-testing:OrivioTVTests/NTVFFmpegTests/testBundledFixtureStartsInNativePlayer \
   -only-testing:OrivioTVTests/NTVCoreTests/testRequestedFocusDoesNotCompleteAnUnconfirmedLanding
 if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
@@ -144,7 +145,7 @@ if ((test_pipeline[0] == 0 && test_pipeline[1] == 0)); then
     -only-testing:OrivioTVTests/NTVPlayerComfortTests \
     -only-testing:OrivioTVTests/NTVSeekCompletionTests \
     -only-testing:OrivioTVTests/NTVPlayerTouchTests \
-    -only-testing:OrivioTVTests/NTVMediaFormatTests \
+    -skip-testing:OrivioTVTests/NTVMediaFormatTests \
     -only-testing:OrivioTVTests/NTVPlayerDiagnosticsTests \
     -only-testing:OrivioTVTests/NTVAnimeTests \
     -only-testing:OrivioTVTests/NTVTwitchTests \

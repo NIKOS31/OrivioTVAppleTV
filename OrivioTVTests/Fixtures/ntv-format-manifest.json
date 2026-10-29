@@ -13,8 +13,8 @@
   },
   {
     "file": "ntv-format-hevc10.mp4",
-    "bytes": 1169603,
-    "sha256": "728821fa8fe5d4f371d005013e72e230335cd089bb57ca2b54af9fd5237a25d5",
+    "bytes": 1169608,
+    "sha256": "6d5dc4c2408d37733ac0f5bac9f40518cd3aef13f67148aef45db8814458ac50",
     "expected": {
       "video": "hevc",
       "width": 3840,
@@ -28,14 +28,17 @@
   },
   {
     "file": "ntv-format-hevc10.mkv",
-    "bytes": 1168895,
-    "sha256": "f5856533f47f3657da8f75877b79c154d846f07a1da4439aaa7d76331a38079e",
+    "bytes": 1168908,
+    "sha256": "a7d09676837b86f8cd734561dd7a8637612561f56a1d84571d43111b107f71e0",
     "expected": {
       "video": "hevc",
       "width": 3840,
       "height": 2160,
       "rate": 60,
-      "depth": 10
+      "depth": 10,
+      "primaries": "bt2020",
+      "transfer": "smpte2084",
+      "visualHDRReference": false
     }
   },
   {

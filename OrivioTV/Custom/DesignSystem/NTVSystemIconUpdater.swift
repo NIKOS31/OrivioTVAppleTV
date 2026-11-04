@@ -108,11 +108,19 @@ enum NTVSystemIconMigration {
             for icon in steps {
                 #if DEBUG
                 registrationAttempts += 1
+                if iconProbe {
+                    NSLog("[NTVIconProbe] request=%ld target=%@ phase=%ld", registrationAttempts,
+                          icon == nil ? "primary" : "alternate", app.applicationState.rawValue)
+                }
                 #endif
                 try await app.setAlternateIconName(icon)
                 guard app.alternateIconName == icon else {
                     #if DEBUG
                     registrationState = "mismatch"
+                    if iconProbe {
+                        NSLog("[NTVIconProbe] mismatch request=%ld actual=%@", registrationAttempts,
+                              app.alternateIconName == nil ? "primary" : "alternate")
+                    }
                     #endif
                     return
                 }
@@ -125,6 +133,10 @@ enum NTVSystemIconMigration {
         } catch {
             #if DEBUG
             registrationState = "failed"
+            if iconProbe {
+                NSLog("[NTVIconProbe] rejected request=%ld code=%ld phase=%ld", registrationAttempts,
+                      (error as NSError).code, app.applicationState.rawValue)
+            }
             #endif
             // Keep the migration pending when tvOS declines the operation.
             // No private device, account or provisioning data is logged.

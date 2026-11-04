@@ -34,7 +34,7 @@ xcrun simctl bootstatus "$simulator" -b
 open -a "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$simulator"
 # The runner contains only test fixtures; retain native media startup failures.
 xcrun simctl spawn "$simulator" log stream --style compact --level info \
-  --predicate 'process == "OrivioTV" AND (eventMessage CONTAINS "[OrivioPlayer]" OR eventMessage CONTAINS "[FocusTrace]" OR subsystem BEGINSWITH "com.apple.coremedia" OR subsystem BEGINSWITH "com.apple.avfoundation")' \
+  --predicate 'process == "OrivioTV" AND (eventMessage CONTAINS "[OrivioPlayer]" OR eventMessage CONTAINS "[FocusTrace]" OR eventMessage CONTAINS "[NTVIconProbe]" OR subsystem BEGINSWITH "com.apple.coremedia" OR subsystem BEGINSWITH "com.apple.avfoundation")' \
   > "$output/logs/native-media.log" 2>&1 &
 media_log_pid=$!
 trap 'kill "$media_log_pid" 2>/dev/null || true' EXIT

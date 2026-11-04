@@ -1513,9 +1513,8 @@ final class NTVDesignSmoke: XCTestCase {
             return (seconds(parts.first?.replacingOccurrences(of: "Lecture ", with: "") ?? ""),
                     seconds(parts.last ?? ""))
         }
-        // Keep adjusting as a viewer does: a passive AX wait can outlast the
-        // six-second preview timeout before its existence result is returned.
-        for _ in 0..<2 { remote.press(.right) }
+        // Give the preview a 40-second lead before slow AX reads let playback catch up.
+        for _ in 0..<4 { remote.press(.right) }
         let liveBeforePreview = try previewTimes().live
         var whilePreviewing = (live: liveBeforePreview, target: 0)
         let previewDeadline = Date().addingTimeInterval(5)

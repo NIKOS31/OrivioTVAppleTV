@@ -69,6 +69,10 @@ final class NTVMediaFormatTests: XCTestCase {
             // Prepare playback, then decode the image without two active native decoders.
             NSLog("[NTVFormat] native image %@ ready=%ld", fixture.file, item.status.rawValue)
             let generator = AVAssetImageGenerator(asset: asset)
+            if #available(tvOS 26.0, *), fixture.expected.transfer == "smpte2084" {
+                // Keep the HDR decode check independent of the simulator's PQ-to-SDR conversion.
+                generator.dynamicRangePolicy = .matchSource
+            }
             let (image, _) = try await generator.image(at: CMTime(seconds: 0.5, preferredTimescale: 600))
             XCTAssertEqual(image.width, fixture.expected.width, fixture.file)
             XCTAssertEqual(image.height, fixture.expected.height, fixture.file)

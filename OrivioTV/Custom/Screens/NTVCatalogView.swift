@@ -427,7 +427,10 @@ struct NTVCatalogView: View {
         // horizontal offset and make the posters slide after the drawer closes.
         let entry = ContentFocusRouter.shared.makeEntryRequest(in: "ntv.catalog.shelf.\(sourceID)", kind: kind)
         requestedCategory = FocusRequest(sourceID: sourceID, entry: entry, scrollToStart: !keepViewport)
-        if !keepViewport { proxy.scrollTo(sourceID, anchor: .top) }
+        if !keepViewport {
+            // Adjacent rows need only be revealed, not forced to the top of the page.
+            proxy.scrollTo(sourceID, anchor: kind == .orderedRow ? nil : .top)
+        }
     }
     private func cancelEntryRequests() {
         ContentFocusRouter.shared.cancelEntry(requestedCategory?.entry)

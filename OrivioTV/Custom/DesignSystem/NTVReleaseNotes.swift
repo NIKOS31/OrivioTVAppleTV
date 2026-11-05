@@ -9,11 +9,12 @@ struct NTVReleaseNotes: Sendable {
     // Keep this entry and the app/extension build number together at release.
     static let current = NTVReleaseNotes(build: "52", improvements: [
         "Les cartes d’épisodes laissent davantage d’espace à leur voisin pendant l’agrandissement au focus.",
-        "Les rangées d’affiches nTV de l’Accueil, des Films et des Séries sont davantage espacées."
+        "Les rangées d’affiches nTV de l’Accueil, des Films et des Séries sont davantage espacées.",
+        "Films et Séries : les changements de rangée limitent le défilement au nécessaire pour conserver les repères à l’écran."
     ], checks: [
         "Animés ou série : focaliser le premier épisode puis un épisode au milieu. Les images doivent rester séparées et leurs textes lisibles.",
         "Films et Séries : parcourir plusieurs affiches et changer de rangée. Vérifier la séparation des cartes, puis signaler tout saut vertical inattendu.",
-        "La cause des sauts de page et des baisses de fluidité reste à diagnostiquer. Relever UI Hz, max ms et retards pendant les mouvements puis après 10 secondes immobile.",
+        "Comparer les changements de rangée par appuis et par balayages. Les baisses de fluidité restent à diagnostiquer : relever UI Hz, max ms et retards pendant les mouvements puis après 10 secondes immobile.",
         "Lecteur : confirmer que l’aperçu reste disponible entre deux glissements, que Retour annule et qu’OK valide."
     ])
 

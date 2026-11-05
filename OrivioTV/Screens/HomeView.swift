@@ -2831,7 +2831,9 @@ private struct HomePosterRowContent: View {
             header
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
+                    // Keep neighbouring nTV posters clear of the raised native focus platter.
+                    LazyHStack(alignment: .top, spacing: theme.palette.id == NTVDesign.palette.id
+                               ? OrivioSpacing.xxl : OrivioSpacing.lg) {
                         if visible.isEmpty, let onLeftAtStart {
                             VStack(alignment: .leading, spacing: 18) {
                                 Text("Aucun titre correspondant aux filtres.")

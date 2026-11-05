@@ -29,11 +29,11 @@ final class NTVReleaseNotesUITests: XCTestCase {
             remote.press(.select)
             XCTAssertTrue(button.waitForExistence(timeout: 10))
             XCTAssertTrue(focused(button))
-            XCTAssertTrue(app.staticTexts["Nouveautés de nTV 51"].exists)
+            XCTAssertTrue(app.staticTexts["Nouveautés de nTV 52"].exists)
             XCTAssertTrue(app.scrollViews["ntv.releaseNotes.content"].exists)
             if attempt == 0 {
                 let screenshot = XCTAttachment(screenshot: app.screenshot())
-                screenshot.name = "ntv-release-notes-51-reopened-from-about"
+                screenshot.name = "ntv-release-notes-52-reopened-from-about"
                 screenshot.lifetime = .keepAlways
                 add(screenshot)
                 remote.press(.select)
@@ -62,9 +62,9 @@ final class NTVReleaseNotesUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 20))
         let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasFocus == true"), object: button)
         XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 8), .completed)
-        XCTAssertTrue(app.staticTexts["Nouveautés de nTV 51"].exists)
+        XCTAssertTrue(app.staticTexts["Nouveautés de nTV 52"].exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "ntv-release-notes-51"
+        screenshot.name = "ntv-release-notes-52"
         screenshot.lifetime = .keepAlways
         add(screenshot)
         XCUIRemote.shared.press(.select)

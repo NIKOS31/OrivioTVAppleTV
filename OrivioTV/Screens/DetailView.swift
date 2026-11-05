@@ -1414,7 +1414,8 @@ struct DetailView: View {
                     .padding(.trailing, OrivioSpacing.huge)
                 }
                 ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: OrivioSpacing.lg) {
+                    // Leave room for the native focus platter between 400pt episode stills.
+                    LazyHStack(alignment: .top, spacing: OrivioSpacing.xxl) {
                         ForEach(viewModel.episodes(season: season)) { episode in
                             let extra = episode.episode.flatMap { viewModel.episodeExtras[season]?[$0] }
                             EpisodeCell(

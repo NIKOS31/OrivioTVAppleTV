@@ -7,16 +7,14 @@ struct NTVReleaseNotes: Sendable {
     let checks: [String]
 
     // Keep this entry and the app/extension build number together at release.
-    static let current = NTVReleaseNotes(build: "51", improvements: [
-        "Depuis la barre, lever le doigt conserve l’aperçu : OK valide et Retour annule.",
-        "L’aperçu ouvert depuis la barre reste disponible entre deux glissements.",
-        "Ces nouveautés et tests restent accessibles dans Réglages → À propos.",
-        "Animés ouvre la fiche de lecture habituelle quand le titre est reconnu, avec les épisodes et les sources de tes addons."
+    static let current = NTVReleaseNotes(build: "52", improvements: [
+        "Les cartes d’épisodes laissent davantage d’espace à leur voisin pendant l’agrandissement au focus.",
+        "Les rangées d’affiches nTV de l’Accueil, des Films et des Séries sont davantage espacées."
     ], checks: [
-        "Lecteur : monter sur la barre, glisser, lever le doigt, attendre 10 secondes puis glisser à nouveau. L’aperçu doit rester ouvert sans appliquer la cible.",
-        "Annuler avec Retour ; recommencer et valider avec OK. Essayer en lecture puis en pause : le choix lecture/pause doit être conservé.",
-        "Menus : parcourir une rangée puis monter et descendre. Comparer le compteur UI pendant les mouvements et après 10 secondes immobile ; relever max ms et retards. La fluidité reste à vérifier.",
-        "Animés : ouvrir une série, choisir l’épisode et ses sources, puis essayer un film. Un appui long sur une affiche donne accès à la fiche et au suivi."
+        "Animés ou série : focaliser le premier épisode puis un épisode au milieu. Les images doivent rester séparées et leurs textes lisibles.",
+        "Films et Séries : parcourir plusieurs affiches et changer de rangée. Vérifier la séparation des cartes, puis signaler tout saut vertical inattendu.",
+        "La cause des sauts de page et des baisses de fluidité reste à diagnostiquer. Relever UI Hz, max ms et retards pendant les mouvements puis après 10 secondes immobile.",
+        "Lecteur : confirmer que l’aperçu reste disponible entre deux glissements, que Retour annule et qu’OK valide."
     ])
 
     func shouldPresent(installedBuild: String, seenBuild: String, arguments: [String] = []) -> Bool {

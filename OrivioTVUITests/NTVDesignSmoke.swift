@@ -134,6 +134,34 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch.exists)
         capture(seanime ? "ntv-seanime-catalog-rapid-row-moves" : "ntv-top-catalog-rapid-row-moves")
         if seanime {
+            // Separate geometry diagnostic: keep the earlier Down → Right retry regression unchanged.
+            for _ in 0..<6 { remote.press(.right) }
+            XCTAssertTrue(nextSecond.waitForExistence(timeout: 8))
+            let viewport = app.scrollViews.containing(.any, identifier: "ntv.catalog.shelf." + sourceIDs[0]).firstMatch
+            XCTAssertTrue(viewport.waitForExistence(timeout: 5))
+            let beforeDown = settledFrame(nextSecond)
+            XCTAssertGreaterThan(beforeDown.height, 0)
+            XCTAssertGreaterThanOrEqual(beforeDown.minY, viewport.frame.minY)
+            XCTAssertLessThanOrEqual(beforeDown.maxY, viewport.frame.maxY,
+                                     "The observed poster must already fit vertically before testing an unnecessary page jump.")
+            capture("ntv-seanime-visible-row-before-down")
+            remote.press(.down)
+            XCTAssertTrue(focused(nextFirst, timeout: 8))
+            // The second card stays unfocused, separating page movement from the focused card's scale.
+            let afterDown = settledFrame(nextSecond)
+            capture("ntv-seanime-visible-row-after-down")
+            let geometry = XCTAttachment(string: "viewportY=\(viewport.frame.minY)...\(viewport.frame.maxY); beforeY=\(beforeDown.minY); afterY=\(afterDown.minY); posterHeight=\(beforeDown.height)")
+            geometry.name = "ntv-catalog-visible-row-geometry"
+            geometry.lifetime = .keepAlways
+            add(geometry)
+            XCTAssertLessThanOrEqual(abs(afterDown.minY - beforeDown.minY), beforeDown.height / 2,
+                                     "An already visible poster may make room for its caption, but must not jump a whole shelf to the top.")
+            Thread.sleep(forTimeInterval: 0.8)
+            XCTAssertEqual(nextSecond.frame.minY, afterDown.minY, accuracy: 2,
+                           "Settled row entry must not cause a second vertical adjustment.")
+            remote.press(.up)
+            XCTAssertTrue(focused(rowFirst, timeout: 8))
+            // End separate geometry diagnostic.
             for _ in 0..<3 {
                 remote.press(.menu)
                 if focused(movies, timeout: 2) { break }

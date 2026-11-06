@@ -198,6 +198,22 @@ final class NTVDesignSmoke: XCTestCase {
             XCTAssertTrue(firsts[0].hasFocus, "A stale row transition cannot override the last command.")
             XCTAssertTrue(app.windows.firstMatch.frame.contains(firsts[0].frame))
             capture("ntv-seanime-series-three-adjacent-shelves")
+            // Check the focused edge after returning to a horizontally scrolled shelf.
+            let seriesViewport = app.scrollViews.containing(.button, identifier: firsts[0].identifier).firstMatch
+            XCTAssertTrue(seriesViewport.waitForExistence(timeout: 5))
+            let leftEdge = seriesViewport.frame.minX
+            for index in 0...1 {
+                if index == 1 { remote.press(.down) }
+                XCTAssertTrue(focused(firsts[index], timeout: 8))
+                let posterFrame = settledFrame(firsts[index])
+                capture("ntv-seanime-series-focused-left-edge-\(index)")
+                let geometry = XCTAttachment(string: "viewportMinX=\(leftEdge); posterMinX=\(posterFrame.minX); posterWidth=\(posterFrame.width)")
+                geometry.name = "ntv-catalog-focused-left-edge-\(index)"
+                geometry.lifetime = .keepAlways
+                add(geometry)
+                XCTAssertGreaterThanOrEqual(posterFrame.minX, leftEdge + 8,
+                    "The focused poster must retain visible clearance inside the catalog viewport after row entry.")
+            }
         }
     }
 

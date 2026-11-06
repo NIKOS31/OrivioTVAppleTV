@@ -2885,9 +2885,12 @@ private struct HomePosterRowContent: View {
                         }
                     }
                     .padding(.horizontal, theme.palette.id == NTVDesign.palette.id
-                             ? NTVViewport.horizontalInset : OrivioSpacing.huge)
+                             ? 0 : OrivioSpacing.huge)
                     .padding(.vertical, OrivioSpacing.lg)
                 }
+                // Keep the focus-lift margin when scrollTo aligns the first poster.
+                .contentMargins(.horizontal, theme.palette.id == NTVDesign.palette.id
+                                ? NTVViewport.horizontalInset : nil, for: .scrollContent)
                 .scrollClipDisabled()
                 .modifier(HomeRowDefaultFocus(enabled: resetsRowEntry,
                     binding: $focusedID, firstID: displayedItems.first?.id))

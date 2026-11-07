@@ -196,6 +196,7 @@ struct SettingsCategoryPane: View {
     let category: SettingsCategory
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.settingsPane)
         switch category {
         case .account:           AccountSettingsDetail()
         case .appearance:        AppearanceDetail()
@@ -333,6 +334,7 @@ struct SettingsGroupCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.settingsGroup)
         VStack(alignment: .leading, spacing: OrivioSpacing.sm) {
             // Section label sits ABOVE the card (grouped-list style) — the
             // accent-tinted, letter-spaced title reads as a real section break

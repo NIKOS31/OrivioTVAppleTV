@@ -6,6 +6,67 @@ import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    func testNavigationWindowUsesDeltasInsteadOfLifetimeRenderCounts() throws {
+        let meter = NTVRenderMeter()
+        for _ in 0..<100 { meter.record(.posterCell) }
+        meter.record(.posterEligibility, milliseconds: 10)
+        var window = NTVNavigationWindow(baseline: meter.snapshot())
+        meter.record(.settingsSelection); meter.record(.settingsPane)
+        meter.record(.posterCell); meter.record(.posterEligibility, milliseconds: 3)
+        let cadence = FrameCadenceSnapshot(callbacksPerSecond: 40, targetRate: 60,
+            worstGapMilliseconds: 80, lateCallbacks: 3, sampleDuration: 1)
+        let result = try XCTUnwrap(window.record(cadence: cadence, counters: meter.snapshot(), now: 1))
+        XCTAssertEqual(result.cadence, cadence)
+        XCTAssertEqual(result.evaluations[.posterCell], 1)
+        XCTAssertEqual(result.evaluations[.settingsSelection], 1)
+        XCTAssertEqual(result.evaluations[.settingsPane], 1)
+        XCTAssertEqual(result.filteringMilliseconds, 3)
+        XCTAssertLessThanOrEqual(result.evaluations.count, NTVRenderScope.allCases.count)
+    }
+
+    func testNavigationWindowRetainsTheWorstMatchingCountsThenExpires() throws {
+        let meter = NTVRenderMeter()
+        var window = NTVNavigationWindow(baseline: meter.snapshot())
+        meter.record(.settingsSelection)
+        let slow = FrameCadenceSnapshot(callbacksPerSecond: 40, targetRate: 60,
+            worstGapMilliseconds: 90, lateCallbacks: 2, sampleDuration: 1)
+        let regular = FrameCadenceSnapshot(callbacksPerSecond: 60, targetRate: 60,
+            worstGapMilliseconds: 17, lateCallbacks: 0, sampleDuration: 1)
+        let held = window.record(cadence: slow, counters: meter.snapshot(), now: 1)
+        meter.record(.catalogVerticalMove)
+        XCTAssertEqual(window.record(cadence: regular, counters: meter.snapshot(), now: 2), held)
+        let expired = try XCTUnwrap(window.record(cadence: regular, counters: meter.snapshot(), now: 16))
+        XCTAssertEqual(expired.cadence, regular)
+        XCTAssertEqual(expired.evaluations[.settingsSelection], 0)
+        XCTAssertEqual(expired.evaluations[.catalogVerticalMove], 0, "Retained cadence and counts must describe the same window.")
+    }
+
+    func testNavigationWindowClearsDisabledAndResetDiagnostics() throws {
+        let meter = NTVRenderMeter()
+        var window = NTVNavigationWindow(baseline: meter.snapshot())
+        let cadence = FrameCadenceSnapshot(worstGapMilliseconds: 80, sampleDuration: 1)
+        meter.record(.settingsSelection)
+        XCTAssertNotNil(window.record(cadence: cadence, counters: meter.snapshot(), now: 1))
+        XCTAssertNil(window.record(cadence: cadence, counters: nil, now: 2))
+        XCTAssertNil(window.record(cadence: cadence, counters: meter.snapshot(), now: 3), "Re-enabling starts a fresh baseline.")
+        meter.reset()
+        XCTAssertNil(window.record(cadence: cadence, counters: meter.snapshot(), now: 4))
+        meter.record(.catalogVerticalMove)
+        let result = try XCTUnwrap(window.record(cadence: cadence, counters: meter.snapshot(), now: 5))
+        XCTAssertEqual(result.evaluations[.settingsSelection], 0)
+        XCTAssertEqual(result.evaluations[.catalogVerticalMove], 1)
+    }
+
+    func testNavigationWindowRejectsInvalidAndBackwardsTime() {
+        let cadence = FrameCadenceSnapshot(worstGapMilliseconds: 80, sampleDuration: 1)
+        var window = NTVNavigationWindow(baseline: [:])
+        XCTAssertNotNil(window.record(cadence: cadence, counters: [:], now: 10))
+        XCTAssertNil(window.record(cadence: cadence, counters: [:], now: 9))
+        XCTAssertNil(window.record(cadence: cadence, counters: [:], now: .nan))
+        XCTAssertNil(window.record(cadence: cadence, counters: [:], now: 11))
+        XCTAssertNotNil(window.record(cadence: cadence, counters: [:], now: 12))
+    }
+
     @MainActor
     func testHiddenHomeSpotlightDoesNotPublishOrEnrichEveryFocusStep() async throws {
         let hero = HeroFocus()

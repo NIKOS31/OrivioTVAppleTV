@@ -16,6 +16,7 @@ struct NTVSettingsWorkspace: View {
     }
 
     var body: some View {
+        let _ = NTVRenderProbe.evaluated(.settings)
         VStack(alignment: .leading, spacing: 24) {
             HStack(spacing: 24) {
                 Text("Réglages")
@@ -42,7 +43,10 @@ struct NTVSettingsWorkspace: View {
                 ScrollView(.vertical) {
                     VStack(spacing: 8) {
                         ForEach(categories) { category in
-                            Button { selected = category } label: {
+                            Button {
+                                if selected != category { NTVRenderProbe.evaluated(.settingsSelection) }
+                                selected = category
+                            } label: {
                                 NTVSettingsCategoryLabel(category: category, selected: selected == category)
                             }
                             .buttonStyle(PlainCardButtonStyle())

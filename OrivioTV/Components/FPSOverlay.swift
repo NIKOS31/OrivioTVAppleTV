@@ -14,18 +14,26 @@ struct FPSOverlay: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(color)
-                .frame(width: 12, height: 12)
-            Text("UI \(meter.fps) Hz · max \(Int(meter.snapshot.worstGapMilliseconds.rounded())) ms · \(meter.snapshot.lateCallbacks) retards")
-                .font(.system(size: 22, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 12, height: 12)
+                Text("UI \(meter.fps) Hz · max \(Int(meter.snapshot.worstGapMilliseconds.rounded())) ms · \(meter.snapshot.lateCallbacks) retards")
+                    .font(.system(size: 22, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white)
+            }
+            if let diagnostic = meter.navigationSample {
+                Text(diagnostic.summary)
+                    .font(.system(size: 18, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Capsule().fill(Color.black.opacity(0.72)))
-        .overlay(Capsule().strokeBorder(color.opacity(0.8), lineWidth: 2))
+        .background(RoundedRectangle(cornerRadius: 24).fill(Color.black.opacity(meter.navigationSample == nil ? 0.72 : 0.82)))
+        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(color.opacity(0.8), lineWidth: 2))
         .padding(.top, 112)
         .padding(.trailing, 40)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -86,6 +94,59 @@ struct FrameCadenceWindow {
     }
 }
 
+/// Counts from the SAME callback window, not lifetime counts or GPU timings.
+struct NTVNavigationSample: Equatable {
+    let cadence: FrameCadenceSnapshot
+    let evaluations: [NTVRenderScope: Int]
+    let filteringMilliseconds: Double
+
+    var summary: String {
+        func count(_ scope: NTVRenderScope) -> Int { evaluations[scope, default: 0] }
+        return "Pic local, gardé 15 s : \(cadence.callbacksPerSecond) Hz / \(Int(cadence.worstGapMilliseconds.rounded())) ms\n"
+            + "Fenêtre \(String(format: "%.1f", cadence.sampleDuration)) s · sections \(count(.settingsSelection)) · Haut/Bas \(count(.catalogVerticalMove))\n"
+            + "Évals : racine \(count(.root)) · réglages \(count(.settings))/\(count(.settingsPane))/\(count(.settingsGroup))\n"
+            + "Catalogue \(count(.catalog)) · rangées \(count(.posterRow)) · cartes \(count(.posterCell))\n"
+            + "Filtres : \(String(format: "%.2f", filteringMilliseconds)) ms · Évals ≠ images GPU"
+    }
+}
+
+/// Holds one worst window for reading after releasing the remote; no event log.
+struct NTVNavigationWindow {
+    private var previous: [NTVRenderScope: NTVRenderMeter.Sample]?
+    private var held: NTVNavigationSample?
+    private var heldAt = 0.0
+
+    init(baseline: [NTVRenderScope: NTVRenderMeter.Sample]? = nil) { previous = baseline }
+
+    mutating func record(cadence: FrameCadenceSnapshot,
+                         counters: [NTVRenderScope: NTVRenderMeter.Sample]?,
+                         now: Double) -> NTVNavigationSample? {
+        guard let counters, now.isFinite else { self = NTVNavigationWindow(); return nil }
+        defer { previous = counters }
+        guard let previous else { return nil }
+        // Enabling/resetting diagnostics must not manufacture a negative delta.
+        guard now >= heldAt, !previous.contains(where: { scope, sample in
+            counters[scope, default: .init()].evaluations < sample.evaluations
+                || counters[scope, default: .init()].totalMilliseconds < sample.totalMilliseconds
+        }) else { held = nil; heldAt = 0; return nil }
+        var evaluations: [NTVRenderScope: Int] = [:]
+        var filtering = 0.0
+        for scope in NTVRenderScope.allCases {
+            let current = counters[scope, default: .init()], old = previous[scope, default: .init()]
+            evaluations[scope] = current.evaluations - old.evaluations
+            if scope == .posterEligibility || scope == .searchPartition {
+                filtering += current.totalMilliseconds - old.totalMilliseconds
+            }
+        }
+        let sample = NTVNavigationSample(cadence: cadence, evaluations: evaluations,
+                                         filteringMilliseconds: filtering)
+        if held == nil || now - heldAt >= 15 || cadence.worstGapMilliseconds > (held?.cadence.worstGapMilliseconds ?? 0) {
+            held = sample; heldAt = now
+        }
+        return held
+    }
+}
+
 @MainActor private final class FrameMeterTarget: NSObject {
     weak var meter: FrameMeter?
     init(_ meter: FrameMeter) { self.meter = meter; super.init() }
@@ -96,6 +157,7 @@ struct FrameCadenceWindow {
 @MainActor
 final class FrameMeter: ObservableObject {
     @Published private(set) var snapshot = FrameCadenceSnapshot()
+    @Published private(set) var navigationSample: NTVNavigationSample?
     var fps: Int { snapshot.callbacksPerSecond }
     /// The display's maximum refresh rate (60 on current Apple TV hardware),
     /// so the colour thresholds scale if that ever changes.
@@ -103,10 +165,15 @@ final class FrameMeter: ObservableObject {
 
     private var link: CADisplayLink?
     private var cadence = FrameCadenceWindow()
+    private var navigation = NTVNavigationWindow()
+    private var needsNavigationBaseline = true
 
     func start() {
         guard link == nil else { return }
         cadence = FrameCadenceWindow()
+        navigation = NTVNavigationWindow()
+        needsNavigationBaseline = true
+        navigationSample = nil
         // CADisplayLink retains its target. The weak relay lets a discarded
         // meter deallocate instead of retaining itself through its own link.
         let l = CADisplayLink(target: FrameMeterTarget(self), selector: #selector(FrameMeterTarget.tick(_:)))
@@ -118,11 +185,19 @@ final class FrameMeter: ObservableObject {
         link?.invalidate()
         link = nil
         cadence = FrameCadenceWindow()
+        navigation = NTVNavigationWindow()
+        navigationSample = nil
     }
 
     fileprivate func tick(_ link: CADisplayLink) {
+        if needsNavigationBaseline {
+            navigation = NTVNavigationWindow(baseline: NTVRenderProbe.snapshot())
+            needsNavigationBaseline = false
+        }
         let expected = max(link.targetTimestamp - link.timestamp, 1 / Double(max(maxRefresh, 1)))
         if let result = cadence.record(timestamp: link.timestamp, expectedInterval: expected) {
+            navigationSample = navigation.record(cadence: result, counters: NTVRenderProbe.snapshot(),
+                                                 now: link.timestamp)
             snapshot = result
         }
     }

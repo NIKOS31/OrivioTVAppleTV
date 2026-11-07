@@ -438,6 +438,7 @@ struct NTVCatalogView: View {
     }
     private func moveFromRow(_ sourceID: String, direction: MoveCommandDirection, proxy: ScrollViewProxy) {
         guard direction == .up || direction == .down else { return }
+        NTVRenderProbe.evaluated(.catalogVerticalMove)
         if let target = viewModel.adjacentNavigableSourceID(to: sourceID, forward: direction == .down) {
             requestRow(target, proxy: proxy, kind: .orderedRow)
         } else if direction == .up {

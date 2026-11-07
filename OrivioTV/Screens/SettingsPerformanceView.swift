@@ -187,13 +187,11 @@ struct PerformanceSettingsDetail: View {
                                   set: { playerStore.settings.showInputDebug = $0 })
                 )
 
-                // The one switch that makes everything else diagnosable on a
-                // Release/sideloaded build. Turn it on, reproduce the problem,
-                // then pull the log with scripts/record.sh (or probe.sh).
+                // The local navigation breakdown appears only with both diagnostics and the cadence overlay enabled.
                 PerfToggleRow(
                     icon: "dot.radiowaves.left.and.right",
                     title: "Enregistrer les diagnostics sur cette TV",
-                    subtitle: "Conserver les mesures de navigation et de lecture sur cette TV. Aucun accès réseau. Désactivé par défaut.",
+                    subtitle: "Avec le compteur de cadence, afficher les évaluations des vues lors des ralentissements. Mesures locales, aucun accès réseau. Désactivé par défaut.",
                     isOn: Binding(
                         get: { ProbeGate.isEnabled },
                         set: { on in

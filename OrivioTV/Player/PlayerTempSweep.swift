@@ -166,6 +166,8 @@ enum NTVRenderScope: String, CaseIterable, Hashable, Sendable {
     case search = "body.search", canvas = "body.canvas", focusBackdrop = "body.focusBackdrop"
     case catalogSpotlight = "body.catalogSpotlight", homeSpotlight = "body.homeSpotlight"
     case posterEligibility = "work.posterEligibility", searchPartition = "work.searchPartition"
+    case settings = "body.settings", settingsPane = "body.settingsPane", settingsGroup = "body.settingsGroup"
+    case settingsSelection = "action.settingsSelection", catalogVerticalMove = "action.catalogVerticalMove"
 }
 
 /// Bounded aggregate store: at most one entry per enum case, no per-frame log,
@@ -200,6 +202,9 @@ final class NTVRenderMeter: @unchecked Sendable {
 enum NTVRenderProbe {
     private static let meter = NTVRenderMeter()
     static func reset() { meter.reset() }
+    static func snapshot() -> [NTVRenderScope: NTVRenderMeter.Sample]? {
+        ProbeGate.isEnabled ? meter.snapshot() : nil
+    }
     static func evaluated(_ scope: NTVRenderScope) {
         guard ProbeGate.isEnabled else { return }
         meter.record(scope)

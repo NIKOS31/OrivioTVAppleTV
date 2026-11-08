@@ -4,6 +4,49 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testCatalogVerticalMovesKeepTheCatalogBodyUnchanged() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvCatalogCategoriesDemo",
+            "-ntvRowLayoutFixture", "-ntvCatalogThreeRowsFixture", "-ntvCatalogEvaluationFixture",
+            "-orivio.diag.capture.v1", "YES"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        let first = app.buttons["ntv.poster.movie.fixture.catalog.fixture-row-0.0"]
+        let second = app.buttons["ntv.poster.movie.fixture.catalog.fixture-row-1.0"]
+        XCTAssertTrue(first.waitForExistence(timeout: 20))
+        let movies = app.buttons["ntv.navigation.5"]
+        for _ in 0..<3 {
+            if movies.hasFocus { break }
+            remote.press(.menu)
+            if focused(movies, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(movies, timeout: 5))
+        remote.press(.right)
+        XCTAssertTrue(focused(first, timeout: 8))
+        // Mount both shelves before measuring; this checks updates, not initial loading.
+        remote.press(.down)
+        XCTAssertTrue(focused(second, timeout: 8))
+        remote.press(.up)
+        XCTAssertTrue(focused(first, timeout: 8))
+        let heading = app.staticTexts["ntv.catalog.movie.heading"]
+        let before = try XCTUnwrap(Int(heading.value as? String ?? ""))
+        XCTAssertGreaterThan(before, 0, "The test must read the actual app's enabled render probe.")
+        remote.press(.down)
+        XCTAssertTrue(focused(second, timeout: 8))
+        remote.press(.up)
+        XCTAssertTrue(focused(first, timeout: 8))
+        let after = try XCTUnwrap(Int(heading.value as? String ?? ""))
+        let counts = XCTAttachment(string: "catalogBodyBefore=\(before); catalogBodyAfter=\(after); verticalCommands=2")
+        counts.name = "ntv-catalog-body-evaluations"
+        counts.lifetime = .keepAlways
+        add(counts)
+        XCTAssertEqual(after, before, "Moving between loaded shelves must not recompute the whole catalog body.")
+    }
+
     func testAnimeOpensSharedMovieAndEpisodeSourcesWithoutAddonSearch() {
         continueAfterFailure = false
         let app = XCUIApplication()

@@ -194,6 +194,10 @@ struct NTVCatalogView: View {
                                     Text(title).font(.system(size: 38, weight: .semibold))
                                         .ntvHalloweenDecor(.heading)
                                         .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
+                                        #if DEBUG
+                                        .accessibilityValue(ProcessInfo.processInfo.arguments.contains("-ntvCatalogEvaluationFixture")
+                                            ? String(NTVRenderProbe.snapshot()?[.catalog]?.evaluations ?? -1) : "")
+                                        #endif
                                     Spacer()
                                     if !viewModel.sources.isEmpty {
                                         Button {

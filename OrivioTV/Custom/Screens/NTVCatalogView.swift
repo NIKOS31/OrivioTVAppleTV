@@ -26,6 +26,7 @@ struct NTVCatalogSource: Identifiable {
     @Published private(set) var items: [MetaItem] = []
     @Published private(set) var loading = false
     @Published private(set) var failed = false
+    @Published fileprivate(set) var focusRequest: NTVCatalogBrowserModel.FocusRequest?
     private var loadedAt: Date?
     var hasLoaded: Bool { loadedAt != nil }
     let source: NTVCatalogSource
@@ -83,6 +84,23 @@ struct NTVCatalogSource: Identifiable {
 @MainActor final class NTVCatalogBrowserModel: ObservableObject {
     @Published private(set) var sources: [NTVCatalogSource] = []
     struct Selection: Equatable { let sourceID: String; let itemID: String }
+    struct FocusRequest: Equatable {
+        let sourceID: String
+        let entry: ContentFocusRouter.EntryRequest
+        var scrollToStart = true
+    }
+    // A row entry must update its shelves without republishing the entire browser.
+    var requestedCategory: FocusRequest? {
+        didSet {
+            guard oldValue != requestedCategory else { return }
+            if let oldValue, oldValue.sourceID != requestedCategory?.sourceID {
+                shelves[oldValue.sourceID]?.focusRequest = nil
+            }
+            if let requestedCategory {
+                shelves[requestedCategory.sourceID]?.focusRequest = requestedCategory
+            }
+        }
+    }
     // Unpublished: remembering a clicked poster must not redraw the shelves.
     private(set) var lastSelection: Selection?
     private var fingerprint = ""
@@ -121,6 +139,7 @@ struct NTVCatalogSource: Identifiable {
         #endif
         let next = scope + "#" + available.map { "\($0.id)#\($0.catalog.hashValue)" }.joined(separator: "#")
         guard next != fingerprint else { return }
+        requestedCategory = nil
         fingerprint = next; shelves = [:]; order = []; lastSelection = nil; emptyVisibleSources = []
         var seen = Set<String>()
         sources = available.filter { seen.insert($0.id).inserted }
@@ -128,6 +147,7 @@ struct NTVCatalogSource: Identifiable {
     func shelf(_ source: NTVCatalogSource) -> NTVCatalogShelfModel {
         if let cached = shelves[source.id] { return cached }
         let value = NTVCatalogShelfModel(source: source, scope: fingerprint)
+        if requestedCategory?.sourceID == source.id { value.focusRequest = requestedCategory }
         shelves[source.id] = value; order.append(source.id)
         while order.count > 24 { shelves.removeValue(forKey: order.removeFirst()) }
         return value
@@ -155,12 +175,6 @@ struct NTVCatalogView: View {
     let onBackAtRoot: () -> Void
     let onOpenSettings: () -> Void
     @State private var hero = HeroFocus()
-    private struct FocusRequest {
-        let sourceID: String
-        let entry: ContentFocusRouter.EntryRequest
-        var scrollToStart = true
-    }
-    @State private var requestedCategory: FocusRequest?
     @State private var restoreSelection: NTVCatalogBrowserModel.Selection?
     @State private var restoreFocusRequest: ContentFocusRouter.EntryRequest?
     @State private var menuVisible = false
@@ -238,7 +252,7 @@ struct NTVCatalogView: View {
                                 NTVCatalogShelf(model: viewModel.shelf(source), hero: hero,
                                     onSelect: { item in
                                         ContentFocusRouter.shared.cancelLanding()
-                                        requestedCategory = nil
+                                        viewModel.requestedCategory = nil
                                         restoreSelection = nil; restoreFocusRequest = nil
                                         viewModel.rememberSelection(sourceID: source.id, itemID: item.id)
                                         onSelect(item)
@@ -247,8 +261,6 @@ struct NTVCatalogView: View {
                                     onBackAtRoot: onBackAtRoot,
                                     onLeftAtStart: { openCategory(source.id) }, interceptLeftEdge: navigationIsTop,
                                     onVerticalMove: { move in moveFromRow(source.id, direction: move, proxy: proxy) },
-                                    focusRequest: requestedCategory?.sourceID == source.id ? requestedCategory?.entry : nil,
-                                    focusScrollToStart: requestedCategory?.scrollToStart ?? true,
                                     restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil,
                                     restoreFocusRequest: restoreSelection?.sourceID == source.id ? restoreFocusRequest : nil)
                                     .onFirstVisibleItem { itemID in
@@ -259,7 +271,7 @@ struct NTVCatalogView: View {
                                         guard isAtRoot, generation == ContentFocusRouter.shared.interactionGeneration else { return }
                                         // Initial focus keeps the header visible; only explicit row navigation scrolls to its top.
                                         let entry = ContentFocusRouter.shared.makeEntryRequest(in: "ntv.catalog.shelf.\(source.id)")
-                                        requestedCategory = FocusRequest(sourceID: source.id, entry: entry, scrollToStart: false)
+                                        viewModel.requestedCategory = .init(sourceID: source.id, entry: entry, scrollToStart: false)
                                     }
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("ntv.catalog.shelf.\(source.id)")
@@ -290,13 +302,13 @@ struct NTVCatalogView: View {
                     restoreFocusRequest = nil
                     restoreSelection = nil
                     guard isAtRoot else {
-                        ContentFocusRouter.shared.cancelEntry(requestedCategory?.entry)
-                        requestedCategory = nil
+                        ContentFocusRouter.shared.cancelEntry(viewModel.requestedCategory?.entry)
+                        viewModel.requestedCategory = nil
                         return
                     }
                     guard let selection = viewModel.lastSelection else { return }
-                    ContentFocusRouter.shared.cancelEntry(requestedCategory?.entry)
-                    requestedCategory = nil
+                    ContentFocusRouter.shared.cancelEntry(viewModel.requestedCategory?.entry)
+                    viewModel.requestedCategory = nil
                     restoreSelection = selection
                     restoreFocusRequest = ContentFocusRouter.shared.makeEntryRequest(
                         in: "ntv.catalog.shelf.\(selection.sourceID)", kind: .restoration)
@@ -320,6 +332,7 @@ struct NTVCatalogView: View {
         .ignoresSafeArea(edges: .horizontal)
         .toolbar(.hidden, for: .navigationBar)
         .task(id: loadKey) {
+            cancelEntryRequests()
             hero.layout = .pinnedFocus
             // A fresh tab waits for its first real poster; any intervening
             // remote command cancels this initial hand-off.
@@ -336,7 +349,7 @@ struct NTVCatalogView: View {
         }
         .onChange(of: profiles.activeProfileID) { _, _ in
             cancelEntryRequests(); restoreFocusRequest = nil
-            hero.item = nil; restoreSelection = nil; requestedCategory = nil
+            hero.item = nil; restoreSelection = nil; viewModel.requestedCategory = nil
             menuVisible = false; menuSourceID = nil; categoryFocus = nil
         }
         .onExitCommand { onBackAtRoot() }
@@ -408,7 +421,7 @@ struct NTVCatalogView: View {
     private func openCategory(_ sourceID: String) {
         ContentFocusRouter.shared.noteUserMovement()
         categoryTriggerFocused = false
-        requestedCategory = nil; restoreSelection = nil; restoreFocusRequest = nil
+        viewModel.requestedCategory = nil; restoreSelection = nil; restoreFocusRequest = nil
         menuSourceID = sourceID
         withAnimation(PerformanceSettingsStore.shared.buttonMotion(.easeOut(duration: 0.15))) {
             menuVisible = true
@@ -422,22 +435,25 @@ struct NTVCatalogView: View {
     }
     private func requestRow(_ sourceID: String, proxy: ScrollViewProxy,
                             kind: ContentFocusRouter.EntryKind = .rowStart) {
-        initialEntryGeneration = nil
+        if initialEntryGeneration != nil { initialEntryGeneration = nil }
         let keepViewport = menuVisible && menuSourceID == sourceID
-        categoryFocus = nil; menuVisible = false
-        viewModel.forgetSelection(); restoreSelection = nil; restoreFocusRequest = nil
+        if categoryFocus != nil { categoryFocus = nil }
+        if menuVisible { menuVisible = false }
+        viewModel.forgetSelection()
+        if restoreSelection != nil { restoreSelection = nil }
+        if restoreFocusRequest != nil { restoreFocusRequest = nil }
         // The drawer is entered from the first poster. Returning to that same
         // row needs focus only: scrollTo(.leading) would rewrite its native
         // horizontal offset and make the posters slide after the drawer closes.
         let entry = ContentFocusRouter.shared.makeEntryRequest(in: "ntv.catalog.shelf.\(sourceID)", kind: kind)
-        requestedCategory = FocusRequest(sourceID: sourceID, entry: entry, scrollToStart: !keepViewport)
+        viewModel.requestedCategory = .init(sourceID: sourceID, entry: entry, scrollToStart: !keepViewport)
         if !keepViewport {
             // Adjacent rows need only be revealed, not forced to the top of the page.
             proxy.scrollTo(sourceID, anchor: kind == .orderedRow ? nil : .top)
         }
     }
     private func cancelEntryRequests() {
-        ContentFocusRouter.shared.cancelEntry(requestedCategory?.entry)
+        ContentFocusRouter.shared.cancelEntry(viewModel.requestedCategory?.entry)
         ContentFocusRouter.shared.cancelEntry(restoreFocusRequest)
     }
     private func moveFromRow(_ sourceID: String, direction: MoveCommandDirection, proxy: ScrollViewProxy) {
@@ -449,7 +465,7 @@ struct NTVCatalogView: View {
             if navigationIsTop { onBackAtRoot() }
             else {
                 cancelEntryRequests()
-                requestedCategory = nil; restoreSelection = nil; restoreFocusRequest = nil
+                viewModel.requestedCategory = nil; restoreSelection = nil; restoreFocusRequest = nil
                 proxy.scrollTo("catalogTop", anchor: .top)
                 ContentFocusRouter.shared.land(in: routerID,
                     assign: { categoryTriggerFocused = true }, landed: { categoryTriggerFocused })
@@ -489,8 +505,8 @@ private struct NTVCatalogShelf: View {
     let onLeftAtStart: () -> Void
     var interceptLeftEdge = true
     let onVerticalMove: (MoveCommandDirection) -> Void
-    let focusRequest: ContentFocusRouter.EntryRequest?
-    var focusScrollToStart = true
+    private var focusRequest: ContentFocusRouter.EntryRequest? { model.focusRequest?.entry }
+    private var focusScrollToStart: Bool { model.focusRequest?.scrollToStart ?? true }
     let restoreItemID: String?
     let restoreFocusRequest: ContentFocusRouter.EntryRequest?
     var firstVisibleChanged: ((String?) -> Void)?

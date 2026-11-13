@@ -7,9 +7,9 @@ struct NTVReleaseNotes: Sendable {
     let checks: [String]
 
     // Keep this entry and the app/extension build number together at release.
-    static let current = NTVReleaseNotes(build: "54", improvements: [
-        "Diagnostic de fluidité : le compteur peut afficher les ouvertures de sections et les évaluations des vues dans la même fenêtre de mesure. La fenêtre au plus grand retard reste lisible pendant 15 secondes.",
-        "Cette version prépare le diagnostic des ralentissements ; aucun gain de fluidité n’est encore confirmé.",
+    static let current = NTVReleaseNotes(build: "55", improvements: [
+        "Films et Séries : les demandes de changement de rangée sont transmises aux rangées concernées, pour éviter de réévaluer le catalogue entier à chaque appui Haut ou Bas.",
+        "Le compteur conserve les diagnostics locaux pour comparer les ralentissements. Le gain de fluidité reste à mesurer sur ton Apple TV.",
         "Les rangées d’affiches nTV réservent une marge à gauche lors du retour sur la première affiche, pour garder son agrandissement visible.",
         "Les cartes d’épisodes laissent davantage d’espace à leur voisin pendant l’agrandissement au focus.",
         "Les rangées d’affiches nTV de l’Accueil, des Films et des Séries sont davantage espacées.",

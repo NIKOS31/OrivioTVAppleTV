@@ -6,6 +6,35 @@ import Combine
 @testable import OrivioTV
 
 final class NTVPerformanceTests: XCTestCase {
+    @MainActor
+    func testReturningToRecommendationsRetiresThePendingPosterAndKeepsItsIndex() async throws {
+        let hero = HeroFocus()
+        hero.layout = .hybrid
+        let first = MetaItem(id: "recommendation.first", type: "movie", name: "First", description: "Ready")
+        let second = MetaItem(id: "recommendation.second", type: "movie", name: "Second", description: "Ready")
+        hero.setSpotlight([first, second])
+        hero.stepSpotlight(by: 1)
+        hero.focus(MetaItem(id: "browse.pending", type: "movie", name: "Pending", description: "Ready"))
+        XCTAssertTrue(hero.browsedIntoContent)
+        hero.resumeSpotlight()
+        XCTAssertFalse(hero.browsedIntoContent)
+        XCTAssertEqual(hero.spotlightIndex, 1)
+        XCTAssertEqual(hero.item?.id, second.id)
+        // Cover the existing pending focus debounce, rather than checking only its immediate value.
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(hero.item?.id, second.id)
+        hero.setSpotlight([first])
+        hero.resumeSpotlight()
+        XCTAssertEqual(hero.spotlightIndex, 0)
+        XCTAssertEqual(hero.item?.id, first.id, "A single recommendation is still an actionable feature.")
+        hero.focus(MetaItem(id: "previous-profile.pending", type: "movie", name: "Pending", description: "Ready"))
+        hero.clearSpotlight()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertNil(hero.item, "A cleared profile must not receive the previous profile's pending title.")
+        XCTAssertTrue(hero.spotlight.isEmpty)
+        XCTAssertFalse(hero.browsedIntoContent)
+    }
+
     func testNavigationWindowUsesDeltasInsteadOfLifetimeRenderCounts() throws {
         let meter = NTVRenderMeter()
         for _ in 0..<100 { meter.record(.posterCell) }

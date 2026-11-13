@@ -51,6 +51,8 @@ struct PerformanceSettingsDetail: View {
                     subtitle: "Adapter le fond au titre sélectionné. Désactivé : utiliser un fond uni, plus léger sur les anciens appareils.",
                     isOn: s.heroBackdrop
                 )
+                .accessibilityIdentifier("ntv.performance.heroBackdrop")
+                .accessibilityValue(store.settings.heroBackdrop ? "Activé" : "Désactivé")
                 PerfToggleRow(
                     icon: "square.stack.3d.forward.dottedline",
                     title: "Fondu des illustrations",

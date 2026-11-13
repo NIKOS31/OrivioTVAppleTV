@@ -181,9 +181,12 @@ struct NTVCatalogView: View {
     @State private var menuVisible = false
     @State private var menuSourceID: String?
     @State private var initialEntryGeneration: UInt64?
+    @State private var returnToSpotlight = false
     @FocusState private var categoryFocus: String?
     @FocusState private var categoryTriggerFocused: Bool
+    @FocusState private var spotlightFocused: Bool
     private var routerID: String { "ntv.catalog.\(mediaType).entry" }
+    private var spotlightID: String { "ntv.catalog.\(mediaType).spotlight" }
     struct LoadInputs: Equatable {
         let profileID: Int
         let addons: [InstalledAddon]
@@ -229,17 +232,17 @@ struct NTVCatalogView: View {
                                         }
                                         .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
                                         .onMoveCommand { direction in
-                                            guard categoryTriggerFocused, direction == .down,
-                                                  let first = viewModel.firstNavigableSourceID else { return }
-                                            requestRow(first, proxy: proxy)
+                                            guard categoryTriggerFocused else { return }
+                                            if direction == .down, let first = viewModel.firstNavigableSourceID {
+                                                requestRow(first, proxy: proxy)
+                                            } else if direction == .left, !hero.spotlight.isEmpty {
+                                                spotlightFocused = true
+                                            }
                                         }
                                     }
                                 }
                                 .padding(.horizontal, NTVViewport.horizontalInset)
-                                NTVCatalogSpotlight(hero: hero)
-                                    .frame(minHeight: 230, alignment: .topLeading)
-                                    .transaction { $0.animation = nil }
-                                    .padding(.horizontal, NTVViewport.horizontalInset)
+                                catalogSpotlight(proxy)
                             }
                             // The full header bridges the gap between the shelves and Categories.
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -307,6 +310,13 @@ struct NTVCatalogView: View {
                         viewModel.requestedCategory = nil
                         return
                     }
+                    if returnToSpotlight {
+                        returnToSpotlight = false
+                        proxy.scrollTo("catalogTop", anchor: .top)
+                        ContentFocusRouter.shared.land(in: spotlightID,
+                            assign: { spotlightFocused = true }, landed: { spotlightFocused })
+                        return
+                    }
                     guard let selection = viewModel.lastSelection else { return }
                     ContentFocusRouter.shared.cancelEntry(viewModel.requestedCategory?.entry)
                     viewModel.requestedCategory = nil
@@ -318,6 +328,12 @@ struct NTVCatalogView: View {
                     }
                 }
                 .onAppear {
+                    ContentFocusRouter.shared.register(spotlightID) {
+                        guard isAtRoot, !hero.spotlight.isEmpty else { return false }
+                        proxy.scrollTo("catalogTop", anchor: .top)
+                        spotlightFocused = true
+                        return true
+                    }
                     ContentFocusRouter.shared.register(routerID) {
                         guard let first = viewModel.firstNavigableSourceID else { return false }
                         requestRow(first, proxy: proxy); return true
@@ -326,6 +342,7 @@ struct NTVCatalogView: View {
                 .onDisappear {
                     cancelEntryRequests()
                     ContentFocusRouter.shared.unregister(routerID)
+                    ContentFocusRouter.shared.unregister(spotlightID)
                 }
             }
         }
@@ -333,7 +350,7 @@ struct NTVCatalogView: View {
         .ignoresSafeArea(edges: .horizontal)
         .toolbar(.hidden, for: .navigationBar)
         .task(id: loadKey) {
-            hero.layout = .pinnedFocus
+            hero.layout = .hybrid
             // A fresh tab waits for its first real poster; any intervening
             // remote command cancels this initial hand-off.
             if viewModel.sources.isEmpty {
@@ -349,10 +366,31 @@ struct NTVCatalogView: View {
         }
         .onChange(of: profiles.activeProfileID) { _, _ in
             cancelEntryRequests(); restoreFocusRequest = nil
-            hero.item = nil; restoreSelection = nil; viewModel.requestedCategory = nil
+            hero.clearSpotlight()
+            returnToSpotlight = false; restoreSelection = nil; viewModel.requestedCategory = nil
             menuVisible = false; menuSourceID = nil; categoryFocus = nil
         }
         .onExitCommand { onBackAtRoot() }
+    }
+    @ViewBuilder
+    private func catalogSpotlight(_ proxy: ScrollViewProxy) -> some View {
+        if let first = viewModel.sources.first {
+            NTVCatalogSpotlight(model: viewModel.shelf(first), hero: hero,
+                focus: $spotlightFocused, mediaType: mediaType, active: isAtRoot && !menuVisible,
+                onSelect: { item in
+                    ContentFocusRouter.shared.cancelLanding()
+                    cancelEntryRequests()
+                    viewModel.requestedCategory = nil
+                    returnToSpotlight = true
+                    onSelect(item)
+                }, onBack: onBackAtRoot, onMove: { direction in
+                    if direction == .up { categoryTriggerFocused = true }
+                    if direction == .down, let source = viewModel.firstNavigableSourceID {
+                        requestRow(source, proxy: proxy)
+                    }
+                })
+                .padding(.horizontal, NTVViewport.horizontalInset)
+        }
     }
     private func categoryPanel(_ proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 18) {

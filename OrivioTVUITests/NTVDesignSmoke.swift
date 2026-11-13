@@ -4,6 +4,129 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testMovieAndSeriesRecommendationCarouselsKeepDetailsAndRowsReachable() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvCatalogCategoriesDemo",
+            "-ntvRowLayoutFixture", "-ntvCatalogThreeRowsFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        XCTAssertTrue(app.buttons["ntv.poster.movie.fixture.catalog.fixture-row-0.0"].waitForExistence(timeout: 20))
+        for (type, destination) in [("movie", "5"), ("series", "6")] {
+            openMainDestination(destination, in: app)
+            let first = app.buttons["ntv.poster.\(type).fixture.catalog.fixture-row-0.0"]
+            XCTAssertTrue(focused(first, timeout: 10))
+            let categories = app.buttons["ntv.catalog.\(type).openCategories"]
+            remote.press(.up)
+            XCTAssertTrue(focused(categories, timeout: 8))
+            remote.press(.left)
+            let feature = app.buttons["ntv.catalog.\(type).spotlight"]
+            XCTAssertTrue(focused(feature, timeout: 8))
+            XCTAssertEqual(feature.value as? String, "Proposition 1 sur 10")
+            let firstLabel = feature.label
+            remote.press(.right)
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "Proposition 2 sur 10"), object: feature)], timeout: 8), .completed)
+            XCTAssertNotEqual(feature.label, firstLabel)
+            XCTAssertTrue(focused(feature, timeout: 5))
+            XCTAssertTrue(backdropMatches(app, identifier: "ntv.catalog.\(type).backdrop",
+                contentID: "fixture.catalog.fixture-row-0.1"))
+            remote.press(.left)
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "Proposition 1 sur 10"), object: feature)], timeout: 8), .completed)
+            XCTAssertEqual(feature.label, firstLabel)
+            if type == "movie" {
+                XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "value != %@", "Proposition 1 sur 10"), object: feature)], timeout: 16), .completed,
+                    "A visible, idle recommendation must advance without removing focus.")
+                XCTAssertTrue(focused(feature, timeout: 5))
+                for _ in 0..<10 {
+                    if feature.value as? String == "Proposition 1 sur 10" { break }
+                    remote.press(.left)
+                }
+                XCTAssertEqual(feature.value as? String, "Proposition 1 sur 10")
+            }
+            capture("ntv-\(type)-recommendation-carousel")
+            remote.press(.select)
+            let detailTitle = app.descendants(matching: .any)["ntv.detail.title"].firstMatch
+            XCTAssertTrue(detailTitle.waitForExistence(timeout: 15))
+            XCTAssertEqual(detailTitle.label, "Titre de catalogue 1")
+            remote.press(.menu)
+            XCTAssertTrue(focused(feature, timeout: 10), "Back must restore the selected recommendation action.")
+            remote.press(.down)
+            XCTAssertTrue(focused(first, timeout: 8))
+            remote.press(.up)
+            XCTAssertTrue(focused(categories, timeout: 8), "The existing Categories route remains intact.")
+        }
+    }
+
+    func testDisablingBackdropKeepsHomeRecommendationsAvailable() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvRowLayoutFixture", "-panePerformance"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["ntv.home.spotlight"].waitForExistence(timeout: 20))
+        func backdropSetting() -> XCUIElement {
+            openMainDestination("3", in: app, enterContent: false)
+            let category = app.buttons["ntv.settings.category.performance"]
+            focusVertically(category, in: app)
+            XCUIRemote.shared.press(.select)
+            XCUIRemote.shared.press(.right)
+            let toggle = app.buttons["ntv.performance.heroBackdrop"]
+            focusVertically(toggle, in: app)
+            return toggle
+        }
+        let toggle = backdropSetting()
+        let original = try XCTUnwrap(toggle.value as? String)
+        XCTAssertTrue(["Activé", "Désactivé"].contains(original))
+        if original == "Activé" { XCUIRemote.shared.press(.select) }
+        defer {
+            let restored = backdropSetting()
+            if restored.value as? String != original { XCUIRemote.shared.press(.select) }
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Désactivé"), object: toggle)], timeout: 5), .completed)
+        openMainDestination("0", in: app)
+        let feature = app.buttons["ntv.home.spotlight"]
+        XCTAssertTrue(feature.waitForExistence(timeout: 15), "Turning off artwork must not remove recommendations or their action.")
+        XCTAssertTrue(focused(feature, timeout: 8))
+        XCTAssertEqual(feature.value as? String, "Proposition 1 sur 2")
+        capture("ntv-home-recommendations-with-backdrop-disabled")
+    }
+
+    private func openMainDestination(_ destination: String, in app: XCUIApplication, enterContent: Bool = true) {
+        let remote = XCUIRemote.shared
+        let navigation = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND hasFocus == true", "ntv.navigation."))
+        for _ in 0..<3 {
+            if navigation.firstMatch.exists { break }
+            remote.press(.menu)
+            _ = navigation.firstMatch.waitForExistence(timeout: 2)
+        }
+        XCTAssertTrue(navigation.firstMatch.exists)
+        let target = app.buttons["ntv.navigation." + destination]
+        focusVertically(target, in: app)
+        remote.press(.select)
+        if enterContent, target.hasFocus { remote.press(.right) }
+    }
+
+    private func focusVertically(_ target: XCUIElement, in app: XCUIApplication) {
+        XCTAssertTrue(target.waitForExistence(timeout: 15))
+        for _ in 0..<24 {
+            if target.hasFocus { return }
+            let current = app.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+            XCTAssertTrue(current.exists)
+            XCUIRemote.shared.press(current.frame.midY < target.frame.midY ? .down : .up)
+            if focused(target, timeout: 0.25) { return }
+        }
+        XCTAssertTrue(focused(target, timeout: 5))
+    }
+
     func testCatalogVerticalMovesKeepTheCatalogBodyUnchanged() throws {
         continueAfterFailure = false
         let app = XCUIApplication()

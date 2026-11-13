@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Only this layer observes the selection. Catalog rows keep their own focus
 /// and never rebuild when a settled selection changes the artwork.
@@ -29,39 +30,62 @@ struct NTVFocusBackdrop: View {
 }
 
 struct NTVCatalogSpotlight: View {
-    @ObservedObject var hero: HeroFocus
-    @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 48
-    @ScaledMetric(relativeTo: .callout) private var metadataSize: CGFloat = 25
-    @ScaledMetric(relativeTo: .body) private var synopsisSize: CGFloat = 29
+    @EnvironmentObject private var settings: HomeCatalogSettingsStore
+    @EnvironmentObject private var profiles: ProfileStore
+    @EnvironmentObject private var addons: AddonManager
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject var model: NTVCatalogShelfModel
+    let hero: HeroFocus
+    var focus: FocusState<Bool>.Binding
+    let mediaType: String
+    let active: Bool
+    let onSelect: (MetaItem) -> Void
+    let onBack: () -> Void
+    let onMove: (MoveCommandDirection) -> Void
+    @State private var hasRecommendations = false
+    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    private struct Inputs: Hashable {
+        let items: [MetaItem]
+        let scope: String
+        let hideUnreleased: Bool
+        let hideUnavailable: Bool
+    }
+    private var inputs: Inputs {
+        Inputs(items: model.items,
+            scope: NTVSourceAvailabilityStore.scope(profile: profiles.activeProfileID,
+                addons: addons.addons.filter(\.enabled)),
+            hideUnreleased: settings.hideUnreleasedContent, hideUnavailable: settings.hideUnavailableSources)
+    }
 
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.catalogSpotlight)
-        if let item = hero.item {
-            HStack(alignment: .center, spacing: 30) {
-                NTVSpotlightCover(item: item, width: 132, height: 198)
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("EN SÉLECTION")
-                    .font(.system(size: metadataSize, weight: .medium))
-                    .foregroundStyle(NTVDesign.textSecondary)
-                    Text(item.name)
-                    .font(.system(size: titleSize, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
-                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.system(size: metadataSize, weight: .medium))
-                    .foregroundStyle(NTVDesign.textSecondary)
-                    .lineLimit(1, reservesSpace: true)
-                    Text(item.description ?? "")
-                    .font(.system(size: synopsisSize))
-                    .foregroundStyle(NTVDesign.textSecondary)
-                    .lineLimit(2, reservesSpace: true)
-                }
-                .frame(maxWidth: 920, alignment: .leading)
-                Spacer(minLength: 0)
+        Group {
+            if hasRecommendations {
+                NTVHomeSpotlight(hero: hero, playFocus: focus, onSelect: onSelect, onBack: onBack,
+                    identifier: "ntv.catalog.\(mediaType).spotlight",
+                    routerID: "ntv.catalog.\(mediaType).spotlight",
+                    featureIdentifier: "ntv.catalog.\(mediaType).feature",
+                    onFocus: { if $0 { hero.resumeSpotlight() } })
             }
-            .foregroundStyle(NTVDesign.textPrimary)
-            .frame(maxWidth: .infinity, minHeight: 224, alignment: .leading)
+        }
+        .frame(minHeight: 350, alignment: .topLeading)
+        .onMoveCommand { if focus.wrappedValue { onMove($0) } }
+        .task(id: inputs) {
+            let selection = inputs
+            let absent = await NTVSourceAvailabilityStore.shared.absentUntil(for: selection.items, scope: selection.scope)
+            guard !Task.isCancelled else { return }
+            let visible = NTVPosterVisibility(items: selection.items,
+                hideUnreleased: selection.hideUnreleased, hideUnavailable: selection.hideUnavailable,
+                unavailableUntil: absent, now: Date(), isAnime: { _ in false }).items(keeping: nil)
+            let illustrated = visible.filter { $0.background != nil || $0.poster != nil }
+            let recommendations = Array((illustrated.isEmpty ? visible : illustrated).prefix(10))
+            hero.setSpotlight(recommendations)
+            hasRecommendations = !recommendations.isEmpty
+        }
+        .onReceive(tick) { _ in
+            guard active, scenePhase == .active, hero.rolls else { return }
+            hero.rotateIfIdle()
         }
     }
 }
@@ -76,6 +100,10 @@ struct NTVHomeSpotlight: View {
     var playFocus: FocusState<Bool>.Binding
     let onSelect: (MetaItem) -> Void
     let onBack: () -> Void
+    var identifier = "ntv.home.spotlight"
+    var routerID = "home.heroPlay"
+    var featureIdentifier = "ntv.seanime.home.feature"
+    var onFocus: (Bool) -> Void = { _ in }
 
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.homeSpotlight)
@@ -96,21 +124,22 @@ struct NTVHomeSpotlight: View {
                     .foregroundStyle(NTVDesign.textSecondary)
                     .lineLimit(2, reservesSpace: true)
                 NTVSpotlightAction(focus: playFocus, index: hero.spotlightIndex,
-                    count: hero.spotlight.count, title: item.name, identifier: "ntv.home.spotlight",
+                    count: hero.spotlight.count, title: item.name, identifier: identifier,
                     onSelect: { onSelect(item) }, onStep: { hero.stepSpotlight(by: $0) }, onBack: onBack,
                     onFocus: { focused in
                         hero.heroButtonFocused = focused
                         if focused {
                             hero.markInteraction()
-                            ContentFocusRouter.shared.noteFocused(row: "home.heroPlay")
+                            ContentFocusRouter.shared.noteFocused(row: routerID)
                         }
+                        onFocus(focused)
                     })
             }
             .foregroundStyle(NTVDesign.textPrimary)
             .frame(maxWidth: 920, minHeight: 350, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("ntv.seanime.home.feature")
+            .accessibilityIdentifier(featureIdentifier)
         }
     }
 }
@@ -194,34 +223,6 @@ struct NTVSpotlightVisibility: ViewModifier {
                 .onAppear { hero.setPresentationActive(true) }
                 .onDisappear { hero.setPresentationActive(false) }
         }
-    }
-}
-
-/// A non-focusable cover anchors the editorial block. Loading metadata or
-/// artwork never changes its reserved geometry or adds another remote target.
-private struct NTVSpotlightCover: View {
-    let item: MetaItem
-    let width: CGFloat
-    let height: CGFloat
-
-    var body: some View {
-        ZStack {
-            NTVDesign.raised
-            if let poster = item.poster, !poster.isEmpty {
-                // RemoteImage converts points to display pixels itself.
-                // Passing twice the height would decode redundant pixels.
-                RemoteImage(url: poster, maxDimension: height)
-            } else {
-                Image(systemName: "film")
-                    .font(.system(size: 38, weight: .medium))
-                    .foregroundStyle(NTVDesign.textSecondary)
-            }
-        }
-        .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: NTVDesign.cardRadius))
-        .overlay { RoundedRectangle(cornerRadius: NTVDesign.cardRadius)
-            .strokeBorder(.white.opacity(0.1), lineWidth: 1) }
-        .accessibilityHidden(true)
     }
 }
 

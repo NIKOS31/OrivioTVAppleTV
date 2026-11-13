@@ -1164,6 +1164,29 @@ final class HeroFocus: ObservableObject {
         interactionRevision &+= 1
     }
 
+    /// Re-entering the recommendations retires any older poster's delayed work.
+    func resumeSpotlight() {
+        guard spotlight.indices.contains(spotlightIndex) else { return }
+        task?.cancel()
+        pendingID = nil
+        resetBrowseHandoff()
+        markInteraction()
+        lastRotation = Date()
+        progress = nil
+        let fade = PerformanceSettingsStore.shared.heroCrossfadeEffective
+        withAnimation(fade ? FusionMotion.heroCrossfade : nil) { item = spotlight[spotlightIndex] }
+    }
+
+    func clearSpotlight() {
+        task?.cancel()
+        pendingID = nil
+        latestBrowseSelection = nil
+        spotlight = []; spotlightIndex = 0
+        item = nil; progress = nil
+        enriched = [:]; enrichedOrder = []
+        resetBrowseHandoff()
+    }
+
     /// Manual prev/next through the spotlight (Left/Right on the hero). Wraps,
     /// pauses auto-rotation, and shows the chosen title immediately.
     func stepSpotlight(by delta: Int) {
@@ -1552,7 +1575,7 @@ struct HomeView: View {
             if phase != .active { initialHeroFocusRequest.cancel() }
         }
         .onChange(of: perf.settings.heroBackdrop) { _, enabled in
-            if !enabled { initialHeroFocusRequest.cancel() }
+            if !enabled && !usesNTVLayout { initialHeroFocusRequest.cancel() }
         }
         // HYBRID, going back UP. The pinned hero's return strip binds the same
         // `heroPlayFocused` as the rolling banner's Play button, so reaching it
@@ -1690,7 +1713,7 @@ struct HomeView: View {
             // Only while the rolling banner, the one with a Play button, is on
             // screen. Declining keeps the rail's old fallback everywhere else
             // (Pinned Focus, a pinned Hybrid, no hero art, nothing loaded yet).
-            guard perf.settings.heroBackdrop,
+            guard usesNTVLayout || perf.settings.heroBackdrop,
                   (usesNTVLayout || homeCatalogSettings.heroLayout != .pinnedFocus),
                   !hero.browsedIntoContent,
                   hero.item != nil else { return false }
@@ -1722,11 +1745,11 @@ struct HomeView: View {
         // its title is whatever the focused card is. Seeding focus at it would
         // be a request into a view that isn't in the tree, leaving the page
         // with nothing focused at all; let the first row take it instead.
-        guard !didSeedHeroFocus, perf.settings.heroBackdrop,
+        guard !didSeedHeroFocus, usesNTVLayout || perf.settings.heroBackdrop,
               (usesNTVLayout || !heroIsPinned) else { return }
         didSeedHeroFocus = true
         initialHeroFocusRequest.schedule(router: .shared, hero: hero, isEligible: {
-            isVisible && scenePhase == .active && perf.settings.heroBackdrop &&
+            isVisible && scenePhase == .active && (usesNTVLayout || perf.settings.heroBackdrop) &&
                 (usesNTVLayout || !heroIsPinned) && hero.item != nil && !heroPlayFocused
         }) {
             heroPlayFocused = true
@@ -1751,13 +1774,11 @@ struct HomeView: View {
                         .accessibilityIdentifier("ntv.home.heading")
                         .ntvHalloweenDecor(.heading)
                         .padding(.horizontal, NTVViewport.horizontalInset)
-                    if perf.settings.heroBackdrop {
-                        NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
-                                         onSelect: heroSelect, onBack: onHomeBack)
-                            .padding(.horizontal, NTVViewport.horizontalInset)
-                            .modifier(NTVSpotlightVisibility(hero: hero))
-                            .focusSection()
-                    }
+                    NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
+                                     onSelect: heroSelect, onBack: onHomeBack)
+                        .padding(.horizontal, NTVViewport.horizontalInset)
+                        .modifier(NTVSpotlightVisibility(hero: hero))
+                        .focusSection()
                     if viewModel.entries.isEmpty && !viewModel.isLoading {
                         let continued = mergedContinueItems()
                         if !continued.isEmpty { continueRow(continued) }

@@ -60,7 +60,8 @@ struct NTVCatalogSpotlight: View {
 
     var body: some View {
         let _ = NTVRenderProbe.evaluated(.catalogSpotlight)
-        Group {
+        // The loader must mount before the first recommendation exists.
+        VStack(alignment: .leading, spacing: 0) {
             if hasRecommendations {
                 NTVHomeSpotlight(hero: hero, playFocus: focus, onSelect: onSelect, onBack: onBack,
                     identifier: "ntv.catalog.\(mediaType).spotlight",

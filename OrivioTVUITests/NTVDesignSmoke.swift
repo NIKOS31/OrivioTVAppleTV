@@ -122,7 +122,6 @@ final class NTVDesignSmoke: XCTestCase {
             let current = app.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
             XCTAssertTrue(current.exists)
             XCUIRemote.shared.press(current.frame.midY < target.frame.midY ? .down : .up)
-            if focused(target, timeout: 0.25) { return }
         }
         XCTAssertTrue(focused(target, timeout: 5))
     }

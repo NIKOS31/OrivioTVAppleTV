@@ -139,6 +139,7 @@ struct NTVCatalogSource: Identifiable {
         #endif
         let next = scope + "#" + available.map { "\($0.id)#\($0.catalog.hashValue)" }.joined(separator: "#")
         guard next != fingerprint else { return }
+        ContentFocusRouter.shared.cancelEntry(requestedCategory?.entry)
         requestedCategory = nil
         fingerprint = next; shelves = [:]; order = []; lastSelection = nil; emptyVisibleSources = []
         var seen = Set<String>()
@@ -332,7 +333,6 @@ struct NTVCatalogView: View {
         .ignoresSafeArea(edges: .horizontal)
         .toolbar(.hidden, for: .navigationBar)
         .task(id: loadKey) {
-            cancelEntryRequests()
             hero.layout = .pinnedFocus
             // A fresh tab waits for its first real poster; any intervening
             // remote command cancels this initial hand-off.

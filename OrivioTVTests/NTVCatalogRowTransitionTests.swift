@@ -4,6 +4,29 @@ import Combine
 
 final class NTVCatalogRowTransitionTests: XCTestCase {
     @MainActor
+    func testCatalogScopeReplacementCancelsOnlyItsOwnPendingEntry() throws {
+        let model = try browser()
+        let source = model.sources[0]
+        let router = ContentFocusRouter.shared
+        router.cancelLanding()
+        defer { router.cancelLanding() }
+        let own = router.makeEntryRequest(in: "ntv.catalog.shelf." + source.id, kind: .orderedRow)
+        model.requestedCategory = .init(sourceID: source.id, entry: own)
+        model.configure(addons: [source.addon], type: "movie", scope: "entry-fixture")
+        XCTAssertTrue(router.isPendingEntry(own), "Reappearing with the same scope must not cancel focus restoration or entry.")
+        model.configure(addons: [source.addon], type: "movie", scope: "profile-two")
+        XCTAssertFalse(router.isPendingEntry(own))
+        XCTAssertNil(model.requestedCategory)
+
+        let older = router.makeEntryRequest(in: "ntv.catalog.shelf." + source.id, kind: .orderedRow)
+        model.requestedCategory = .init(sourceID: source.id, entry: older)
+        let newer = router.makeEntryRequest(in: "ntv.catalog.series.entry", kind: .restoration)
+        model.configure(addons: [source.addon], type: "movie", scope: "profile-three")
+        XCTAssertTrue(router.isPendingEntry(newer), "A scope replacement may retire its own entry, never a newer page's request.")
+        XCTAssertNil(model.requestedCategory)
+    }
+
+    @MainActor
     func testCatalogEntryPublishesOnlyDepartingAndDestinationShelves() throws {
         let model = try browser()
         let shelves = model.sources.map { model.shelf($0) }

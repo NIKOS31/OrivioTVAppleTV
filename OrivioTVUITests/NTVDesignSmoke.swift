@@ -18,6 +18,8 @@ final class NTVDesignSmoke: XCTestCase {
         for (type, destination) in [("movie", "5"), ("series", "6")] {
             openMainDestination(destination, in: app)
             let first = app.buttons["ntv.poster.\(type).fixture.catalog.fixture-row-0.0"]
+            // Selecting the open section can restore its recommendation action.
+            if app.buttons["ntv.catalog.\(type).spotlight"].hasFocus { remote.press(.down) }
             XCTAssertTrue(focused(first, timeout: 10))
             let categories = app.buttons["ntv.catalog.\(type).openCategories"]
             remote.press(.up)

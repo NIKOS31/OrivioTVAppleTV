@@ -113,14 +113,21 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             cell.contentView.clipsToBounds = false
             cell.clipsToBounds = false
             cell.isAccessibilityElement = false
-            cell.hosted.content = AnyView(hosted.environment(\.self, environment).id(scope + "#" + identifier))
-            if cell.contentConfiguration == nil {
-                let model = cell.hosted
-                // Keep the hosting root while live callbacks and environment change.
-                cell.contentConfiguration = UIHostingConfiguration {
-                    NTVCatalogHostedContent(model: model)
-                }.margins(.all, 0)
-            }
+            cell.contentConfiguration = UIHostingConfiguration {
+                // The hosting cell owns its focus context; forward only presentation inputs.
+                hosted
+                    .environment(\.locale, environment.locale)
+                    .environment(\.calendar, environment.calendar)
+                    .environment(\.timeZone, environment.timeZone)
+                    .environment(\.layoutDirection, environment.layoutDirection)
+                    .environment(\.colorScheme, environment.colorScheme)
+                    .environment(\.dynamicTypeSize, environment.dynamicTypeSize)
+                    .environment(\.legibilityWeight, environment.legibilityWeight)
+                    .environment(\.displayScale, environment.displayScale)
+                    .environment(\.scenePhase, environment.scenePhase)
+                    .environment(\.isEnabled, environment.isEnabled)
+                    .id(scope + "#" + identifier)
+            }.margins(.all, 0)
         }
 
         func reveal(_ identifier: String, anchor: UnitPoint?) {
@@ -149,10 +156,7 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
         func stop() {
             pending = nil
             if proxy?.target === self { proxy?.target = nil }
-            for cell in collection?.visibleCells ?? [] {
-                (cell as? NTVCatalogHostingCell)?.hosted.content = AnyView(EmptyView())
-                cell.contentConfiguration = nil
-            }
+            for cell in collection?.visibleCells ?? [] { cell.contentConfiguration = nil }
             collection?.dataSource = nil
             source = nil
             content = nil
@@ -163,15 +167,5 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
 
 /// UIKit supplies scrolling/reuse; focus stays on the existing SwiftUI buttons.
 private final class NTVCatalogHostingCell: UICollectionViewCell {
-    let hosted = NTVCatalogCellContent()
     override var canBecomeFocused: Bool { false }
-}
-
-@MainActor private final class NTVCatalogCellContent: ObservableObject {
-    @Published var content = AnyView(EmptyView())
-}
-
-private struct NTVCatalogHostedContent: View {
-    @ObservedObject var model: NTVCatalogCellContent
-    var body: some View { model.content }
 }

@@ -85,6 +85,7 @@ struct OrivioTVApp: App {
                 .environment(\.locale, Locale(identifier: "fr_FR"))
                 .fontDesign(theme.rootFontDesign)   // app-wide font family (Fusion routes serif to headings only)
                 .environmentObject(theme)
+                .environmentObject(stores)
                 .environmentObject(stores.addonManager)
                 .environmentObject(stores.progressStore)
                 .environmentObject(stores.account)

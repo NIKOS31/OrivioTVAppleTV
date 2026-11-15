@@ -44,9 +44,6 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
         private var content: ((String) -> Content)?
         private weak var proxy: NTVCatalogScrollProxy?
         private var pending: (identifier: String, anchor: UnitPoint?)?
-        // Temporary simulator probe, removed before preparing a deliverable package.
-        private var nativeFocusProbe: NSObjectProtocol?
-        private var nativeFocusFailureLogged = false
 
         override func loadView() {
             let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(500))
@@ -72,9 +69,6 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
                 collection, indexPath, identifier in
                 return collection.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: identifier)
             }
-            #if DEBUG
-            installNativeFocusProbe()
-            #endif
         }
 
         func update(identifiers: [String], scope: String, identifier: String,
@@ -119,9 +113,14 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             cell.contentView.clipsToBounds = false
             cell.clipsToBounds = false
             cell.isAccessibilityElement = false
-            cell.contentConfiguration = UIHostingConfiguration {
-                hosted.environment(\.self, environment).id(scope + "#" + identifier)
-            }.margins(.all, 0)
+            cell.hosted.content = AnyView(hosted.environment(\.self, environment).id(scope + "#" + identifier))
+            if cell.contentConfiguration == nil {
+                let model = cell.hosted
+                // Keep the hosting root while live callbacks and environment change.
+                cell.contentConfiguration = UIHostingConfiguration {
+                    NTVCatalogHostedContent(model: model)
+                }.margins(.all, 0)
+            }
         }
 
         func reveal(_ identifier: String, anchor: UnitPoint?) {
@@ -147,58 +146,13 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
 
         func cancelPendingReveal() { pending = nil }
 
-        private func installNativeFocusProbe() {
-            #if DEBUG
-            guard ProcessInfo.processInfo.arguments.contains("-ntvRowLayoutFixture") else { return }
-            nativeFocusProbe = NotificationCenter.default.addObserver(
-                forName: UIFocusSystem.movementDidFailNotification, object: nil, queue: .main) { [weak self] note in
-                MainActor.assumeIsolated {
-                    guard let self, !self.nativeFocusFailureLogged, self.viewIfLoaded?.window != nil,
-                          let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext,
-                          context.focusHeading == .right,
-                          let item = context.previouslyFocusedItem, item.frame.isEmpty else { return }
-                    self.nativeFocusFailureLogged = true
-                    self.traceNativeFocusBoundary(item)
-                }
-            }
-            #endif
-        }
-
-        private func traceNativeFocusBoundary(_ item: any UIFocusItem) {
-            #if DEBUG
-            NSLog("[FocusTrace] [NTVNativeFocus] zero-sized Right origin=%@", NSCoder.string(for: item.frame))
-            var environment: (any UIFocusEnvironment)? = item
-            for depth in 0..<16 {
-                guard let current = environment else { break }
-                let view = current as? UIView
-                let container = current.focusItemContainer
-                let bounds = container?.coordinateSpace.bounds ?? .zero
-                let candidates = container?.focusItems(in: bounds) ?? []
-                let rects = candidates.prefix(8).map { NSCoder.string(for: $0.frame) }.joined(separator: ";")
-                NSLog("[FocusTrace] [NTVNativeFocus] depth=%ld type=%@ view=%d bounds=%@ window=%d inCollection=%d container=%d space=%@ bounds=%@ candidates=%ld rects=%@",
-                      depth, String(describing: type(of: current)), view == nil ? 0 : 1,
-                      NSCoder.string(for: view?.bounds ?? .zero), view?.window == nil ? 0 : 1,
-                      view?.isDescendant(of: collection) == true ? 1 : 0, container == nil ? 0 : 1,
-                      container.map { String(describing: type(of: $0.coordinateSpace)) } ?? "nil",
-                      NSCoder.string(for: bounds), candidates.count, rects)
-                environment = current.parentFocusEnvironment
-            }
-            for cell in collection.visibleCells {
-                NSLog("[FocusTrace] [NTVNativeFocus] cell=%ld frame=%@ content=%@ window=%d",
-                      collection.indexPath(for: cell)?.item ?? -1, NSCoder.string(for: cell.frame),
-                      NSCoder.string(for: cell.contentView.bounds), cell.window == nil ? 0 : 1)
-            }
-            #endif
-        }
-
         func stop() {
-            #if DEBUG
-            if let nativeFocusProbe { NotificationCenter.default.removeObserver(nativeFocusProbe) }
-            nativeFocusProbe = nil
-            #endif
             pending = nil
             if proxy?.target === self { proxy?.target = nil }
-            for cell in collection?.visibleCells ?? [] { cell.contentConfiguration = nil }
+            for cell in collection?.visibleCells ?? [] {
+                (cell as? NTVCatalogHostingCell)?.hosted.content = AnyView(EmptyView())
+                cell.contentConfiguration = nil
+            }
             collection?.dataSource = nil
             source = nil
             content = nil
@@ -209,5 +163,15 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
 
 /// UIKit supplies scrolling/reuse; focus stays on the existing SwiftUI buttons.
 private final class NTVCatalogHostingCell: UICollectionViewCell {
+    let hosted = NTVCatalogCellContent()
     override var canBecomeFocused: Bool { false }
+}
+
+@MainActor private final class NTVCatalogCellContent: ObservableObject {
+    @Published var content = AnyView(EmptyView())
+}
+
+private struct NTVCatalogHostedContent: View {
+    @ObservedObject var model: NTVCatalogCellContent
+    var body: some View { model.content }
 }

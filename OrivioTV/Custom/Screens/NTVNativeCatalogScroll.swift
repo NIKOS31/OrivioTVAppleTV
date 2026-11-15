@@ -45,10 +45,6 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
         private weak var proxy: NTVCatalogScrollProxy?
         private var pending: (identifier: String, anchor: UnitPoint?)?
 
-        private lazy var registration = UICollectionView.CellRegistration<NTVCatalogHostingCell, String> {
-            [weak self] cell, _, identifier in self?.configure(cell, identifier: identifier)
-        }
-
         override func loadView() {
             let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(500))
             let item = NSCollectionLayoutItem(layoutSize: size)
@@ -66,10 +62,12 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             collection.allowsSelection = false
             collection.remembersLastFocusedIndexPath = false
             view = collection
+            let registration = UICollectionView.CellRegistration<NTVCatalogHostingCell, String> {
+                [weak self] cell, _, identifier in self?.configure(cell, identifier: identifier)
+            }
             source = UICollectionViewDiffableDataSource<Int, String>(collectionView: collection) {
-                [weak self] collection, indexPath, identifier in
-                guard let self else { return nil }
-                return collection.dequeueConfiguredReusableCell(using: self.registration, for: indexPath, item: identifier)
+                collection, indexPath, identifier in
+                return collection.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: identifier)
             }
         }
 

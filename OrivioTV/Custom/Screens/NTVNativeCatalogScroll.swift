@@ -132,6 +132,8 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
                 pending = (identifier, anchor)
                 return
             }
+            // Materialize and size the revealed cell before its SwiftUI focus request runs.
+            collection.layoutIfNeeded()
             pending = nil
         }
 

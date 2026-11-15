@@ -1,8 +1,126 @@
 import XCTest
 import Combine
+import SwiftUI
+import UIKit
 @testable import OrivioTV
 
 final class NTVCatalogRowTransitionTests: XCTestCase {
+    @MainActor
+    func testNativeCatalogRevealKeepsAVisibleRowStillAndRefreshesRetainedContent() async throws {
+        let mounted = expectation(description: "First native row mounted")
+        let refreshed = expectation(description: "Retained row received the updated content")
+        var didMount = false, didRefresh = false
+        let controller = NTVNativeCatalogScroll<NativeCatalogProbeRow>.Controller()
+        let window = try nativeWindow(controller)
+        defer { controller.stop(); window.isHidden = true; window.rootViewController = nil }
+        let proxy = NTVCatalogScrollProxy()
+        let rows = (0..<8).map { "row-\($0)" }
+        controller.update(identifiers: rows, scope: "profile-one", identifier: "native-rows", proxy: proxy,
+                          environment: EnvironmentValues()) { id in
+            NativeCatalogProbeRow(label: id) { _, _ in
+                if id == rows[0], !didMount { didMount = true; mounted.fulfill() }
+            }
+        }
+        await fulfillment(of: [mounted], timeout: 3)
+        let collection = try XCTUnwrap(controller.view as? UICollectionView)
+        collection.layoutIfNeeded()
+        let before = collection.contentOffset
+        let first = try XCTUnwrap(collection.layoutAttributesForItem(at: IndexPath(item: 0, section: 0)))
+        XCTAssertGreaterThan(first.frame.height, 0)
+        XCTAssertTrue(collection.bounds.contains(first.frame), "The observed row must already be fully visible.")
+        proxy.scrollTo(rows[0])
+        XCTAssertEqual(collection.contentOffset.y, before.y, accuracy: 0.5,
+                       "Revealing an already visible row must not jump the page to its top.")
+
+        controller.update(identifiers: rows + ["later-row"], scope: "profile-one", identifier: "native-rows",
+                          proxy: proxy, environment: EnvironmentValues()) { id in
+            NativeCatalogProbeRow(label: "updated-" + id) { label, _ in
+                if id == rows[0], label == "updated-" + id, !didRefresh { didRefresh = true; refreshed.fulfill() }
+            }
+        }
+        await fulfillment(of: [refreshed], timeout: 3)
+        XCTAssertTrue(didRefresh, "Adding another row must not leave retained rows with old actions or content.")
+    }
+
+    @MainActor
+    func testNativeCatalogScopeReplacementDropsPendingRevealAndUpdatesEnvironment() async throws {
+        let mounted = expectation(description: "Initial native row mounted")
+        let replaced = expectation(description: "New profile environment reached the native row")
+        var didMount = false, didReplace = false
+        let controller = NTVNativeCatalogScroll<NativeCatalogProbeRow>.Controller()
+        let window = try nativeWindow(controller)
+        defer { controller.stop(); window.isHidden = true; window.rootViewController = nil }
+        let proxy = NTVCatalogScrollProxy()
+        let rows = (0..<8).map { "row-\($0)" }
+        var environment = EnvironmentValues()
+        environment.locale = Locale(identifier: "fr_FR")
+        controller.update(identifiers: rows, scope: "profile-one", identifier: "native-rows", proxy: proxy,
+                          environment: environment) { id in
+            NativeCatalogProbeRow(label: id) { _, locale in
+                if id == rows[0], locale == "fr_FR", !didMount { didMount = true; mounted.fulfill() }
+            }
+        }
+        await fulfillment(of: [mounted], timeout: 3)
+        let collection = try XCTUnwrap(controller.view as? UICollectionView)
+        collection.layoutIfNeeded()
+        let before = collection.contentOffset
+        proxy.scrollTo("later-row", anchor: .top)
+        environment.locale = Locale(identifier: "en_GB")
+        controller.update(identifiers: rows + ["later-row"], scope: "profile-two", identifier: "native-rows",
+                          proxy: proxy, environment: environment) { id in
+            NativeCatalogProbeRow(label: id) { _, locale in
+                if id == rows[0], locale == "en_GB", !didReplace { didReplace = true; replaced.fulfill() }
+            }
+        }
+        await fulfillment(of: [replaced], timeout: 3)
+        collection.layoutIfNeeded()
+        XCTAssertEqual(collection.contentOffset.y, before.y, accuracy: 0.5,
+                       "A new profile must not replay the former profile's pending scroll.")
+        XCTAssertTrue(didReplace)
+    }
+
+    @MainActor
+    func testDismantlingAnOldNativeCatalogCannotDetachItsReplacement() async throws {
+        let mounted = expectation(description: "Replacement native catalog mounted")
+        var didMount = false
+        let old = NTVNativeCatalogScroll<NativeCatalogProbeRow>.Controller()
+        let replacement = NTVNativeCatalogScroll<NativeCatalogProbeRow>.Controller()
+        let window = try nativeWindow(replacement)
+        defer { old.stop(); replacement.stop(); window.isHidden = true; window.rootViewController = nil }
+        let proxy = NTVCatalogScrollProxy()
+        old.update(identifiers: ["old"], scope: "old", identifier: "native-old", proxy: proxy,
+                   environment: EnvironmentValues()) { id in NativeCatalogProbeRow(label: id) { _, _ in } }
+        let rows = (0..<12).map { "row-\($0)" }
+        replacement.update(identifiers: rows, scope: "replacement", identifier: "native-new", proxy: proxy,
+                           environment: EnvironmentValues()) { id in
+            NativeCatalogProbeRow(label: id) { _, _ in
+                if id == rows[0], !didMount { didMount = true; mounted.fulfill() }
+            }
+        }
+        await fulfillment(of: [mounted], timeout: 3)
+        let collection = try XCTUnwrap(replacement.view as? UICollectionView)
+        collection.layoutIfNeeded()
+        let before = collection.contentOffset
+        old.stop()
+        proxy.scrollTo(try XCTUnwrap(rows.last), anchor: .top)
+        collection.layoutIfNeeded()
+        XCTAssertGreaterThan(collection.contentOffset.y, before.y,
+                             "The replacement must still receive scroll requests after the old controller exits.")
+        let last = try XCTUnwrap(collection.layoutAttributesForItem(at: IndexPath(item: rows.count - 1, section: 0)))
+        XCTAssertTrue(collection.bounds.intersects(last.frame))
+    }
+
+    @MainActor
+    private func nativeWindow(_ controller: UIViewController) throws -> UIWindow {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1200, height: 720)
+        window.rootViewController = controller
+        window.isHidden = false
+        window.layoutIfNeeded()
+        return window
+    }
+
     @MainActor
     func testCatalogScopeReplacementCancelsOnlyItsOwnPendingEntry() throws {
         let model = try browser()
@@ -165,5 +283,17 @@ final class NTVCatalogRowTransitionTests: XCTestCase {
         let deadline = Date().addingTimeInterval(1)
         while !condition(), Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertTrue(condition(), "The existing landing loop did not reach the expected state.")
+    }
+}
+
+private struct NativeCatalogProbeRow: View {
+    @Environment(\.locale) private var locale
+    let label: String
+    let rendered: (String, String) -> Void
+    var body: some View {
+        Text(label).frame(maxWidth: .infinity).frame(height: 160)
+            .onAppear { rendered(label, locale.identifier) }
+            .onChange(of: label) { _, _ in rendered(label, locale.identifier) }
+            .onChange(of: locale.identifier) { _, _ in rendered(label, locale.identifier) }
     }
 }

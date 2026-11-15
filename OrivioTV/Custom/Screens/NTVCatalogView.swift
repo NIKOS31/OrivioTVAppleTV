@@ -104,6 +104,7 @@ struct NTVCatalogSource: Identifiable {
     // Unpublished: remembering a clicked poster must not redraw the shelves.
     private(set) var lastSelection: Selection?
     private var fingerprint = ""
+    var contentScope: String { fingerprint }
     private var shelves: [String: NTVCatalogShelfModel] = [:]
     private var order: [String] = []
     private var emptyVisibleSources: Set<String> = []
@@ -176,6 +177,7 @@ struct NTVCatalogView: View {
     let onBackAtRoot: () -> Void
     let onOpenSettings: () -> Void
     @State private var hero = HeroFocus()
+    @State private var nativeScroll = NTVCatalogScrollProxy()
     @State private var restoreSelection: NTVCatalogBrowserModel.Selection?
     @State private var restoreFocusRequest: ContentFocusRouter.EntryRequest?
     @State private var menuVisible = false
@@ -203,85 +205,13 @@ struct NTVCatalogView: View {
         let _ = NTVRenderProbe.evaluated(.catalog)
         ZStack(alignment: .leading) {
             NTVFocusBackdrop(hero: hero, identifier: "ntv.catalog.\(mediaType).backdrop")
-            ScrollViewReader { proxy in
+            Group {
+                let proxy = nativeScroll
                 ZStack(alignment: .leading) {
-                    ScrollView(.vertical) {
-                        LazyVStack(alignment: .leading, spacing: 22) {
-                            VStack(alignment: .leading, spacing: 22) {
-                                HStack {
-                                    Text(title).font(.system(size: 38, weight: .semibold))
-                                        .ntvHalloweenDecor(.heading)
-                                        .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
-                                        #if DEBUG
-                                        .accessibilityValue(ProcessInfo.processInfo.arguments.contains("-ntvCatalogEvaluationFixture")
-                                            ? String(NTVRenderProbe.snapshot()?[.catalog]?.evaluations ?? -1) : "")
-                                        #endif
-                                    Spacer()
-                                    if !viewModel.sources.isEmpty {
-                                        Button {
-                                            if let source = viewModel.lastSelection?.sourceID ?? viewModel.firstNavigableSourceID {
-                                                openCategory(source)
-                                            }
-                                        } label: {
-                                            Label("Catégories", systemImage: "line.3.horizontal.decrease")
-                                        }
-                                        .buttonStyle(NTVActionButtonStyle())
-                                        .focused($categoryTriggerFocused)
-                                        .onChange(of: categoryTriggerFocused) { _, focused in
-                                            if focused { ContentFocusRouter.shared.noteFocused(row: routerID) }
-                                        }
-                                        .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
-                                        .onMoveCommand { direction in
-                                            guard categoryTriggerFocused else { return }
-                                            if direction == .down, let first = viewModel.firstNavigableSourceID {
-                                                requestRow(first, proxy: proxy)
-                                            } else if direction == .left, !hero.spotlight.isEmpty {
-                                                spotlightFocused = true
-                                            }
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, NTVViewport.horizontalInset)
-                                catalogSpotlight(proxy)
-                            }
-                            // The full header bridges the gap between the shelves and Categories.
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .focusSection()
-                            .id("catalogTop")
-                            if viewModel.sources.isEmpty {
-                                NTVEmptyCatalog(message: "Ajoutez un addon proposant des catalogues de \(title.lowercased()).", onOpenSettings: onOpenSettings)
-                                    .padding(.horizontal, NTVViewport.horizontalInset)
-                            }
-                            ForEach(viewModel.sources) { source in
-                                NTVCatalogShelf(model: viewModel.shelf(source), hero: hero,
-                                    onSelect: { item in
-                                        ContentFocusRouter.shared.cancelLanding()
-                                        viewModel.requestedCategory = nil
-                                        restoreSelection = nil; restoreFocusRequest = nil
-                                        viewModel.rememberSelection(sourceID: source.id, itemID: item.id)
-                                        onSelect(item)
-                                    }, onPlayManually: onPlayManually,
-                                    onSeeAll: onSeeAll,
-                                    onBackAtRoot: onBackAtRoot,
-                                    onLeftAtStart: { openCategory(source.id) }, interceptLeftEdge: navigationIsTop,
-                                    onVerticalMove: { move in moveFromRow(source.id, direction: move, proxy: proxy) },
-                                    restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil,
-                                    restoreFocusRequest: restoreSelection?.sourceID == source.id ? restoreFocusRequest : nil)
-                                    .onFirstVisibleItem { itemID in
-                                        viewModel.noteVisibleStart(sourceID: source.id, itemID: itemID)
-                                        guard itemID != nil, source.id == viewModel.sources.first?.id,
-                                              let generation = initialEntryGeneration else { return }
-                                        initialEntryGeneration = nil
-                                        guard isAtRoot, generation == ContentFocusRouter.shared.interactionGeneration else { return }
-                                        // Initial focus keeps the header visible; only explicit row navigation scrolls to its top.
-                                        let entry = ContentFocusRouter.shared.makeEntryRequest(in: "ntv.catalog.shelf.\(source.id)")
-                                        viewModel.requestedCategory = .init(sourceID: source.id, entry: entry, scrollToStart: false)
-                                    }
-                                    .accessibilityElement(children: .contain)
-                                    .accessibilityIdentifier("ntv.catalog.shelf.\(source.id)")
-                                    .id(source.id)
-                            }
-                        }.padding(.top, 26).padding(.bottom, 100)
+                    NTVNativeCatalogScroll(identifiers: ["catalogTop"] + (viewModel.sources.isEmpty
+                        ? ["catalogEmpty"] : viewModel.sources.map(\.id)), scope: viewModel.contentScope,
+                        identifier: "ntv.catalog.\(mediaType).rows", proxy: proxy) { identifier in
+                        catalogSection(identifier, proxy: proxy)
                     }
                     // Vertical clipping reserves the top bar; horizontal rows
                     // retain their own focus-lift margin.
@@ -306,6 +236,7 @@ struct NTVCatalogView: View {
                     restoreFocusRequest = nil
                     restoreSelection = nil
                     guard isAtRoot else {
+                        nativeScroll.cancelPending()
                         ContentFocusRouter.shared.cancelEntry(viewModel.requestedCategory?.entry)
                         viewModel.requestedCategory = nil
                         return
@@ -373,7 +304,89 @@ struct NTVCatalogView: View {
         .onExitCommand { onBackAtRoot() }
     }
     @ViewBuilder
-    private func catalogSpotlight(_ proxy: ScrollViewProxy) -> some View {
+    private func catalogSection(_ identifier: String, proxy: NTVCatalogScrollProxy) -> some View {
+        if identifier == "catalogTop" {
+            catalogHeader(proxy)
+        } else if let source = viewModel.sources.first(where: { $0.id == identifier }) {
+            NTVCatalogShelf(model: viewModel.shelf(source), hero: hero,
+                onSelect: { item in
+                    ContentFocusRouter.shared.cancelLanding()
+                    viewModel.requestedCategory = nil
+                    restoreSelection = nil; restoreFocusRequest = nil
+                    viewModel.rememberSelection(sourceID: source.id, itemID: item.id)
+                    onSelect(item)
+                }, onPlayManually: onPlayManually,
+                onSeeAll: onSeeAll,
+                onBackAtRoot: onBackAtRoot,
+                onLeftAtStart: { openCategory(source.id) }, interceptLeftEdge: navigationIsTop,
+                onVerticalMove: { move in moveFromRow(source.id, direction: move, proxy: proxy) },
+                restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil,
+                restoreFocusRequest: restoreSelection?.sourceID == source.id ? restoreFocusRequest : nil)
+                .onFirstVisibleItem { itemID in
+                    viewModel.noteVisibleStart(sourceID: source.id, itemID: itemID)
+                    guard itemID != nil, source.id == viewModel.sources.first?.id,
+                          let generation = initialEntryGeneration else { return }
+                    initialEntryGeneration = nil
+                    guard isAtRoot, generation == ContentFocusRouter.shared.interactionGeneration else { return }
+                    // Initial focus keeps the header visible; only explicit row navigation scrolls to its top.
+                    let entry = ContentFocusRouter.shared.makeEntryRequest(in: "ntv.catalog.shelf.\(source.id)")
+                    viewModel.requestedCategory = .init(sourceID: source.id, entry: entry, scrollToStart: false)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("ntv.catalog.shelf.\(source.id)")
+                .id(source.id)
+        } else {
+            NTVEmptyCatalog(message: "Ajoutez un addon proposant des catalogues de \(title.lowercased()).", onOpenSettings: onOpenSettings)
+                .padding(.horizontal, NTVViewport.horizontalInset)
+        }
+    }
+
+    private func catalogHeader(_ proxy: NTVCatalogScrollProxy) -> some View {
+        VStack(alignment: .leading, spacing: 22) {
+            HStack {
+                Text(title).font(.system(size: 38, weight: .semibold))
+                    .ntvHalloweenDecor(.heading)
+                    .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
+                    #if DEBUG
+                    .accessibilityValue(ProcessInfo.processInfo.arguments.contains("-ntvCatalogEvaluationFixture")
+                        ? String(NTVRenderProbe.snapshot()?[.catalog]?.evaluations ?? -1) : "")
+                    #endif
+                Spacer()
+                if !viewModel.sources.isEmpty {
+                    Button {
+                        if let source = viewModel.lastSelection?.sourceID ?? viewModel.firstNavigableSourceID {
+                            openCategory(source)
+                        }
+                    } label: {
+                        Label("Catégories", systemImage: "line.3.horizontal.decrease")
+                    }
+                    .buttonStyle(NTVActionButtonStyle())
+                    .focused($categoryTriggerFocused)
+                    .onChange(of: categoryTriggerFocused) { _, focused in
+                        if focused { ContentFocusRouter.shared.noteFocused(row: routerID) }
+                    }
+                    .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
+                    .onMoveCommand { direction in
+                        guard categoryTriggerFocused else { return }
+                        if direction == .down, let first = viewModel.firstNavigableSourceID {
+                            requestRow(first, proxy: proxy)
+                        } else if direction == .left, !hero.spotlight.isEmpty {
+                            spotlightFocused = true
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, NTVViewport.horizontalInset)
+            catalogSpotlight(proxy)
+        }
+        // The full header bridges the gap between the shelves and Categories.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
+        .id("catalogTop")
+    }
+
+    @ViewBuilder
+    private func catalogSpotlight(_ proxy: NTVCatalogScrollProxy) -> some View {
         if let first = viewModel.sources.first {
             NTVCatalogSpotlight(model: viewModel.shelf(first), hero: hero,
                 focus: $spotlightFocused, mediaType: mediaType, active: isAtRoot && !menuVisible,
@@ -392,7 +405,7 @@ struct NTVCatalogView: View {
                 .padding(.horizontal, NTVViewport.horizontalInset)
         }
     }
-    private func categoryPanel(_ proxy: ScrollViewProxy) -> some View {
+    private func categoryPanel(_ proxy: NTVCatalogScrollProxy) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             Button {
                 categoryFocus = viewModel.sources.first?.id
@@ -465,13 +478,13 @@ struct NTVCatalogView: View {
             menuVisible = true
         }
     }
-    private func closeCategory(_ proxy: ScrollViewProxy) {
+    private func closeCategory(_ proxy: NTVCatalogScrollProxy) {
         guard let sourceID = menuSourceID ?? viewModel.sources.first?.id else {
             menuVisible = false; categoryFocus = nil; return
         }
         requestRow(sourceID, proxy: proxy)
     }
-    private func requestRow(_ sourceID: String, proxy: ScrollViewProxy,
+    private func requestRow(_ sourceID: String, proxy: NTVCatalogScrollProxy,
                             kind: ContentFocusRouter.EntryKind = .rowStart) {
         if initialEntryGeneration != nil { initialEntryGeneration = nil }
         let keepViewport = menuVisible && menuSourceID == sourceID
@@ -491,10 +504,11 @@ struct NTVCatalogView: View {
         }
     }
     private func cancelEntryRequests() {
+        nativeScroll.cancelPending()
         ContentFocusRouter.shared.cancelEntry(viewModel.requestedCategory?.entry)
         ContentFocusRouter.shared.cancelEntry(restoreFocusRequest)
     }
-    private func moveFromRow(_ sourceID: String, direction: MoveCommandDirection, proxy: ScrollViewProxy) {
+    private func moveFromRow(_ sourceID: String, direction: MoveCommandDirection, proxy: NTVCatalogScrollProxy) {
         guard direction == .up || direction == .down else { return }
         NTVRenderProbe.evaluated(.catalogVerticalMove)
         if let target = viewModel.adjacentNavigableSourceID(to: sourceID, forward: direction == .down) {

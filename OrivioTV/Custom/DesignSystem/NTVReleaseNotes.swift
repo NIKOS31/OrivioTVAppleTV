@@ -7,7 +7,8 @@ struct NTVReleaseNotes: Sendable {
     let checks: [String]
 
     // Keep this entry and the app/extension build number together at release.
-    static let current = NTVReleaseNotes(build: "56", improvements: [
+    static let current = NTVReleaseNotes(build: "57", improvements: [
+        "Films et Séries : version d’essai du défilement vertical, en conservant les recommandations, les cartes, les fonds et leurs actions. Le gain de fluidité reste à mesurer sur la TV.",
         "Films et Séries : les recommandations retrouvent le carrousel de l’Accueil, avec Voir la fiche, navigation gauche/droite et indicateurs de position. Au repos sur le bandeau, les propositions défilent ; Réduire les animations conserve la navigation manuelle.",
         "Accueil : désactiver l’illustration de fond conserve maintenant le carrousel et ses actions. Ce réglage agit sur l’image de fond seulement.",
         "Films et Séries : les demandes de changement de rangée sont transmises aux rangées concernées, pour éviter de réévaluer le catalogue entier à chaque appui Haut ou Bas.",
@@ -17,6 +18,7 @@ struct NTVReleaseNotes: Sendable {
         "Les rangées d’affiches nTV de l’Accueil, des Films et des Séries sont davantage espacées.",
         "Films et Séries : les changements de rangée limitent le défilement au nécessaire pour conserver les repères à l’écran."
     ], checks: [
+        "Films puis Séries : attendre le chargement des affiches, faire cinq allers-retours Haut/Bas par appuis, puis par balayages. Relever le pic local en Hz/ms et vérifier que la dernière rangée demandée reste focalisée.",
         "Films et Séries : depuis la première rangée, monter à Catégories puis aller à gauche vers Voir la fiche. Changer de proposition, ouvrir la fiche et revenir, puis descendre dans les affiches. Les indicateurs et le titre doivent rester cohérents.",
         "Accueil : désactiver temporairement Illustration en fond dans Performances. Les recommandations et Voir la fiche doivent rester accessibles ; rétablir ensuite le réglage souhaité.",
         "Pour le diagnostic accompagné : dans Performances, activer le compteur de cadence et Enregistrer les diagnostics sur cette TV. Reproduire une ouverture de section ou un changement de rangée, puis relever le bloc local sans quitter l’écran. Désactiver les diagnostics après l’essai.",

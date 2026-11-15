@@ -4,6 +4,46 @@ import XCTest
 /// Navigation remains covered offline. The catalog journey additionally uses
 /// the engine's default Cinemeta addon, exercising real generic catalog data.
 final class NTVDesignSmoke: XCTestCase {
+    func testNativeMovieAndSeriesRowsKeepRemoteAndHoldDetailsReachable() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvCatalogCategoriesDemo",
+            "-ntvRowLayoutFixture", "-ntvCatalogThreeRowsFixture"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        let remote = XCUIRemote.shared
+        XCTAssertTrue(app.buttons["ntv.poster.movie.fixture.catalog.fixture-row-0.0"].waitForExistence(timeout: 20))
+        for (type, destination) in [("movie", "5"), ("series", "6")] {
+            openMainDestination(destination, in: app)
+            XCTAssertTrue(app.collectionViews["ntv.catalog.\(type).rows"].waitForExistence(timeout: 8),
+                          "This journey must exercise the native vertical container.")
+            let first = app.buttons["ntv.poster.\(type).fixture.catalog.fixture-row-0.0"]
+            if app.buttons["ntv.catalog.\(type).spotlight"].hasFocus { remote.press(.down) }
+            XCTAssertTrue(focused(first, timeout: 10))
+            remote.press(.down)
+            XCTAssertTrue(focused(app.buttons["ntv.poster.\(type).fixture.catalog.fixture-row-1.0"], timeout: 8))
+            remote.press(.up)
+            XCTAssertTrue(focused(first, timeout: 8))
+            remote.press(.right)
+            XCTAssertTrue(focused(app.buttons["ntv.poster.\(type).fixture.catalog.fixture-row-0.1"], timeout: 5))
+            remote.press(.left)
+            XCTAssertTrue(focused(first, timeout: 5))
+            remote.press(.select, forDuration: 2)
+            let details = app.buttons["Go to Details"]
+            XCTAssertTrue(details.waitForExistence(timeout: 8))
+            XCTAssertTrue(focused(details, timeout: 5))
+            capture("ntv-native-\(type)-poster-hold-menu")
+            remote.press(.select)
+            let title = app.descendants(matching: .any)["ntv.detail.title"].firstMatch
+            XCTAssertTrue(title.waitForExistence(timeout: 15))
+            XCTAssertEqual(title.label, "Titre de catalogue 1")
+            remote.press(.menu)
+            XCTAssertTrue(focused(first, timeout: 10), "The native row must restore the selected poster after its detail page.")
+        }
+    }
+
     func testMovieAndSeriesRecommendationCarouselsKeepDetailsAndRowsReachable() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -304,7 +344,7 @@ final class NTVDesignSmoke: XCTestCase {
             // Separate geometry diagnostic: keep the earlier Down → Right retry regression unchanged.
             for _ in 0..<6 { remote.press(.right) }
             XCTAssertTrue(nextSecond.waitForExistence(timeout: 8))
-            let viewport = app.scrollViews.containing(.any, identifier: "ntv.catalog.shelf." + sourceIDs[0]).firstMatch
+            let viewport = app.collectionViews["ntv.catalog.movie.rows"]
             XCTAssertTrue(viewport.waitForExistence(timeout: 5))
             let beforeDown = settledFrame(nextSecond)
             XCTAssertGreaterThan(beforeDown.height, 0)
@@ -366,7 +406,7 @@ final class NTVDesignSmoke: XCTestCase {
             XCTAssertTrue(app.windows.firstMatch.frame.contains(firsts[0].frame))
             capture("ntv-seanime-series-three-adjacent-shelves")
             // Check the focused edge after returning to a horizontally scrolled shelf.
-            let seriesViewport = app.scrollViews.containing(.button, identifier: firsts[0].identifier).firstMatch
+            let seriesViewport = app.collectionViews["ntv.catalog.series.rows"]
             XCTAssertTrue(seriesViewport.waitForExistence(timeout: 5))
             let leftEdge = seriesViewport.frame.minX
             for index in 0...1 {

@@ -166,7 +166,7 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
 
         private func traceNativeFocusBoundary(_ item: any UIFocusItem) {
             #if DEBUG
-            NSLog("[FocusTrace] [NTVNativeFocus] zero-sized Right origin=%@", NSStringFromCGRect(item.frame))
+            NSLog("[FocusTrace] [NTVNativeFocus] zero-sized Right origin=%@", NSCoder.string(for: item.frame))
             var environment: (any UIFocusEnvironment)? = item
             for depth in 0..<16 {
                 guard let current = environment else { break }
@@ -174,19 +174,19 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
                 let container = current.focusItemContainer
                 let bounds = container?.coordinateSpace.bounds ?? .zero
                 let candidates = container?.focusItems(in: bounds) ?? []
-                let rects = candidates.prefix(8).map { NSStringFromCGRect($0.frame) }.joined(separator: ";")
+                let rects = candidates.prefix(8).map { NSCoder.string(for: $0.frame) }.joined(separator: ";")
                 NSLog("[FocusTrace] [NTVNativeFocus] depth=%ld type=%@ view=%d bounds=%@ window=%d inCollection=%d container=%d space=%@ bounds=%@ candidates=%ld rects=%@",
                       depth, String(describing: type(of: current)), view == nil ? 0 : 1,
-                      NSStringFromCGRect(view?.bounds ?? .zero), view?.window == nil ? 0 : 1,
+                      NSCoder.string(for: view?.bounds ?? .zero), view?.window == nil ? 0 : 1,
                       view?.isDescendant(of: collection) == true ? 1 : 0, container == nil ? 0 : 1,
                       container.map { String(describing: type(of: $0.coordinateSpace)) } ?? "nil",
-                      NSStringFromCGRect(bounds), candidates.count, rects)
+                      NSCoder.string(for: bounds), candidates.count, rects)
                 environment = current.parentFocusEnvironment
             }
             for cell in collection.visibleCells {
                 NSLog("[FocusTrace] [NTVNativeFocus] cell=%ld frame=%@ content=%@ window=%d",
-                      collection.indexPath(for: cell)?.item ?? -1, NSStringFromCGRect(cell.frame),
-                      NSStringFromCGRect(cell.contentView.bounds), cell.window == nil ? 0 : 1)
+                      collection.indexPath(for: cell)?.item ?? -1, NSCoder.string(for: cell.frame),
+                      NSCoder.string(for: cell.contentView.bounds), cell.window == nil ? 0 : 1)
             }
             #endif
         }

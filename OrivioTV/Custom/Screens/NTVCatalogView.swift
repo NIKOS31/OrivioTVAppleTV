@@ -260,7 +260,7 @@ struct NTVCatalogView: View {
                 }
                 .onAppear {
                     ContentFocusRouter.shared.register(spotlightID) {
-                        guard isAtRoot, !hero.spotlight.isEmpty else { return false }
+                        guard isAtRoot, !menuVisible, !hero.spotlight.isEmpty else { return false }
                         proxy.scrollTo("catalogTop", anchor: .top)
                         spotlightFocused = true
                         return true

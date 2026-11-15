@@ -1396,6 +1396,16 @@ struct RootView: View {
                     // full-screen cover: a Left at the edge of one of those
                     // is the cover's own dead end, not a reach for the rail
                     // behind it.
+                    // The catalog may already be handling this broadcast's Left.
+                    if !navIsTop, sidebarFocus == nil, playback == nil,
+                       !showProfileGate, !showWelcome,
+                       !Self.isInPresentedModal(ctx.previouslyFocusedItem),
+                       let entry = ntvCatalogMenuRouterID {
+                        let router = ContentFocusRouter.shared
+                        let spotlight = entry.replacingOccurrences(of: ".entry", with: ".spotlight")
+                        if (router.lastRowID == entry || router.lastRowID == spotlight),
+                           router.focusRowStart(spotlight) { return }
+                    }
                     if showSidebar, sidebarFocus == nil,
                        playback == nil, !showProfileGate, !showWelcome,
                        !Self.isInPresentedModal(ctx.previouslyFocusedItem) {

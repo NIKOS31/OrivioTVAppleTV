@@ -108,6 +108,12 @@ final class NTVCatalogRowTransitionTests: XCTestCase {
                              "The replacement must still receive scroll requests after the old controller exits.")
         let last = try XCTUnwrap(collection.layoutAttributesForItem(at: IndexPath(item: rows.count - 1, section: 0)))
         XCTAssertTrue(collection.bounds.intersects(last.frame))
+        let hosted = replacement.children
+        XCTAssertFalse(hosted.isEmpty, "Displayed shelves must have real child hosting controllers.")
+        XCTAssertTrue(hosted.allSatisfy { $0.parent === replacement && $0.view.isDescendant(of: collection) })
+        replacement.stop()
+        XCTAssertTrue(replacement.children.isEmpty, "Stopping the catalog must detach every child, including cached cells.")
+        XCTAssertTrue(hosted.allSatisfy { $0.parent == nil && $0.view.superview == nil })
     }
 
     @MainActor

@@ -35,7 +35,7 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
         controller.stop()
     }
 
-    @MainActor final class Controller: UIViewController, NTVCatalogScrolling {
+    @MainActor final class Controller: UIViewController, NTVCatalogScrolling, UICollectionViewDelegate {
         private var collection: UICollectionView!
         private var source: UICollectionViewDiffableDataSource<Int, String>!
         private var identifiers: [String] = []
@@ -44,6 +44,7 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
         private var content: ((String) -> Content)?
         private weak var proxy: NTVCatalogScrollProxy?
         private var pending: (identifier: String, anchor: UnitPoint?)?
+        private let hostedCells = NSHashTable<NTVCatalogHostingCell>.weakObjects()
 
         override func loadView() {
             let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(500))
@@ -60,6 +61,8 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             collection.contentInset = UIEdgeInsets(top: 26, left: 0, bottom: 100, right: 0)
             collection.showsVerticalScrollIndicator = false
             collection.allowsSelection = false
+            collection.delegate = self
+            collection.selfSizingInvalidation = .enabledIncludingConstraints
             collection.remembersLastFocusedIndexPath = false
             view = collection
             let registration = UICollectionView.CellRegistration<NTVCatalogHostingCell, String> {
@@ -113,21 +116,8 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             cell.contentView.clipsToBounds = false
             cell.clipsToBounds = false
             cell.isAccessibilityElement = false
-            cell.contentConfiguration = UIHostingConfiguration {
-                // The hosting cell owns its focus context; forward only presentation inputs.
-                hosted
-                    .environment(\.locale, environment.locale)
-                    .environment(\.calendar, environment.calendar)
-                    .environment(\.timeZone, environment.timeZone)
-                    .environment(\.layoutDirection, environment.layoutDirection)
-                    .environment(\.colorScheme, environment.colorScheme)
-                    .environment(\.dynamicTypeSize, environment.dynamicTypeSize)
-                    .environment(\.legibilityWeight, environment.legibilityWeight)
-                    .environment(\.displayScale, environment.displayScale)
-                    .environment(\.scenePhase, environment.scenePhase)
-                    .environment(\.isEnabled, environment.isEnabled)
-                    .id(scope + "#" + identifier)
-            }.margins(.all, 0)
+            hostedCells.add(cell)
+            cell.host(AnyView(hosted.environment(\.self, environment).id(scope + "#" + identifier)), in: self)
         }
 
         func reveal(_ identifier: String, anchor: UnitPoint?) {
@@ -151,12 +141,19 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             if let pending { reveal(pending.identifier, anchor: pending.anchor) }
         }
 
+        func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell,
+                            forItemAt indexPath: IndexPath) {
+            (cell as? NTVCatalogHostingCell)?.stopHosting()
+        }
+
         func cancelPendingReveal() { pending = nil }
 
         func stop() {
             pending = nil
             if proxy?.target === self { proxy?.target = nil }
-            for cell in collection?.visibleCells ?? [] { cell.contentConfiguration = nil }
+            for cell in hostedCells.allObjects { cell.stopHosting() }
+            hostedCells.removeAllObjects()
+            collection?.delegate = nil
             collection?.dataSource = nil
             source = nil
             content = nil
@@ -167,5 +164,48 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
 
 /// UIKit supplies scrolling/reuse; focus stays on the existing SwiftUI buttons.
 private final class NTVCatalogHostingCell: UICollectionViewCell {
+    private var hosting: UIHostingController<AnyView>?
+    private var hostingConstraints: [NSLayoutConstraint] = []
     override var canBecomeFocused: Bool { false }
+
+    func host(_ content: AnyView, in parent: UIViewController) {
+        if let hosting, hosting.parent === parent {
+            hosting.rootView = content
+            return
+        }
+        stopHosting()
+        // A child hosting controller gives each shelf a complete native focus environment.
+        let hosting = UIHostingController(rootView: content)
+        self.hosting = hosting
+        hosting.sizingOptions = .intrinsicContentSize
+        parent.addChild(hosting)
+        hosting.view.backgroundColor = .clear
+        hosting.view.clipsToBounds = false
+        hosting.view.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(hosting.view)
+        hostingConstraints = [
+            hosting.view.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            hosting.view.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            hosting.view.topAnchor.constraint(equalTo: contentView.topAnchor),
+            hosting.view.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        ]
+        NSLayoutConstraint.activate(hostingConstraints)
+        hosting.didMove(toParent: parent)
+    }
+
+    func stopHosting() {
+        guard let hosting else { return }
+        hosting.willMove(toParent: nil)
+        NSLayoutConstraint.deactivate(hostingConstraints)
+        hosting.view.removeFromSuperview()
+        hosting.removeFromParent()
+        hosting.rootView = AnyView(EmptyView())
+        self.hosting = nil
+        hostingConstraints = []
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        stopHosting()
+    }
 }

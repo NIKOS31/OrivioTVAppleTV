@@ -166,7 +166,6 @@ struct NTVCatalogView: View {
     @Environment(\.navigationIsTop) private var navigationIsTop
     @EnvironmentObject private var addons: AddonManager
     @EnvironmentObject private var profiles: ProfileStore
-    @EnvironmentObject private var stores: AppStores
     @ObservedObject private var iptv = LiveTVSettingsStore.shared
     @ObservedObject var viewModel: NTVCatalogBrowserModel
     let mediaType: String
@@ -213,10 +212,6 @@ struct NTVCatalogView: View {
                         ? ["catalogEmpty"] : viewModel.sources.map(\.id)), scope: viewModel.contentScope,
                         identifier: "ntv.catalog.\(mediaType).rows", proxy: proxy) { identifier in
                         catalogSection(identifier, proxy: proxy)
-                            .fontDesign(theme.rootFontDesign).foregroundStyle(theme.palette.textPrimary)
-                            .environmentObject(theme).environmentObject(addons).environmentObject(profiles)
-                            .environmentObject(stores.homeCatalogSettings).environmentObject(stores.library)
-                            .environmentObject(stores.watched).environmentObject(stores.progressStore)
                     }
                     // Vertical clipping reserves the top bar; horizontal rows
                     // retain their own focus-lift margin.

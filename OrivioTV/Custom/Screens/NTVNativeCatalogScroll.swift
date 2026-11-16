@@ -171,6 +171,8 @@ private final class NTVCatalogHostingCell: UICollectionViewCell {
         let hosting = UIHostingController(rootView: content)
         self.hosting = hosting
         hosting.sizingOptions = .intrinsicContentSize
+        // The collection viewport owns the safe area, not each scrolling shelf.
+        hosting.safeAreaRegions = []
         parent.addChild(hosting)
         hosting.view.backgroundColor = .clear
         hosting.view.clipsToBounds = false

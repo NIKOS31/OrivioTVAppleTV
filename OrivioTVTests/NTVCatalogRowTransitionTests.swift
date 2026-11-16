@@ -24,6 +24,11 @@ final class NTVCatalogRowTransitionTests: XCTestCase {
         await fulfillment(of: [mounted], timeout: 3)
         let collection = try XCTUnwrap(controller.view as? UICollectionView)
         collection.layoutIfNeeded()
+        let cached = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)))
+        let hosted = try XCTUnwrap(controller.children.first { $0.view.isDescendant(of: cached) })
+        collection.delegate?.collectionView?(collection, didEndDisplaying: cached, forItemAt: IndexPath(item: 0, section: 0))
+        XCTAssertTrue(hosted.parent === controller && hosted.view.isDescendant(of: cached),
+                      "Ending display must preserve a prepared shelf until actual cell reuse.")
         let before = collection.contentOffset
         let first = try XCTUnwrap(collection.layoutAttributesForItem(at: IndexPath(item: 0, section: 0)))
         XCTAssertGreaterThan(first.frame.height, 0)

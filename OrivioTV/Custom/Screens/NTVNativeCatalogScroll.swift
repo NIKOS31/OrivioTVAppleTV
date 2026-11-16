@@ -35,7 +35,7 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
         controller.stop()
     }
 
-    @MainActor final class Controller: UIViewController, NTVCatalogScrolling, UICollectionViewDelegate {
+    @MainActor final class Controller: UIViewController, NTVCatalogScrolling {
         private var collection: UICollectionView!
         private var source: UICollectionViewDiffableDataSource<Int, String>!
         private var identifiers: [String] = []
@@ -61,7 +61,6 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             collection.contentInset = UIEdgeInsets(top: 26, left: 0, bottom: 100, right: 0)
             collection.showsVerticalScrollIndicator = false
             collection.allowsSelection = false
-            collection.delegate = self
             collection.selfSizingInvalidation = .enabledIncludingConstraints
             collection.remembersLastFocusedIndexPath = false
             view = collection
@@ -141,11 +140,6 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             if let pending { reveal(pending.identifier, anchor: pending.anchor) }
         }
 
-        func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell,
-                            forItemAt indexPath: IndexPath) {
-            (cell as? NTVCatalogHostingCell)?.stopHosting()
-        }
-
         func cancelPendingReveal() { pending = nil }
 
         func stop() {
@@ -153,7 +147,6 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             if proxy?.target === self { proxy?.target = nil }
             for cell in hostedCells.allObjects { cell.stopHosting() }
             hostedCells.removeAllObjects()
-            collection?.delegate = nil
             collection?.dataSource = nil
             source = nil
             content = nil
@@ -206,6 +199,7 @@ private final class NTVCatalogHostingCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        // A prepared cell may reappear without another configuration pass.
         stopHosting()
     }
 }

@@ -45,6 +45,7 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
         private weak var proxy: NTVCatalogScrollProxy?
         private var pending: (identifier: String, anchor: UnitPoint?)?
         private let hostedCells = NSHashTable<NTVCatalogHostingCell>.weakObjects()
+        private var viewportProbe: NSObject?
 
         override func loadView() {
             let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(500))
@@ -63,6 +64,13 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             collection.allowsSelection = false
             collection.selfSizingInvalidation = .enabledIncludingConstraints
             collection.remembersLastFocusedIndexPath = false
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-ntvCatalogThreeRowsFixture") {
+                let probe = NTVCatalogViewportProbe()
+                viewportProbe = probe
+                collection.delegate = probe
+            }
+            #endif
             view = collection
             let registration = UICollectionView.CellRegistration<NTVCatalogHostingCell, String> {
                 [weak self] cell, _, identifier in self?.configure(cell, identifier: identifier)
@@ -147,6 +155,10 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
             if proxy?.target === self { proxy?.target = nil }
             for cell in hostedCells.allObjects { cell.stopHosting() }
             hostedCells.removeAllObjects()
+            #if DEBUG
+            collection?.delegate = nil
+            viewportProbe = nil
+            #endif
             collection?.dataSource = nil
             source = nil
             content = nil
@@ -171,8 +183,6 @@ private final class NTVCatalogHostingCell: UICollectionViewCell {
         let hosting = UIHostingController(rootView: content)
         self.hosting = hosting
         hosting.sizingOptions = .intrinsicContentSize
-        // The collection viewport owns the safe area, not each scrolling shelf.
-        hosting.safeAreaRegions = []
         parent.addChild(hosting)
         hosting.view.backgroundColor = .clear
         hosting.view.clipsToBounds = false
@@ -205,3 +215,46 @@ private final class NTVCatalogHostingCell: UICollectionViewCell {
         stopHosting()
     }
 }
+
+#if DEBUG
+@MainActor private final class NTVCatalogViewportProbe: NSObject, UICollectionViewDelegate {
+    private var remainingFocusEvents = 24
+    private var previousY: CGFloat?
+    private var decreasingSamples = 0
+
+    func collectionView(_ collectionView: UICollectionView, didUpdateFocusIn context: UICollectionViewFocusUpdateContext,
+                        with coordinator: UIFocusAnimationCoordinator) {
+        guard remainingFocusEvents > 0, context.focusHeading.contains(.left) || context.focusHeading.contains(.right) else { return }
+        let event = 25 - remainingFocusEvents
+        remainingFocusEvents -= 1
+        let heading = context.focusHeading.rawValue
+        let from = context.previouslyFocusedIndexPath?.item ?? -1, to = context.nextFocusedIndexPath?.item ?? -1
+        record(collectionView, phase: "focus-start", event: event, heading: heading, from: from, to: to)
+        coordinator.addCoordinatedAnimations(nil, completion: { [weak self, weak collectionView] _ in
+            guard let self, let collectionView else { return }
+            self.record(collectionView, phase: "focus-end", event: event, heading: heading, from: from, to: to)
+        })
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        let y = scrollView.contentOffset.y
+        defer { previousY = y }
+        guard let previousY, y < previousY - 0.5 else { return }
+        decreasingSamples += 1
+        guard decreasingSamples <= 256, decreasingSamples % 8 == 1,
+              let collection = scrollView as? UICollectionView else { return }
+        record(collection, phase: "offset-decrease", event: decreasingSamples, heading: 0, from: -1, to: -1)
+    }
+
+    private func record(_ collection: UICollectionView, phase: String, event: Int, heading: UInt, from: Int, to: Int) {
+        guard collection.numberOfSections > 0 else { return }
+        let rows: [String] = (0..<min(collection.numberOfItems(inSection: 0), 4)).compactMap { item in
+            let index = IndexPath(item: item, section: 0)
+            guard let frame = collection.layoutAttributesForItem(at: index)?.frame else { return nil }
+            let host = collection.cellForItem(at: index)?.contentView.subviews.first
+            return "i=\(item),y=\(frame.minY),h=\(frame.height),rootH=\(host?.frame.height ?? -1),safe=\(host?.safeAreaInsets.top ?? -1)/\(host?.safeAreaInsets.bottom ?? -1)"
+        }
+        NSLog("%@", "[FocusTrace] [NTVCatalogViewportProbe] event=\(event) phase=\(phase) heading=\(heading) from=\(from) to=\(to) offset=\(collection.contentOffset.y) contentH=\(collection.contentSize.height) viewportH=\(collection.bounds.height) rows=[\(rows.joined(separator: ";"))]")
+    }
+}
+#endif

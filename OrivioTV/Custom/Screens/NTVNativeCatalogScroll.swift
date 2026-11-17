@@ -230,7 +230,7 @@ private final class NTVCatalogHostingCell: UICollectionViewCell {
         let heading = context.focusHeading.rawValue
         let from = context.previouslyFocusedIndexPath?.item ?? -1, to = context.nextFocusedIndexPath?.item ?? -1
         record(collectionView, phase: "focus-start", event: event, heading: heading, from: from, to: to)
-        coordinator.addCoordinatedAnimations(nil, completion: { [weak self, weak collectionView] _ in
+        coordinator.addCoordinatedAnimations(nil, completion: { [weak self, weak collectionView] in
             guard let self, let collectionView else { return }
             self.record(collectionView, phase: "focus-end", event: event, heading: heading, from: from, to: to)
         })

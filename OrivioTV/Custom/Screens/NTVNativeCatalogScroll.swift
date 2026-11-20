@@ -1,6 +1,35 @@
 import SwiftUI
 import UIKit
 
+#if DEBUG
+@MainActor enum NTVCatalogValidationTrace {
+    static let enabled = ProcessInfo.processInfo.arguments.contains("-ntvXperienceHomeFixture")
+    private static var previousGeometry = ""
+    static func viewport(_ collection: UICollectionView) {
+        guard enabled, let window = collection.window else { return }
+        var geometry: [String] = []
+        var ancestor: UIView? = collection
+        while let node = ancestor {
+            let rect = node.convert(node.bounds, to: window)
+            geometry.append("\(Int(rect.minX))/\(Int(rect.width))/\(Int(node.safeAreaInsets.left))/\(Int(node.safeAreaInsets.right))")
+            ancestor = node.superview
+        }
+        if let hosted = collection.visibleCells.first?.contentView.subviews.first {
+            let rect = hosted.convert(hosted.bounds, to: window)
+            geometry.append("host=\(Int(rect.minX))/\(Int(rect.width))/\(Int(hosted.safeAreaInsets.left))/\(Int(hosted.safeAreaInsets.right))")
+        }
+        let value = geometry.joined(separator: ",")
+        if value != previousGeometry {
+            previousGeometry = value
+            record("viewport from collection to window x/width/left/right=\(value)")
+        }
+    }
+    static func record(_ message: @autoclosure () -> String) {
+        if enabled { NSLog("[FocusTrace] [Catalog57] %@", message()) }
+    }
+}
+#endif
+
 @MainActor fileprivate protocol NTVCatalogScrolling: AnyObject {
     func reveal(_ identifier: String, anchor: UnitPoint?)
     func cancelPendingReveal()
@@ -78,6 +107,13 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
                     proxy: NTVCatalogScrollProxy, environment: EnvironmentValues,
                     content: @escaping (String) -> Content) {
             loadViewIfNeeded()
+            #if DEBUG
+            if NTVCatalogValidationTrace.enabled {
+                DispatchQueue.main.async { [weak collection = self.collection] in
+                    if let collection { NTVCatalogValidationTrace.viewport(collection) }
+                }
+            }
+            #endif
             precondition(Set(identifiers).count == identifiers.count)
             if let previous = self.proxy, previous !== proxy, previous.target === self { previous.target = nil }
             self.proxy = proxy

@@ -56,6 +56,9 @@ final class ContentFocusRouter {
         entrySequence &+= 1
         let request = EntryRequest(rowID: rowID, sequence: entrySequence, kind: kind)
         pendingEntry = request
+        #if DEBUG
+        NTVCatalogValidationTrace.record("entry scheduled sequence=\(request.sequence) restoration=\(kind == .restoration)")
+        #endif
         AppProbe.focus("entry #\(request.sequence) scheduled")
         return request
     }
@@ -66,6 +69,9 @@ final class ContentFocusRouter {
     }
 
     func consumeEntry(_ request: EntryRequest) -> Bool {
+        #if DEBUG
+        if request.kind == .restoration { NTVCatalogValidationTrace.record("restore consume accepted=\(pendingEntry == request)") }
+        #endif
         guard pendingEntry == request else {
             AppProbe.focus("entry #\(request.sequence) discarded")
             PlayerProbe.count("focus.entry.discarded")
@@ -78,6 +84,9 @@ final class ContentFocusRouter {
 
     func cancelEntry(_ request: EntryRequest?) {
         guard let request, pendingEntry == request else { return }
+        #if DEBUG
+        NTVCatalogValidationTrace.record("cancelEntry restoration=\(request.kind == .restoration)")
+        #endif
         pendingEntry = nil
         AppProbe.focus("entry #\(request.sequence) cancelled")
     }
@@ -85,6 +94,9 @@ final class ContentFocusRouter {
     /// A fresh remote command or page/menu transition supersedes restoration
     /// too, including a task still waiting for a navigation pop to settle.
     func noteUserMovement(in rowID: String? = nil) {
+        #if DEBUG
+        if hasPendingRestoration { NTVCatalogValidationTrace.record("remote during restoration") }
+        #endif
         interactionGeneration &+= 1
         // Explicit row navigation yields to a new command anywhere. Ordinary
         // native entry still tolerates the departing row's late notification.
@@ -129,6 +141,9 @@ final class ContentFocusRouter {
         // A delayed retry belongs to one row. Once focus is in another row,
         // it must not scroll the previous row and reclaim focus behind us.
         let catalogRow = rowID.hasPrefix("ntv.catalog.shelf.")
+        #if DEBUG
+        if hasPendingRestoration { NTVCatalogValidationTrace.record("focus during restore shelf=\(catalogRow) spotlight=\(rowID.hasSuffix(".spotlight"))") }
+        #endif
         // Scrolling to an ordered neighbor can briefly focus a third shelf.
         // Only a new command, page exit or unmount supersedes that destination.
         if let landingRowID, landingRowID != rowID,
@@ -248,6 +263,9 @@ final class ContentFocusRouter {
             AppProbe.focus("landing #\(landingSequence) cancelled")
             PlayerProbe.count("focus.landing.cancelled")
         }
+        #if DEBUG
+        if hasPendingRestoration { NTVCatalogValidationTrace.record("cancelLanding during restoration") }
+        #endif
         if let pendingEntry { AppProbe.focus("entry #\(pendingEntry.sequence) cancelled") }
         pendingEntry = nil
         landingTask?.cancel()

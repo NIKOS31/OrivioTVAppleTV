@@ -140,6 +140,9 @@ struct NTVCatalogSource: Identifiable {
         #endif
         let next = scope + "#" + available.map { "\($0.id)#\($0.catalog.hashValue)" }.joined(separator: "#")
         guard next != fingerprint else { return }
+        #if DEBUG
+        NTVCatalogValidationTrace.record("catalog configured previousSelection=\(lastSelection != nil)")
+        #endif
         ContentFocusRouter.shared.cancelEntry(requestedCategory?.entry)
         requestedCategory = nil
         fingerprint = next; shelves = [:]; order = []; lastSelection = nil; emptyVisibleSources = []
@@ -157,8 +160,16 @@ struct NTVCatalogSource: Identifiable {
     func rememberSelection(sourceID: String, itemID: String) {
         guard sources.contains(where: { $0.id == sourceID }) else { return }
         lastSelection = Selection(sourceID: sourceID, itemID: itemID)
+        #if DEBUG
+        NTVCatalogValidationTrace.record("poster remembered")
+        #endif
     }
-    func forgetSelection() { lastSelection = nil }
+    func forgetSelection() {
+        #if DEBUG
+        NTVCatalogValidationTrace.record("forget requested previousSelection=\(lastSelection != nil)")
+        #endif
+        lastSelection = nil
+    }
 }
 
 struct NTVCatalogView: View {
@@ -237,6 +248,9 @@ struct NTVCatalogView: View {
                     }
                 }
                 .task(id: isAtRoot) {
+                    #if DEBUG
+                    NTVCatalogValidationTrace.record("rootTask root=\(isAtRoot) selection=\(viewModel.lastSelection != nil) returnToHero=\(returnToSpotlight)")
+                    #endif
                     ContentFocusRouter.shared.cancelEntry(restoreFocusRequest)
                     restoreFocusRequest = nil
                     restoreSelection = nil

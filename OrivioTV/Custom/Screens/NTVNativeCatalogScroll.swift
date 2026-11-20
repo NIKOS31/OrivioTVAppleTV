@@ -162,10 +162,20 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
 private final class NTVCatalogCollectionView: UICollectionView, UICollectionViewDelegate {
     private var horizontalRow: CGRect?
 
-    func allowVerticalScrolling() { horizontalRow = nil }
+    func allowVerticalScrolling() {
+        #if DEBUG
+        if horizontalRow != nil { traceOffset("clear") }
+        #endif
+        horizontalRow = nil
+    }
 
     // A real pan owns its momentum; focus animations also report isDecelerating.
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { allowVerticalScrolling() }
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        #if DEBUG
+        traceOffset("beginDrag")
+        #endif
+        allowVerticalScrolling()
+    }
 
     override var contentSize: CGSize {
         didSet { if oldValue != contentSize { allowVerticalScrolling() } }
@@ -178,6 +188,11 @@ private final class NTVCatalogCollectionView: UICollectionView, UICollectionView
             if let horizontalRow, bounds.contains(horizontalRow), !isDragging {
                 offset.y = super.contentOffset.y
             }
+            #if DEBUG
+            if newValue.y != bounds.minY || offset.y != newValue.y {
+                traceOffset("request", requested: newValue.y, applied: offset.y)
+            }
+            #endif
             super.contentOffset = offset
         }
     }
@@ -192,9 +207,26 @@ private final class NTVCatalogCollectionView: UICollectionView, UICollectionView
            let frame = layoutAttributesForItem(at: previous)?.frame, bounds.contains(frame) {
             horizontalRow = frame
         }
+        #if DEBUG
+        traceOffset("focus-\(context.focusHeading.rawValue)")
+        #endif
         return true
     }
+
 }
+
+#if DEBUG
+extension NTVCatalogCollectionView {
+    func traceOffset(_ stage: String, requested: CGFloat? = nil, applied: CGFloat? = nil) {
+        guard ProcessInfo.processInfo.arguments.contains("-ntvCatalogThreeRowsFixture") else { return }
+        let pan = panGestureRecognizer
+        NSLog("%@", "[FocusTrace] [ShelfOffset] stage=\(stage) bounds=\(bounds.minY) content=\(super.contentOffset.y) presented=\(layer.presentation()?.bounds.minY ?? bounds.minY) requested=\(requested ?? bounds.minY) applied=\(applied ?? bounds.minY) armed=\(horizontalRow != nil) contained=\(horizontalRow.map { bounds.contains($0) } ?? false) dragging=\(isDragging) decel=\(isDecelerating) pan=\(pan.state.rawValue)")
+    }
+
+    @objc func scrollViewDidScroll(_ scrollView: UIScrollView) { traceOffset("scrolled") }
+
+}
+#endif
 
 /// UIKit supplies scrolling/reuse; focus stays on the existing SwiftUI buttons.
 private final class NTVCatalogHostingCell: UICollectionViewCell {

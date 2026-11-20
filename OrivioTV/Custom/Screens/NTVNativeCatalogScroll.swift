@@ -162,12 +162,10 @@ struct NTVNativeCatalogScroll<Content: View>: UIViewControllerRepresentable {
 private final class NTVCatalogCollectionView: UICollectionView, UICollectionViewDelegate {
     private var horizontalRow: CGRect?
 
-    func allowVerticalScrolling() {
-        #if DEBUG
-        if horizontalRow != nil { traceViewport("clear") }
-        #endif
-        horizontalRow = nil
-    }
+    func allowVerticalScrolling() { horizontalRow = nil }
+
+    // A real pan owns its momentum; focus animations also report isDecelerating.
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { allowVerticalScrolling() }
 
     override var contentSize: CGSize {
         didSet { if oldValue != contentSize { allowVerticalScrolling() } }
@@ -176,11 +174,8 @@ private final class NTVCatalogCollectionView: UICollectionView, UICollectionView
     override var contentOffset: CGPoint {
         get { super.contentOffset }
         set {
-            #if DEBUG
-            if newValue.y != super.contentOffset.y { traceViewport("setter", proposedY: newValue.y) }
-            #endif
             var offset = newValue
-            if let horizontalRow, bounds.contains(horizontalRow), !isDragging, !isDecelerating {
+            if let horizontalRow, bounds.contains(horizontalRow), !isDragging {
                 offset.y = super.contentOffset.y
             }
             super.contentOffset = offset
@@ -197,26 +192,9 @@ private final class NTVCatalogCollectionView: UICollectionView, UICollectionView
            let frame = layoutAttributesForItem(at: previous)?.frame, bounds.contains(frame) {
             horizontalRow = frame
         }
-        #if DEBUG
-        traceViewport("focus-\(context.focusHeading.rawValue)-\(context.previouslyFocusedIndexPath?.item ?? -1)-\(context.nextFocusedIndexPath?.item ?? -1)")
-        #endif
         return true
     }
 }
-
-#if DEBUG
-extension NTVCatalogCollectionView {
-    func traceViewport(_ stage: String, proposedY: CGFloat? = nil) {
-        guard ProcessInfo.processInfo.arguments.contains("-ntvCatalogThreeRowsFixture") else { return }
-        let row = horizontalRow
-        NSLog("%@", "[FocusTrace] [ShelfScroll] stage=\(stage) y=\(bounds.minY) requested=\(proposedY ?? bounds.minY) armed=\(row != nil) contained=\(row.map { bounds.contains($0) } ?? false) dragging=\(isDragging) decel=\(isDecelerating)")
-    }
-
-    @objc func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        traceViewport("scrolled")
-    }
-}
-#endif
 
 /// UIKit supplies scrolling/reuse; focus stays on the existing SwiftUI buttons.
 private final class NTVCatalogHostingCell: UICollectionViewCell {

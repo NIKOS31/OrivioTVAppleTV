@@ -31,7 +31,7 @@ final class NTVDesignSmoke: XCTestCase {
             remote.press(.left)
             XCTAssertTrue(focused(first, timeout: 5))
             remote.press(.select, forDuration: 2)
-            let details = app.buttons["Go to Details"]
+            let details = app.cells.containing(NSPredicate(format: "label == %@", "Go to Details")).firstMatch
             XCTAssertTrue(details.waitForExistence(timeout: 8))
             XCTAssertTrue(focused(details, timeout: 5))
             capture("ntv-native-\(type)-poster-hold-menu")

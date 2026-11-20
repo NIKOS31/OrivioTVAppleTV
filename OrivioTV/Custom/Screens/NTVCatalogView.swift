@@ -207,12 +207,17 @@ struct NTVCatalogView: View {
             NTVFocusBackdrop(hero: hero, identifier: "ntv.catalog.\(mediaType).backdrop")
             Group {
                 let proxy = nativeScroll
+                // Snapshot restoration inputs while SwiftUI is tracking this view's state.
+                let selection = restoreSelection
+                let request = restoreFocusRequest
                 ZStack(alignment: .leading) {
                     NTVNativeCatalogScroll(identifiers: ["catalogTop"] + (viewModel.sources.isEmpty
                         ? ["catalogEmpty"] : viewModel.sources.map(\.id)), scope: viewModel.contentScope,
                         identifier: "ntv.catalog.\(mediaType).rows", proxy: proxy) { identifier in
-                        catalogSection(identifier, proxy: proxy)
+                        catalogSection(identifier, proxy: proxy, selection: selection, request: request)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea(.container, edges: .horizontal)
                     // Vertical clipping reserves the top bar; horizontal rows
                     // retain their own focus-lift margin.
                     .focusSection()
@@ -304,7 +309,9 @@ struct NTVCatalogView: View {
         .onExitCommand { onBackAtRoot() }
     }
     @ViewBuilder
-    private func catalogSection(_ identifier: String, proxy: NTVCatalogScrollProxy) -> some View {
+    private func catalogSection(_ identifier: String, proxy: NTVCatalogScrollProxy,
+                                selection: NTVCatalogBrowserModel.Selection?,
+                                request: ContentFocusRouter.EntryRequest?) -> some View {
         if identifier == "catalogTop" {
             catalogHeader(proxy)
         } else if let source = viewModel.sources.first(where: { $0.id == identifier }) {
@@ -320,8 +327,8 @@ struct NTVCatalogView: View {
                 onBackAtRoot: onBackAtRoot,
                 onLeftAtStart: { openCategory(source.id) }, interceptLeftEdge: navigationIsTop,
                 onVerticalMove: { move in moveFromRow(source.id, direction: move, proxy: proxy) },
-                restoreItemID: restoreSelection?.sourceID == source.id ? restoreSelection?.itemID : nil,
-                restoreFocusRequest: restoreSelection?.sourceID == source.id ? restoreFocusRequest : nil)
+                restoreItemID: selection?.sourceID == source.id ? selection?.itemID : nil,
+                restoreFocusRequest: selection?.sourceID == source.id ? request : nil)
                 .onFirstVisibleItem { itemID in
                     viewModel.noteVisibleStart(sourceID: source.id, itemID: itemID)
                     guard itemID != nil, source.id == viewModel.sources.first?.id,

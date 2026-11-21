@@ -41,6 +41,7 @@ final class ContentFocusRouter {
     }
 
     var hasPendingRestoration: Bool { pendingEntry?.kind == .restoration }
+    var isRestoringPoster: Bool { hasPendingRestoration || (landingKind == .restoration && landingRowID != nil) }
 
     var movingToRowID: String? {
         if let pendingEntry, pendingEntry.kind == .orderedRow { return pendingEntry.rowID }
@@ -89,7 +90,7 @@ final class ContentFocusRouter {
         // Explicit row navigation yields to a new command anywhere. Ordinary
         // native entry still tolerates the departing row's late notification.
         if rowID == nil || landingRowID == rowID || pendingEntry?.rowID == rowID ||
-            hasPendingRestoration || movingToRowID != nil { cancelLanding() }
+            isRestoringPoster || movingToRowID != nil { cancelLanding() }
     }
 
     /// Normalize entry from another catalog row or its Categories header,
@@ -131,10 +132,15 @@ final class ContentFocusRouter {
         let catalogRow = rowID.hasPrefix("ntv.catalog.shelf.")
         // Scrolling to an ordered neighbor can briefly focus a third shelf.
         // Only a new command, page exit or unmount supersedes that destination.
-        if let landingRowID, landingRowID != rowID,
-           landingKind != .orderedRow || !catalogRow { cancelLanding() }
-        if let pendingEntry, pendingEntry.rowID != rowID,
-           pendingEntry.kind == .rowStart || !catalogRow { cancelLanding() }
+        // On a detail pop tvOS can focus the recommendation button before its poster.
+        let spotlight = rowID == "ntv.catalog.movie.spotlight" || rowID == "ntv.catalog.series.spotlight"
+        let restoringThroughSpotlight = spotlight && isRestoringPoster
+        if !restoringThroughSpotlight {
+            if let landingRowID, landingRowID != rowID,
+               landingKind != .orderedRow || !catalogRow { cancelLanding() }
+            if let pendingEntry, pendingEntry.rowID != rowID,
+               pendingEntry.kind == .rowStart || !catalogRow { cancelLanding() }
+        }
         // During a navigation pop UIKit can briefly choose a nearby shelf
         // before the remembered poster mounts. That automatic fallback alone
         // does not cancel restoration; a real move command in ANY row does.

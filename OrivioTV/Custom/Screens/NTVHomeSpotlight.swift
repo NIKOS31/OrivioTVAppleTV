@@ -71,7 +71,11 @@ struct NTVCatalogSpotlight: View {
             }
         }
         .frame(minHeight: 350, alignment: .topLeading)
-        .onMoveCommand { if focus.wrappedValue { onMove($0) } }
+        .onMoveCommand { direction in
+            guard focus.wrappedValue else { return }
+            if ContentFocusRouter.shared.isRestoringPoster { ContentFocusRouter.shared.noteUserMovement() }
+            onMove(direction)
+        }
         .task(id: inputs) {
             let selection = inputs
             let absent = await NTVSourceAvailabilityStore.shared.absentUntil(for: selection.items, scope: selection.scope)
@@ -126,7 +130,10 @@ struct NTVHomeSpotlight: View {
                     .lineLimit(2, reservesSpace: true)
                 NTVSpotlightAction(focus: playFocus, index: hero.spotlightIndex,
                     count: hero.spotlight.count, title: item.name, identifier: identifier,
-                    onSelect: { onSelect(item) }, onStep: { hero.stepSpotlight(by: $0) }, onBack: onBack,
+                    onSelect: { onSelect(item) }, onStep: { direction in
+                        if ContentFocusRouter.shared.isRestoringPoster { ContentFocusRouter.shared.noteUserMovement() }
+                        hero.stepSpotlight(by: direction)
+                    }, onBack: onBack,
                     onFocus: { focused in
                         hero.heroButtonFocused = focused
                         if focused {

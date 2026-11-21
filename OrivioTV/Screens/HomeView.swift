@@ -3011,7 +3011,7 @@ private struct HomePosterRowContent: View {
                     // write. Reuse its loaded data and scroll only this shelf.
                     do { try await Task.sleep(for: .milliseconds(320)) } catch { return }
                     guard !Task.isCancelled, ContentFocusRouter.shared.consumeEntry(request) else { return }
-                    ContentFocusRouter.shared.land(in: row.id, prepare: {
+                    ContentFocusRouter.shared.land(in: row.id, kind: request.kind, prepare: {
                         proxy.scrollTo(target, anchor: .center)
                     }, assign: { focusedID = target }, landed: { actualFocusedID == target },
                        focusToken: resetsRowEntry ? nil : { actualFocusedID })

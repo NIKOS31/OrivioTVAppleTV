@@ -533,6 +533,18 @@ final class NTVCoreTests: XCTestCase {
         router.noteUserMovement(in: "ntv.catalog.shelf.nearby")
         XCTAssertFalse(router.hasPendingRestoration)
         XCTAssertFalse(router.consumeEntry(request), "A real command in the fallback row must prevent a later pull back.")
+
+        let row = "ntv.catalog.shelf.remembered"
+        for spotlight in ["ntv.catalog.movie.spotlight", "ntv.catalog.series.spotlight"] {
+            let restore = router.makeEntryRequest(in: row, kind: .restoration)
+            router.noteFocused(row: spotlight)
+            XCTAssertTrue(router.consumeEntry(restore), "An automatic spotlight landing can precede the poster on pop.")
+            router.land(in: row, kind: restore.kind, assign: {}, landed: { false })
+            router.noteFocused(row: spotlight)
+            XCTAssertTrue(router.isLanding(in: row))
+            router.noteUserMovement(in: spotlight)
+            XCTAssertFalse(router.isLanding(in: row), "A remote command on the carousel supersedes the poster.")
+        }
     }
 
     @MainActor

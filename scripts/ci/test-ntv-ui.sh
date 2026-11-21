@@ -86,6 +86,18 @@ if [[ ${1:-} == --feedback-smoke ]]; then
   exit 0
 fi
 set +e
+# Collect the two known catalog regressions before the independent transport gate.
+run_test_bundle return-diagnostic \
+  -only-testing:OrivioTVUITests/NTVDesignSmoke/testHomeMoviesAndSeriesJourney \
+  -only-testing:OrivioTVUITests/NTVDesignSmoke/testTopMenuRemoteRoundTrip
+xcrun xcresulttool export attachments --path "$result_bundle" --output-path "$output/results/catalog-screenshots"
+diagnostic_export=$?
+for status in "${test_pipeline[@]}" "$diagnostic_export"; do
+  if ((status != 0)); then exit "$status"; fi
+done
+mv "$output/results/catalog-screenshots" "$output/results/return-diagnostic-screenshots" || exit 1
+# Keep diagnostic duplicates out of the full-suite log.
+mv "$output/logs/ntv-ui.log" "$output/logs/return-diagnostic.log" || exit 1
 # A native startup failure must surface before the longer remote journeys.
 run_test_bundle native-video \
   -only-testing:OrivioTVTests/NTVMediaFormatTests \

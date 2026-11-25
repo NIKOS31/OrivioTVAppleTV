@@ -15,6 +15,21 @@ enum NTVCadenceProbe {
     }()
 }
 
+/// Benchmark-only counters for code that NTVRenderScope does not cover (the
+/// 57 UIKit container). Bounded: one entry per fixed key, no per-event log.
+@MainActor enum NTVBenchCounters {
+    private(set) static var values: [String: (count: Int, milliseconds: Double)] = [:]
+    static func count(_ key: String, milliseconds: Double = 0) {
+        let old = values[key] ?? (0, 0)
+        values[key] = (old.count + 1, old.milliseconds + milliseconds)
+    }
+    static func measure<T>(_ key: String, _ work: () -> T) -> T {
+        let start = CACurrentMediaTime()
+        defer { count(key, milliseconds: (CACurrentMediaTime() - start) * 1000) }
+        return work()
+    }
+}
+
 struct NTVCadenceProbeView: UIViewRepresentable {
     func makeUIView(context: Context) -> NTVCadenceProbeUIView { NTVCadenceProbeUIView() }
     func updateUIView(_ view: NTVCadenceProbeUIView, context: Context) {}
@@ -69,8 +84,12 @@ final class NTVCadenceProbeUIView: UIView {
                 let sample = counters[scope] ?? .init()
                 return String(format: "%@=%d/%.3f", scope.rawValue, sample.evaluations, sample.totalMilliseconds)
             }.joined(separator: ",")
+            let bench = NTVBenchCounters.values.keys.sorted().map { key -> String in
+                let value = NTVBenchCounters.values[key]!
+                return String(format: "%@=%d/%.3f", key, value.count, value.milliseconds)
+            }.joined(separator: ",")
             return String(format: "now=%.4f|dropped=%d|", CACurrentMediaTime(), dropped)
-                + records.joined(separator: ";") + "|" + work
+                + records.joined(separator: ";") + "|" + work + "|" + bench
         }
         set {}
     }

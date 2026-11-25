@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Benchmark-only: builds 56 and 57 on the same runner with the same injected
-# probe, then runs NTVCadenceBenchmark in ABBA order on one simulator.
+# Benchmark-only: builds 56, 57 and the 57b diagnostic variant on the same
+# runner with the same injected probe, then runs NTVCadenceBenchmark in a
+# mirrored order (56 57 57b 57b 57 56) on one simulator.
 # Outside the qualification manifest; never packages or publishes an app.
 set -euo pipefail
 
@@ -8,7 +9,7 @@ bench_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 bench_src="$bench_root/bench/cadence"
 out="$bench_root/build/bench"
 mkdir -p "$out/logs"
-commit_of() { case $1 in 56) echo f2382df9d6ec04acbad6a8b2bee65802ca387b26 ;; 57) echo 24e09dc7f3231478add084769e74854811307096 ;; *) exit 2 ;; esac; }
+commit_of() { case $1 in 56) echo f2382df9d6ec04acbad6a8b2bee65802ca387b26 ;; 57|57b) echo 24e09dc7f3231478add084769e74854811307096 ;; *) exit 2 ;; esac; }
 
 xcrun simctl list devices available --json > "$out/simulators.json"
 simulator=$(python3 - "$out/simulators.json" <<'PY'
@@ -39,6 +40,10 @@ if text.count(anchor) != 1:
 hook = "            if NTVCadenceProbe.isRequested { NTVCadenceProbeView().frame(width: 1, height: 1).allowsHitTesting(false) }\n"
 open(path, "w", encoding="utf-8").write(text.replace(anchor, anchor + hook))
 PY
+  if [[ $label == 57* ]]; then
+    python3 "$bench_src/patch_container.py" "$tree/OrivioTV/Custom/Screens/NTVNativeCatalogScroll.swift" "$label"
+  fi
+  git -C "$tree" diff > "$out/logs/injection-$label.diff"
   git -C "$tree" diff --stat > "$out/logs/injection-$label.txt"
   git -C "$tree" status --short >> "$out/logs/injection-$label.txt"
   (
@@ -69,14 +74,14 @@ test_options=(
   ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES
 )
 
-for label in 56 57; do prepare "$label"; done
+for label in 56 57 57b; do prepare "$label"; done
 
 xcrun simctl boot "$simulator" || true
 xcrun simctl bootstatus "$simulator" -b
 open -a "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$simulator"
 status=0
 round=0
-for label in 56 57 57 56; do
+for label in 56 57 57b 57b 57 56; do
   round=$((round + 1))
   tree="$RUNNER_TEMP/ntv-$label"
   result="$out/results/round$round-$label.xcresult"

@@ -24,13 +24,15 @@ for round_dir in sorted((out / "attachments").glob("round*-*")):
         data.setdefault(label, {}).setdefault(doc["segment"], []).extend(doc["passes"])
 
 summary = {"environment": "simulateur tvOS, build Debug, GitHub Actions; pas une mesure Apple TV",
-           "order": "ABBA: 56, 57, 57, 56", "versions": {}}
+           "order": "56, 57, 57b, 57b, 57, 56 (57b: 57 + selfSizingInvalidation .disabled, diagnostic only)", "versions": {}}
 for label, segments in sorted(data.items()):
     summary["versions"][label] = {}
     for segment, passes in sorted(segments.items()):
         seconds = sum(p["seconds"] for p in passes)
         late = sum(p["lateCallbacks"] for p in passes)
-        work = {s: statistics.mean(p["workDelta"].get(s, {}).get("evaluations", 0) for p in passes) for s in SCOPES}
+        keys = list(SCOPES) + sorted({k for p in passes for k in p["workDelta"] if k.split(".")[0] in ("container", "collection", "cell")})
+        work = {s: statistics.mean(p["workDelta"].get(s, {}).get("evaluations", 0) for p in passes) for s in keys}
+        work_ms = {s: statistics.mean(p["workDelta"].get(s, {}).get("milliseconds", 0) for p in passes) for s in keys if s not in SCOPES}
         summary["versions"][label][segment] = {
             "passes": len(passes),
             "worstGapMsMedian": round(statistics.median(p["worstGapMs"] for p in passes), 2),
@@ -40,6 +42,7 @@ for label, segments in sorted(data.items()):
             "lateCallbacksPerSecond": round(late / seconds, 3) if seconds else None,
             "callbacksPerSecond": round(sum(p["callbacks"] for p in passes) / seconds, 2) if seconds else None,
             "meanEvaluationsPerPass": {k: round(v, 1) for k, v in work.items()},
+            "meanContainerMillisecondsPerPass": {k: round(v, 2) for k, v in work_ms.items()},
             "rounds": sorted({p["round"] for p in passes}),
         }
 print(json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=False))

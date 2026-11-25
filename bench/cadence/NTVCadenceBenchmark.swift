@@ -192,7 +192,7 @@ final class NTVCadenceBenchmark: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 5), "The benchmark probe must be installed.")
         let raw = try XCTUnwrap(element.value as? String)
         let parts = raw.components(separatedBy: "|")
-        XCTAssertEqual(parts.count, 4, "Unexpected probe format")
+        XCTAssertEqual(parts.count, 5, "Unexpected probe format")
         let now = try XCTUnwrap(Double(parts[0].replacingOccurrences(of: "now=", with: "")))
         let dropped = try XCTUnwrap(Int(parts[1].replacingOccurrences(of: "dropped=", with: "")))
         let windows = try parts[2].split(separator: ";").map { record -> Window in
@@ -203,7 +203,7 @@ final class NTVCadenceBenchmark: XCTestCase {
                           late: try XCTUnwrap(Int(f[4])))
         }
         var work: [String: (Double, Double)] = [:]
-        for entry in parts[3].split(separator: ",") {
+        for entry in (parts[3] + "," + parts[4]).split(separator: ",") {
             let kv = entry.split(separator: "=", maxSplits: 1).map(String.init)
             let nums = kv[1].split(separator: "/").compactMap { Double($0) }
             if nums.count == 2 { work[kv[0]] = (nums[0], nums[1]) }

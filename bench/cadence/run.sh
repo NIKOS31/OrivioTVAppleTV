@@ -63,7 +63,7 @@ test_options=(
   -parallel-testing-enabled NO
   -test-timeouts-enabled YES
   -default-test-execution-time-allowance 180
-  -maximum-test-execution-time-allowance 600
+  -maximum-test-execution-time-allowance 300
   -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile
   CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
   ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES

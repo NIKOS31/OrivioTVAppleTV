@@ -65,7 +65,7 @@ final class NTVCadenceBenchmark: XCTestCase {
 
     private func launch(_ arguments: [String]) -> XCUIApplication {
         continueAfterFailure = false
-        executionTimeAllowance = 600
+        executionTimeAllowance = 300
         let app = XCUIApplication()
         app.launchArguments = arguments
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"

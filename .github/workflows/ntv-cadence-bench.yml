@@ -17,8 +17,8 @@ concurrency:
 jobs:
   bench:
     name: Cadence 56 vs 57 (simulator)
-    runs-on: macos-26
-    timeout-minutes: 120
+    runs-on: macos-26-intel
+    timeout-minutes: 330
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       XCODEGEN_VERSION: '2.46.0'

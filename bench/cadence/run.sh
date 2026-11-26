@@ -111,16 +111,17 @@ if [[ $mode == full ]]; then
   python3 "$bench_src/summarize.py" "$out" > "$out/summary.json" || status=1
 fi
 
-# Profiles: best effort, never change the cadence status. The profiler
-# attaches 25 s after the app process appears, after launch and navigation;
-# the test idles 30 s after its warm-up before the sustained presses.
+# Profiles: best effort, never change the cadence status. `sample` (macOS)
+# records the app's process 55 s to 91 s after it appears: in run
+# 45831603069 the sustained presses ran from 50-56 s to 93-99 s after launch
+# in all five tests. xctrace never started recording a simulator app there.
 mkdir -p "$out/profiles" "$out/results"
 # Run 45802547277: xctrace never returned once the app ended (orphan at the job limit).
-# Interrupt after a deadline so it saves what it has, then kill it.
+# Interrupt after a deadline so the tool writes what it has, then kill it.
 bounded() {
   local seconds=$1 cmd i; shift
   # Background jobs of a script start with SIGINT ignored; restore it so the
-  # interrupt reaches the command and xctrace can finish its trace file.
+  # interrupt reaches the command and it can write its output.
   "${python:-python3}" -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' "$@" & cmd=$!
   for i in $(seq 1 "$seconds"); do kill -0 "$cmd" 2>/dev/null || { wait "$cmd"; return $?; }; sleep 1; done
   echo "bounded: interrupt after ${seconds}s: $1 $2" >&2
@@ -132,7 +133,7 @@ bounded() {
 
 profile() {
   local label=$1 test=$2 tree="$RUNNER_TEMP/ntv-$1" name="$1-$2" pid="" i
-  local trace="$RUNNER_TEMP/profile-$name.trace" app_pattern='/OrivioTV[.]app/OrivioTV( |$)' before candidate
+  local raw="$out/profiles/$name.sample.txt" app_pattern='/OrivioTV[.]app/OrivioTV( |$)' before candidate
   before=$(pgrep -f "$app_pattern" | tr '\n' ' ' || true)
   (cd "$tree" && TEST_RUNNER_NTV_PROFILE=1 xcodebuild test-without-building "${test_options[@]}" \
     CODE_SIGN_ENTITLEMENTS="$tree/Config/NTV-CI-Simulator.entitlements" \
@@ -150,21 +151,16 @@ profile() {
   if [[ -z $pid ]]; then
     echo "no app process" > "$out/logs/profile-record-$name.log"; wait "$xcode" || true; return 0
   fi
-  sleep 25
-  # Simulator processes are only found on the simulator device, not the host.
-  # 55 s: ends while the presses still run (they stop about 65 s after the attach),
-  # so the recording never outlives the app. The bound only guards a stuck xctrace.
-  bounded 90 xcrun xctrace record --template 'Time Profiler' --device "$simulator" --attach "$pid" \
-    --time-limit 55s --output "$trace" --no-prompt > "$out/logs/profile-record-$name.log" 2>&1 \
-    || echo "record exit $?" >> "$out/logs/profile-record-$name.log"
+  sleep 55
+  # Simulator apps are host processes; sudo when available so task_for_pid is not refused.
+  local sampler=(sample)
+  sudo -n true 2>/dev/null && sampler=(sudo -n sample)
+  bounded 80 "${sampler[@]}" "$pid" 36 1 -mayDie -file "$raw" > "$out/logs/profile-record-$name.log" 2>&1 \
+    || echo "sample exit $?" >> "$out/logs/profile-record-$name.log"
   wait "$xcode" || echo "profile test exit $?" >> "$out/logs/profile-record-$name.log"
-  [[ -d $trace ]] || return 0
-  bounded 300 xcrun xctrace export --input "$trace" --toc > "$out/logs/profile-toc-$name.xml" 2>&1 || true
-  bounded 600 xcrun xctrace export --input "$trace" \
-    --xpath '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]' \
-    > "$RUNNER_TEMP/profile-$name.xml" 2> "$out/logs/profile-export-$name.log" || return 0
-  python3 "$bench_src/profile.py" "$RUNNER_TEMP/profile-$name.xml" "$label" "$test" \
-    > "$out/profiles/$name.json" 2>> "$out/logs/profile-export-$name.log" || true
+  [[ -s $raw ]] || return 0
+  python3 "$bench_src/profile.py" "$raw" "$label" "$test" \
+    > "$out/profiles/$name.json" 2> "$out/logs/profile-parse-$name.log" || true
 }
 for spec in 57:testProfileFilmsVertical 56:testProfileFilmsVertical 57:testProfileHomeVertical \
             56:testProfileHomeVertical 57:testProfileFilmsHorizontal; do

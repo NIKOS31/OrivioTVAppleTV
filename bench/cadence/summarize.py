@@ -5,6 +5,9 @@ import statistics
 import sys
 
 out = pathlib.Path(sys.argv[1])
+order = sys.argv[2] if len(sys.argv) > 2 else "56 57 57c 57c 57 56"
+NOTES = {"57c": "57 + poster cells gated by == with a stable callback box",
+         "57f": "57 with the card platter tilt/parallax off (Inclinaison des cartes off)"}
 SCOPES = ("body.catalog", "body.posterRow", "body.posterCell", "body.posterContainer",
           "body.catalogSpotlight", "body.homeSpotlight", "body.focusBackdrop", "action.catalogVerticalMove")
 data = {}
@@ -24,7 +27,9 @@ for round_dir in sorted((out / "attachments").glob("round*-*")):
         data.setdefault(label, {}).setdefault(doc["segment"], []).extend(doc["passes"])
 
 summary = {"environment": "simulateur tvOS, build Debug, GitHub Actions; pas une mesure Apple TV",
-           "order": "56, 57, 57c, 57c, 57, 56 (57c: 57 + poster cells gated by == with a stable callback box, diagnostic only)", "versions": {}}
+           "order": ", ".join(order.split()),
+           "variants": {k: v + ", diagnostic only" for k, v in NOTES.items() if k in order.split()},
+           "versions": {}}
 for label, segments in sorted(data.items()):
     summary["versions"][label] = {}
     for segment, passes in sorted(segments.items()):

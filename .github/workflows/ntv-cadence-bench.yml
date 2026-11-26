@@ -57,8 +57,8 @@ jobs:
       - name: Build 56 and 57 and run the cadence benchmark
         shell: bash
         env:
-          # Cadence rounds already measured in runs 45706101762 and 45787463571.
-          BENCH_MODE: profile
+          # 57 vs 57f (card tilt off), cadence rounds only; profiles in run 45872064535.
+          BENCH_MODE: parallax
         run: bash bench/cadence/run.sh
 
       - name: Upload benchmark results

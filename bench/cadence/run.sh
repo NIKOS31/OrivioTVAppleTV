@@ -11,9 +11,10 @@ bench_src="$bench_root/bench/cadence"
 out="$bench_root/build/bench"
 mkdir -p "$out/logs"
 # full: builds 56 57 57c, cadence rounds, then profiles. profile: builds 56 57, profiles only.
+# parallax: builds 57 and 57f (card tilt off), cadence rounds only.
 mode=${BENCH_MODE:-full}
-[[ $mode == full || $mode == profile ]]
-commit_of() { case $1 in 56) echo f2382df9d6ec04acbad6a8b2bee65802ca387b26 ;; 57|57b|57c) echo 24e09dc7f3231478add084769e74854811307096 ;; *) exit 2 ;; esac; }
+[[ $mode == full || $mode == profile || $mode == parallax ]]
+commit_of() { case $1 in 56) echo f2382df9d6ec04acbad6a8b2bee65802ca387b26 ;; 57|57b|57c|57f) echo 24e09dc7f3231478add084769e74854811307096 ;; *) exit 2 ;; esac; }
 
 xcrun simctl list devices available --json > "$out/simulators.json"
 simulator=$(python3 - "$out/simulators.json" <<'PY'
@@ -48,8 +49,11 @@ PY
     # Diagnostic only: poster cells gated by == again, callbacks behind a stable box.
     git -C "$tree" apply --whitespace=nowarn "$bench_src/57c-equatable-poster-cells.diff"
   fi
+  if [[ $label == 57f ]]; then
+    python3 "$bench_src/flat_cards.py" "$tree/OrivioTV/Core/PerformanceSettingsStore.swift"
+  fi
   if [[ $label == 57* ]]; then
-    python3 "$bench_src/patch_container.py" "$tree/OrivioTV/Custom/Screens/NTVNativeCatalogScroll.swift" "${label/57c/57}"
+    python3 "$bench_src/patch_container.py" "$tree/OrivioTV/Custom/Screens/NTVNativeCatalogScroll.swift" "${label/57[cf]/57}"
   fi
   git -C "$tree" diff > "$out/logs/injection-$label.diff"
   git -C "$tree" diff --stat > "$out/logs/injection-$label.txt"
@@ -82,7 +86,11 @@ test_options=(
   ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES
 )
 
-if [[ $mode == full ]]; then labels="56 57 57c"; rounds="56 57 57c 57c 57 56"; else labels="56 57"; rounds=""; fi
+case $mode in
+  full) labels="56 57 57c"; rounds="56 57 57c 57c 57 56" ;;
+  parallax) labels="57 57f"; rounds="57 57f 57f 57 57 57f" ;;
+  *) labels="56 57"; rounds="" ;;
+esac
 for label in $labels; do prepare "$label"; done
 
 crash_marker="$RUNNER_TEMP/bench-start"; touch "$crash_marker"
@@ -107,8 +115,8 @@ for label in $rounds; do
   xcrun xcresulttool export attachments --path "$result" --output-path "$out/attachments/round$round-$label" \
     > "$out/logs/export-round$round-$label.log" 2>&1 || status=1
 done
-if [[ $mode == full ]]; then
-  python3 "$bench_src/summarize.py" "$out" > "$out/summary.json" || status=1
+if [[ -n $rounds ]]; then
+  python3 "$bench_src/summarize.py" "$out" "$rounds" > "$out/summary.json" || status=1
 fi
 
 # Profiles: best effort, never change the cadence status. `sample` (macOS)
@@ -162,8 +170,10 @@ profile() {
   python3 "$bench_src/profile.py" "$raw" "$label" "$test" \
     > "$out/profiles/$name.json" 2> "$out/logs/profile-parse-$name.log" || true
 }
-for spec in 57:testProfileFilmsVertical 56:testProfileFilmsVertical 57:testProfileHomeVertical \
-            56:testProfileHomeVertical 57:testProfileFilmsHorizontal; do
+# Profiles perturb the app (sample suspends it); the parallax A/B measures cadence only.
+[[ $mode == parallax ]] && profile_specs="" || profile_specs="57:testProfileFilmsVertical 56:testProfileFilmsVertical
+  57:testProfileHomeVertical 56:testProfileHomeVertical 57:testProfileFilmsHorizontal"
+for spec in $profile_specs; do
   profile "${spec%%:*}" "${spec#*:}" || true
 done
 # Crash reports written during the bench (app or test runner), to explain an

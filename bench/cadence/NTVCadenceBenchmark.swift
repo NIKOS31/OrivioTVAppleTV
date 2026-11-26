@@ -61,6 +61,61 @@ final class NTVCadenceBenchmark: XCTestCase {
                     home: rows[0], warmUp: row)
     }
 
+    // MARK: - Profiling (run.sh attaches Time Profiler; skipped in the rounds)
+
+    /// Same paths and pace as the measured tests, but a 30 s idle gap after
+    /// the warm-up (the profiler attaches after launch and navigation) and 15
+    /// sequences in a row, so the trace holds presses rather than startup.
+    func testProfileFilmsVertical() throws {
+        try profileGate()
+        let app = launch(catalogArgs)
+        let rows = try enterMovies(app)
+        try sustain(app, [.down, .down, .up, .up], home: rows[0], warmUp: rows)
+    }
+
+    func testProfileFilmsHorizontal() throws {
+        try profileGate()
+        let app = launch(catalogArgs)
+        let rows = try enterMovies(app)
+        let row = (0..<7).map { app.buttons["ntv.poster.movie.fixture.catalog.fixture-row-0.\($0)"] }
+        try sustain(app, Array(repeating: .right, count: 6) + Array(repeating: .left, count: 6),
+                    home: rows[0], warmUp: row, sequences: 5)
+    }
+
+    func testProfileHomeVertical() throws {
+        try profileGate()
+        let app = launch(["-homeDemo", "-ntvTopMenuDemo", "-ntvRowLayoutFixture", "-ntvSeanimeDemo",
+                          "-orivio.diag.capture.v1", "YES", "-ntvCadenceProbe"])
+        let rows = try enterHome(app)
+        try sustain(app, [.down, .down, .up, .up], home: rows[0], warmUp: rows)
+    }
+
+    private func profileGate() throws {
+        guard ProcessInfo.processInfo.environment["NTV_PROFILE"] == "1" else {
+            throw XCTSkip("Profiling pass, run only by bench/cadence/run.sh.")
+        }
+    }
+
+    private func sustain(_ app: XCUIApplication, _ moves: [XCUIRemote.Button], home: XCUIElement,
+                         warmUp: [XCUIElement], sequences: Int = 15) throws {
+        let remote = XCUIRemote.shared
+        for target in warmUp.dropFirst() {
+            remote.press(moves[0])
+            XCTAssertTrue(focused(target, timeout: 8), "warm-up did not reach \(target.identifier)")
+        }
+        for _ in warmUp.dropFirst() { remote.press(moves.last!) }
+        XCTAssertTrue(focused(home, timeout: 8))
+        Thread.sleep(forTimeInterval: 30)
+        for _ in 0..<sequences {
+            for move in moves {
+                remote.press(move)
+                Thread.sleep(forTimeInterval: pace)
+            }
+        }
+        Thread.sleep(forTimeInterval: 1.0)
+        XCTAssertTrue(focused(home, timeout: 8), "profiling sequence did not end on its start poster")
+    }
+
     // MARK: - Navigation (same paths as NTVDesignSmoke)
 
     private func launch(_ arguments: [String]) -> XCUIApplication {

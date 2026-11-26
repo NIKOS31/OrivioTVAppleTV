@@ -24,7 +24,7 @@ for round_dir in sorted((out / "attachments").glob("round*-*")):
         data.setdefault(label, {}).setdefault(doc["segment"], []).extend(doc["passes"])
 
 summary = {"environment": "simulateur tvOS, build Debug, GitHub Actions; pas une mesure Apple TV",
-           "order": "56, 57, 57b, 57b, 57, 56 (57b: 57 + selfSizingInvalidation .disabled, diagnostic only)", "versions": {}}
+           "order": "56, 57, 57c, 57c, 57, 56 (57c: 57 + poster cells gated by == with a stable callback box, diagnostic only)", "versions": {}}
 for label, segments in sorted(data.items()):
     summary["versions"][label] = {}
     for segment, passes in sorted(segments.items()):

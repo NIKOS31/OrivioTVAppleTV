@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Benchmark-only: builds 56, 57 and the 57b diagnostic variant on the same
+# Benchmark-only: builds 56, 57 and the 57c diagnostic variant on the same
 # runner with the same injected probe, then runs NTVCadenceBenchmark in a
-# mirrored order (56 57 57b 57b 57 56) on one simulator.
+# mirrored order (56 57 57c 57c 57 56) on one simulator, then records Time
+# Profiler traces of the app's main thread during sustained remote presses.
 # Outside the qualification manifest; never packages or publishes an app.
 set -euo pipefail
 
@@ -9,7 +10,7 @@ bench_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 bench_src="$bench_root/bench/cadence"
 out="$bench_root/build/bench"
 mkdir -p "$out/logs"
-commit_of() { case $1 in 56) echo f2382df9d6ec04acbad6a8b2bee65802ca387b26 ;; 57|57b) echo 24e09dc7f3231478add084769e74854811307096 ;; *) exit 2 ;; esac; }
+commit_of() { case $1 in 56) echo f2382df9d6ec04acbad6a8b2bee65802ca387b26 ;; 57|57b|57c) echo 24e09dc7f3231478add084769e74854811307096 ;; *) exit 2 ;; esac; }
 
 xcrun simctl list devices available --json > "$out/simulators.json"
 simulator=$(python3 - "$out/simulators.json" <<'PY'
@@ -40,8 +41,12 @@ if text.count(anchor) != 1:
 hook = "            if NTVCadenceProbe.isRequested { NTVCadenceProbeView().frame(width: 1, height: 1).allowsHitTesting(false) }\n"
 open(path, "w", encoding="utf-8").write(text.replace(anchor, anchor + hook))
 PY
+  if [[ $label == 57c ]]; then
+    # Diagnostic only: poster cells gated by == again, callbacks behind a stable box.
+    git -C "$tree" apply --whitespace=nowarn "$bench_src/57c-equatable-poster-cells.diff"
+  fi
   if [[ $label == 57* ]]; then
-    python3 "$bench_src/patch_container.py" "$tree/OrivioTV/Custom/Screens/NTVNativeCatalogScroll.swift" "$label"
+    python3 "$bench_src/patch_container.py" "$tree/OrivioTV/Custom/Screens/NTVNativeCatalogScroll.swift" "${label/57c/57}"
   fi
   git -C "$tree" diff > "$out/logs/injection-$label.diff"
   git -C "$tree" diff --stat > "$out/logs/injection-$label.txt"
@@ -74,14 +79,14 @@ test_options=(
   ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES
 )
 
-for label in 56 57 57b; do prepare "$label"; done
+for label in 56 57 57c; do prepare "$label"; done
 
 xcrun simctl boot "$simulator" || true
 xcrun simctl bootstatus "$simulator" -b
 open -a "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$simulator"
 status=0
 round=0
-for label in 56 57 57b 57b 57 56; do
+for label in 56 57 57c 57c 57 56; do
   round=$((round + 1))
   tree="$RUNNER_TEMP/ntv-$label"
   result="$out/results/round$round-$label.xcresult"
@@ -98,5 +103,46 @@ for label in 56 57 57b 57b 57 56; do
     > "$out/logs/export-round$round-$label.log" 2>&1 || status=1
 done
 python3 "$bench_src/summarize.py" "$out" > "$out/summary.json" || status=1
+
+# Profiles: best effort, never change the cadence status. The profiler
+# attaches 25 s after the app process appears, after launch and navigation;
+# the test idles 30 s after its warm-up before the sustained presses.
+mkdir -p "$out/profiles"
+profile() {
+  local label=$1 test=$2 tree="$RUNNER_TEMP/ntv-$1" name="$1-$2" pid="" i
+  local trace="$RUNNER_TEMP/profile-$name.trace" app_pattern='/OrivioTV[.]app/OrivioTV( |$)' before candidate
+  before=$(pgrep -f "$app_pattern" | tr '\n' ' ' || true)
+  (cd "$tree" && TEST_RUNNER_NTV_PROFILE=1 xcodebuild test-without-building "${test_options[@]}" \
+    CODE_SIGN_ENTITLEMENTS="$tree/Config/NTV-CI-Simulator.entitlements" \
+    -derivedDataPath "$tree/build/ci/DerivedData" -resultBundlePath "$out/results/profile-$name.xcresult" \
+    -only-testing:"OrivioTVUITests/NTVCadenceBenchmark/$test") > "$out/logs/profile-test-$name.log" 2>&1 &
+  local xcode=$!
+  # A new process only: the command line carries the launch arguments after the path.
+  for i in $(seq 1 240); do
+    for candidate in $(pgrep -f "$app_pattern" || true); do
+      [[ " $before " == *" $candidate "* ]] || { pid=$candidate; break; }
+    done
+    [[ -n $pid ]] && break
+    sleep 0.5
+  done
+  if [[ -z $pid ]]; then
+    echo "no app process" > "$out/logs/profile-record-$name.log"; wait "$xcode" || true; return 0
+  fi
+  sleep 25
+  xcrun xctrace record --template 'Time Profiler' --attach "$pid" --time-limit 70s \
+    --output "$trace" --no-prompt > "$out/logs/profile-record-$name.log" 2>&1 || true
+  wait "$xcode" || echo "profile test exit $?" >> "$out/logs/profile-record-$name.log"
+  [[ -d $trace ]] || return 0
+  xcrun xctrace export --input "$trace" --toc > "$out/logs/profile-toc-$name.xml" 2>&1 || true
+  xcrun xctrace export --input "$trace" \
+    --xpath '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]' \
+    > "$RUNNER_TEMP/profile-$name.xml" 2> "$out/logs/profile-export-$name.log" || return 0
+  python3 "$bench_src/profile.py" "$RUNNER_TEMP/profile-$name.xml" "$label" "$test" \
+    > "$out/profiles/$name.json" 2>> "$out/logs/profile-export-$name.log" || true
+}
+for spec in 57:testProfileFilmsVertical 56:testProfileFilmsVertical 57:testProfileHomeVertical \
+            56:testProfileHomeVertical 57:testProfileFilmsHorizontal; do
+  profile "${spec%%:*}" "${spec#*:}" || true
+done
 cat "$out/summary.json"
 exit "$status"

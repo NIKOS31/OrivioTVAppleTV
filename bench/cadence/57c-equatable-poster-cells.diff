@@ -1,0 +1,141 @@
+diff --git a/OrivioTV/Screens/HomeView.swift b/OrivioTV/Screens/HomeView.swift
+index cfcf843..e399c14 100644
+--- a/OrivioTV/Screens/HomeView.swift
++++ b/OrivioTV/Screens/HomeView.swift
+@@ -2845,8 +2845,17 @@ private struct HomePosterRowContent: View {
+         visibility.items(keeping: focusedID)
+     }
+ 
++    /// Stable for the row's lifetime; refreshed below on every row evaluation,
++    /// so cells skipped by their == gate still call the current closures.
++    @State private var cellActions = HomePosterCellActions()
++
+     var body: some View {
+         let _ = NTVRenderProbe.evaluated(.posterRow)
++        let _ = cellActions.refresh(onSelect: onSelect, onPlayManually: onPlayManually,
++                                    onVerticalMove: onVerticalMove, onFocusChanged: { id, focused in
++                                        if focused { actualFocusedID = id }
++                                        else if actualFocusedID == id { actualFocusedID = nil }
++                                    })
+         let visible = displayedItems
+         VStack(alignment: .leading, spacing: OrivioSpacing.md) {
+             header
+@@ -2890,17 +2899,13 @@ private struct HomePosterRowContent: View {
+                                 showLabel: homeCatalogSettings.showPosterLabels,
+                                 cornerRadius: CGFloat(homeCatalogSettings.posterCornerRadius),
+                                 hero: hero,
+-                                onSelect: onSelect,
+-                                onPlayManually: onPlayManually,
++                                actions: cellActions,
+                                 accessibilityPrefix: accessibilityPrefix,
+-                                rowID: row.id, onVerticalMove: onVerticalMove,
++                                rowID: row.id, observesVerticalMove: onVerticalMove != nil,
+                                 tracksMovement: resetsRowEntry,
+-                                focusBinding: $focusedID,
+-                                onFocusChanged: { id, focused in
+-                                    if focused { actualFocusedID = id }
+-                                    else if actualFocusedID == id { actualFocusedID = nil }
+-                                }
++                                focusBinding: $focusedID
+                             )
++                            .equatable()
+                             // Scroll target for the Back-to-start jump.
+                             .id(item.id)
+                         }
+@@ -3181,8 +3186,33 @@ struct NTVAvailabilityObserver: View {
+     }
+ }
+ 
++/// The row's current callbacks, behind one stable reference. Not observable:
++/// refreshing it never invalidates a view, it only changes what a later
++/// press or focus change calls.
++@MainActor
++private final class HomePosterCellActions {
++    private(set) var onSelect: (MetaItem) -> Void = { _ in }
++    private(set) var onPlayManually: (MetaItem, MetaVideo?) -> Void = { _, _ in }
++    private(set) var onVerticalMove: ((MoveCommandDirection) -> Void)?
++    private(set) var onFocusChanged: (String, Bool) -> Void = { _, _ in }
++
++    func refresh(onSelect: @escaping (MetaItem) -> Void,
++                 onPlayManually: @escaping (MetaItem, MetaVideo?) -> Void,
++                 onVerticalMove: ((MoveCommandDirection) -> Void)?,
++                 onFocusChanged: @escaping (String, Bool) -> Void) {
++        self.onSelect = onSelect
++        self.onPlayManually = onPlayManually
++        self.onVerticalMove = onVerticalMove
++        self.onFocusChanged = onFocusChanged
++    }
++}
++
+ /// A reused lazy cell must receive the current row's focus binding and callbacks.
+-private struct HomePosterCell: View {
++/// Equatable on what it displays: a focus step re-runs the row body, and
++/// without this gate every materialized card re-built its tree per step.
++/// Focus visuals still update through the cell's own @State and the native
++/// platter, which bypass ==.
++private struct HomePosterCell: View, Equatable {
+     @EnvironmentObject private var theme: ThemeManager
+     let item: MetaItem
+     let useLandscape: Bool
+@@ -3191,22 +3221,29 @@ private struct HomePosterCell: View {
+     let showLabel: Bool
+     let cornerRadius: CGFloat
+     let hero: HeroFocus
+-    let onSelect: (MetaItem) -> Void
+-    let onPlayManually: (MetaItem, MetaVideo?) -> Void
++    let actions: HomePosterCellActions
+     let accessibilityPrefix: String
+     let rowID: String
+-    let onVerticalMove: ((MoveCommandDirection) -> Void)?
++    let observesVerticalMove: Bool
+     let tracksMovement: Bool
++    /// Same FocusState storage for the row's lifetime; not part of ==.
+     let focusBinding: FocusState<String?>.Binding
+-    let onFocusChanged: (String, Bool) -> Void
+     @State private var focused = false
+ 
++    static func == (a: Self, b: Self) -> Bool {
++        a.item == b.item && a.useLandscape == b.useLandscape && a.captionWidth == b.captionWidth
++            && a.showLabel == b.showLabel && a.cornerRadius == b.cornerRadius && a.hero === b.hero
++            && a.actions === b.actions && a.accessibilityPrefix == b.accessibilityPrefix
++            && a.rowID == b.rowID && a.observesVerticalMove == b.observesVerticalMove
++            && a.tracksMovement == b.tracksMovement
++    }
++
+     var body: some View {
+         let _ = NTVRenderProbe.evaluated(.posterCell)
+         let _ = HoldProbe.renderTick("poster \(item.name)")
+         VStack(alignment: .leading, spacing: 0) {
+             Button {
+-                onSelect(item)
++                actions.onSelect(item)
+             } label: {
+                 Group {
+                     if useLandscape {
+@@ -3223,7 +3260,7 @@ private struct HomePosterCell: View {
+                 }
+                 .onFocusChange { isFocused in
+                     focused = isFocused
+-                    onFocusChanged(item.id, isFocused)
++                    actions.onFocusChanged(item.id, isFocused)
+                     if isFocused, PerformanceSettingsStore.shared.settings.showHoldProbe {
+                         HoldProbe.log("focus — poster \(item.name)")
+                     }
+@@ -3240,13 +3277,14 @@ private struct HomePosterCell: View {
+             .mediaCardButtonStyle()
+             .buttonBorderShape(.roundedRectangle(radius: useLandscape ? 16 : cornerRadius))
+             .holdProbe("poster \(item.name)", enabled: PerformanceSettingsStore.shared.settings.showHoldProbe)
+-            .posterHoldMenu(item) { onSelect(item) }
+-            .onPlayPauseCommand { onPlayManually(item, nil) }
++            .posterHoldMenu(item) { [actions] in actions.onSelect(item) }
++            .onPlayPauseCommand { [actions] in actions.onPlayManually(item, nil) }
+             .accessibilityIdentifier("\(accessibilityPrefix).\(item.type).\(item.id)")
+             .focused(focusBinding, equals: item.id)
+             // The focused button receives the command before its enclosing scroll view.
+             .modifier(CatalogRowMovementObserver(
+-                enabled: tracksMovement || onVerticalMove != nil, rowID: rowID, onVerticalMove: onVerticalMove))
++                enabled: tracksMovement || observesVerticalMove, rowID: rowID,
++                onVerticalMove: observesVerticalMove ? { [actions] in actions.onVerticalMove?($0) } : nil))
+ 
+             if showLabel {
+                 ATVCardCaption(

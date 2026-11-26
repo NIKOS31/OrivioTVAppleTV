@@ -56,6 +56,9 @@ jobs:
 
       - name: Build 56 and 57 and run the cadence benchmark
         shell: bash
+        env:
+          # Cadence rounds already measured in runs 45706101762 and 45787463571.
+          BENCH_MODE: profile
         run: bash bench/cadence/run.sh
 
       - name: Upload benchmark results

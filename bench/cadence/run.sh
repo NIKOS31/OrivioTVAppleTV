@@ -10,6 +10,9 @@ bench_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 bench_src="$bench_root/bench/cadence"
 out="$bench_root/build/bench"
 mkdir -p "$out/logs"
+# full: builds 56 57 57c, cadence rounds, then profiles. profile: builds 56 57, profiles only.
+mode=${BENCH_MODE:-full}
+[[ $mode == full || $mode == profile ]]
 commit_of() { case $1 in 56) echo f2382df9d6ec04acbad6a8b2bee65802ca387b26 ;; 57|57b|57c) echo 24e09dc7f3231478add084769e74854811307096 ;; *) exit 2 ;; esac; }
 
 xcrun simctl list devices available --json > "$out/simulators.json"
@@ -79,14 +82,16 @@ test_options=(
   ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES
 )
 
-for label in 56 57 57c; do prepare "$label"; done
+if [[ $mode == full ]]; then labels="56 57 57c"; rounds="56 57 57c 57c 57 56"; else labels="56 57"; rounds=""; fi
+for label in $labels; do prepare "$label"; done
 
+crash_marker="$RUNNER_TEMP/bench-start"; touch "$crash_marker"
 xcrun simctl boot "$simulator" || true
 xcrun simctl bootstatus "$simulator" -b
 open -a "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$simulator"
 status=0
 round=0
-for label in 56 57 57c 57c 57 56; do
+for label in $rounds; do
   round=$((round + 1))
   tree="$RUNNER_TEMP/ntv-$label"
   result="$out/results/round$round-$label.xcresult"
@@ -102,12 +107,14 @@ for label in 56 57 57c 57c 57 56; do
   xcrun xcresulttool export attachments --path "$result" --output-path "$out/attachments/round$round-$label" \
     > "$out/logs/export-round$round-$label.log" 2>&1 || status=1
 done
-python3 "$bench_src/summarize.py" "$out" > "$out/summary.json" || status=1
+if [[ $mode == full ]]; then
+  python3 "$bench_src/summarize.py" "$out" > "$out/summary.json" || status=1
+fi
 
 # Profiles: best effort, never change the cadence status. The profiler
 # attaches 25 s after the app process appears, after launch and navigation;
 # the test idles 30 s after its warm-up before the sustained presses.
-mkdir -p "$out/profiles"
+mkdir -p "$out/profiles" "$out/results"
 profile() {
   local label=$1 test=$2 tree="$RUNNER_TEMP/ntv-$1" name="$1-$2" pid="" i
   local trace="$RUNNER_TEMP/profile-$name.trace" app_pattern='/OrivioTV[.]app/OrivioTV( |$)' before candidate
@@ -129,7 +136,8 @@ profile() {
     echo "no app process" > "$out/logs/profile-record-$name.log"; wait "$xcode" || true; return 0
   fi
   sleep 25
-  xcrun xctrace record --template 'Time Profiler' --attach "$pid" --time-limit 70s \
+  # Simulator processes are only found on the simulator device, not the host.
+  xcrun xctrace record --template 'Time Profiler' --device "$simulator" --attach "$pid" --time-limit 70s \
     --output "$trace" --no-prompt > "$out/logs/profile-record-$name.log" 2>&1 || true
   wait "$xcode" || echo "profile test exit $?" >> "$out/logs/profile-record-$name.log"
   [[ -d $trace ]] || return 0
@@ -144,5 +152,15 @@ for spec in 57:testProfileFilmsVertical 56:testProfileFilmsVertical 57:testProfi
             56:testProfileHomeVertical 57:testProfileFilmsHorizontal; do
   profile "${spec%%:*}" "${spec#*:}" || true
 done
-cat "$out/summary.json"
+# Crash reports written during the bench (app or test runner), to explain an
+# unexpected exit. Fixture app only; no profile or viewing data.
+mkdir -p "$out/logs/crash"
+find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -type f -newer "$crash_marker" \
+  \( -name 'OrivioTV*' -o -name 'OrivioTVUITests*' \) -exec cp {} "$out/logs/crash/" \; 2>/dev/null || true
+ls -l "$out/logs/crash" || true
+if [[ $mode == profile ]]; then
+  ls "$out"/profiles/*.json >/dev/null 2>&1 || { echo "No profile was produced."; status=1; }
+else
+  cat "$out/summary.json"
+fi
 exit "$status"

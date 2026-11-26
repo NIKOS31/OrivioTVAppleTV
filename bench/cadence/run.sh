@@ -115,6 +115,21 @@ fi
 # attaches 25 s after the app process appears, after launch and navigation;
 # the test idles 30 s after its warm-up before the sustained presses.
 mkdir -p "$out/profiles" "$out/results"
+# Run 45802547277: xctrace never returned once the app ended (orphan at the job limit).
+# Interrupt after a deadline so it saves what it has, then kill it.
+bounded() {
+  local seconds=$1 cmd i; shift
+  # Background jobs of a script start with SIGINT ignored; restore it so the
+  # interrupt reaches the command and xctrace can finish its trace file.
+  "${python:-python3}" -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' "$@" & cmd=$!
+  for i in $(seq 1 "$seconds"); do kill -0 "$cmd" 2>/dev/null || { wait "$cmd"; return $?; }; sleep 1; done
+  echo "bounded: interrupt after ${seconds}s: $1 $2" >&2
+  kill -INT "$cmd" 2>/dev/null || true
+  for i in $(seq 1 60); do kill -0 "$cmd" 2>/dev/null || { wait "$cmd" || true; return 124; }; sleep 1; done
+  echo "bounded: kill: $1 $2" >&2
+  kill -KILL "$cmd" 2>/dev/null || true; wait "$cmd" 2>/dev/null || true; return 124
+}
+
 profile() {
   local label=$1 test=$2 tree="$RUNNER_TEMP/ntv-$1" name="$1-$2" pid="" i
   local trace="$RUNNER_TEMP/profile-$name.trace" app_pattern='/OrivioTV[.]app/OrivioTV( |$)' before candidate
@@ -137,12 +152,15 @@ profile() {
   fi
   sleep 25
   # Simulator processes are only found on the simulator device, not the host.
-  xcrun xctrace record --template 'Time Profiler' --device "$simulator" --attach "$pid" --time-limit 70s \
-    --output "$trace" --no-prompt > "$out/logs/profile-record-$name.log" 2>&1 || true
+  # 55 s: ends while the presses still run (they stop about 65 s after the attach),
+  # so the recording never outlives the app. The bound only guards a stuck xctrace.
+  bounded 90 xcrun xctrace record --template 'Time Profiler' --device "$simulator" --attach "$pid" \
+    --time-limit 55s --output "$trace" --no-prompt > "$out/logs/profile-record-$name.log" 2>&1 \
+    || echo "record exit $?" >> "$out/logs/profile-record-$name.log"
   wait "$xcode" || echo "profile test exit $?" >> "$out/logs/profile-record-$name.log"
   [[ -d $trace ]] || return 0
-  xcrun xctrace export --input "$trace" --toc > "$out/logs/profile-toc-$name.xml" 2>&1 || true
-  xcrun xctrace export --input "$trace" \
+  bounded 300 xcrun xctrace export --input "$trace" --toc > "$out/logs/profile-toc-$name.xml" 2>&1 || true
+  bounded 600 xcrun xctrace export --input "$trace" \
     --xpath '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]' \
     > "$RUNNER_TEMP/profile-$name.xml" 2> "$out/logs/profile-export-$name.log" || return 0
   python3 "$bench_src/profile.py" "$RUNNER_TEMP/profile-$name.xml" "$label" "$test" \

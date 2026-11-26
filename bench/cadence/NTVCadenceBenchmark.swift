@@ -133,14 +133,15 @@ final class NTVCadenceBenchmark: XCTestCase {
     private func enterMovies(_ app: XCUIApplication) throws -> [XCUIElement] {
         let remote = XCUIRemote.shared
         let rows = (0..<3).map { app.buttons["ntv.poster.movie.fixture.catalog.fixture-row-\($0).0"] }
-        XCTAssertTrue(rows[0].waitForExistence(timeout: 20))
+        XCTAssertTrue(awaitLaunch(app, rows[0], timeout: 20))
         let movies = app.buttons["ntv.navigation.5"]
         for _ in 0..<3 {
             if movies.hasFocus { break }
+            foreground(app)
             remote.press(.menu)
             if focused(movies, timeout: 2) { break }
         }
-        XCTAssertTrue(focused(movies, timeout: 5))
+        XCTAssertTrue(focused(movies, timeout: 5), "app state \(app.state.rawValue)")
         remote.press(.right)
         XCTAssertTrue(focused(rows[0], timeout: 8))
         return rows
@@ -149,9 +150,13 @@ final class NTVCadenceBenchmark: XCTestCase {
     private func enterHome(_ app: XCUIApplication) throws -> [XCUIElement] {
         let remote = XCUIRemote.shared
         let settings = app.buttons["ntv.navigation.3"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 15))
+        XCTAssertTrue(awaitLaunch(app, settings, timeout: 15))
         remote.press(.menu)
-        XCTAssertTrue(focused(settings, timeout: 8))
+        if !focused(settings, timeout: 8), app.state != .runningForeground {
+            foreground(app)
+            remote.press(.menu)
+        }
+        XCTAssertTrue(focused(settings, timeout: 8), "app state \(app.state.rawValue)")
         for _ in 0..<9 {
             if app.buttons["ntv.navigation.0"].hasFocus { break }
             remote.press(.up)
@@ -264,6 +269,23 @@ final class NTVCadenceBenchmark: XCTestCase {
             if nums.count == 2 { work[kv[0]] = (nums[0], nums[1]) }
         }
         return Reading(now: now, dropped: dropped, windows: windows, work: work)
+    }
+
+    /// Launch is done once the app holds focus. In run 45882273407 a faster
+    /// runner showed the first poster about 3 s sooner, and every test of both
+    /// variants then failed to reach the sidebar with Menu: the press most
+    /// likely arrived before the app handled it. Same total budget as before.
+    private func awaitLaunch(_ app: XCUIApplication, _ anchor: XCUIElement, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        guard anchor.waitForExistence(timeout: timeout) else { return false }
+        let anyFocus = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        return anyFocus.waitForExistence(timeout: max(0, deadline.timeIntervalSinceNow))
+    }
+
+    /// If an early Menu sent the app to the system, bring it back; the test log
+    /// then shows "Activate", which tells that case apart from a focus problem.
+    private func foreground(_ app: XCUIApplication) {
+        if app.state != .runningForeground { app.activate() }
     }
 
     private func focused(_ element: XCUIElement, timeout: TimeInterval) -> Bool {

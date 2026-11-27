@@ -9,7 +9,7 @@ struct NTVReleaseNotes: Sendable {
     // Keep this entry and the app/extension build number together at release.
     static let current = NTVReleaseNotes(build: "59", improvements: [
         "Version alternative de la 58, qui reste la version de secours.",
-        "Films et Séries : changer de rangée fait glisser la page au lieu de la déplacer d’un coup. Monter vers Voir la fiche glisse aussi. Avec Réduire les animations, le déplacement reste instantané.",
+        "Films et Séries : la page défile comme sur l’Accueil quand tu changes de rangée ou remontes vers Voir la fiche. Elle ne repart plus en arrière au milieu d’un mouvement.",
         "Refonte visuelle. Boutons : fini les bulles grises. Au repos, un bouton n’est plus que son icône et son texte posés sur l’image ; l’action principale (Regarder, Voir la fiche) porte un contour blanc. Sélectionné, il devient une pilule blanche pleine, plus grande, avec une ombre. Les boutons ronds des fiches et les filtres des sources suivent la même règle.",
         "Refonte visuelle. Affiches : plus grandes, un peu plus de six par rangée au lieu de sept, avec seulement le titre dessous (l’année reste dans la présentation en haut). L’affiche sélectionnée se soulève nettement avec une ombre au lieu d’être entourée de blanc ; son titre s’éclaire, les autres restent discrets. Avec Réduire les animations, le contour blanc revient.",
         "Refonte visuelle. Menu latéral : fermé, les icônes flottent dans une pilule sombre posée sur l’image. Ouvert, plus de panneau gris : les libellés apparaissent sur un fondu noir profond, l’entrée sélectionnée est une pilule blanche, la section ouverte est marquée d’un point.",
@@ -18,7 +18,7 @@ struct NTVReleaseNotes: Sendable {
         "Sources : le nom de l’addon n’est plus écrit en majuscules, et le filtre sélectionné est entouré.",
         "Reprend tout le contenu de la 58 : inclinaison des cartes désactivée par défaut, Haut depuis la première rangée vers Voir la fiche."
     ], checks: [
-        "Films et Séries : faire plusieurs Haut/Bas entre les rangées. La page doit glisser sans saut, et le compteur de cadence rester stable.",
+        "Films et Séries : faire plusieurs Haut/Bas entre les rangées, lentement puis vite. La page doit suivre la sélection sans saut ni retour en arrière, comme sur l’Accueil.",
         "Ouvrir et fermer le menu latéral plusieurs fois : les icônes ne doivent pas bouger, les libellés apparaître en douceur, la page derrière rester immobile.",
         "Parcourir les boutons d’une fiche puis Voir la fiche et Catégories : le bouton sélectionné doit se distinguer nettement des autres depuis le canapé, et les boutons au repos rester lisibles sur l’image.",
         "Parcourir une rangée d’affiches : l’affiche sélectionnée doit se repérer d’un coup d’œil sans contour, et la navigation rester fluide avec des affiches plus grandes.",

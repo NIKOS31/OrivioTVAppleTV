@@ -485,10 +485,13 @@ struct NTVCatalogView: View {
         // horizontal offset and make the posters slide after the drawer closes.
         let entry = ContentFocusRouter.shared.makeEntryRequest(in: "ntv.catalog.shelf.\(sourceID)", kind: kind)
         viewModel.requestedCategory = .init(sourceID: sourceID, entry: entry, scrollToStart: !keepViewport)
-        if !keepViewport {
-            // Adjacent rows need only be revealed, not forced to the top of the page.
-            glide(proxy, to: sourceID, anchor: kind == .orderedRow ? nil : .top,
-                  motion: kind == .orderedRow ? FusionMotion.focusMove : FusionMotion.pageEnter)
+        // One scroll owner per move. An Up/Down between adjacent rows is
+        // scrolled by tvOS following the focus, as on Home: an app scroll on
+        // top of it (instant in 58, animated in 59) fought the native one and
+        // the page jumped, sometimes backwards, mid-move (TV video, build 59).
+        // Only real jumps (a category chosen in the drawer) move the page here.
+        if !keepViewport, kind != .orderedRow {
+            glide(proxy, to: sourceID, anchor: .top, motion: FusionMotion.pageEnter)
         }
     }
     /// A remote-driven scroll glides on the app's motion curve (build 59):
@@ -516,7 +519,8 @@ struct NTVCatalogView: View {
             else {
                 cancelEntryRequests()
                 viewModel.requestedCategory = nil; restoreSelection = nil; restoreFocusRequest = nil
-                glide(proxy, to: "catalogTop", anchor: .top, motion: FusionMotion.pageEnter)
+                // No app scroll here either: focus moves into the header just
+                // above and tvOS reveals it, without a second competing scroll.
                 // Up reaches the recommendation directly above the shelves (build 58):
                 // going through Categories, then Left, was the only path and the TV
                 // feedback showed it was not found. Categories stays one Up above it.

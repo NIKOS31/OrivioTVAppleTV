@@ -2231,16 +2231,17 @@ private struct AddonFilterChipLabel: View {
             .padding(.vertical, OrivioSpacing.sm)
             .background(Capsule().fill(background))
             .overlay(
-                Capsule().strokeBorder(ring, lineWidth: isNTV ? 1 : 3)
+                Capsule().strokeBorder(ring, lineWidth: isNTV ? 2 : 3)
             )
-            .focusLift(OrivioFocus.card, isFocused)
+            .focusLift(isNTV ? 1.08 : OrivioFocus.card, isFocused)
     }
 
     private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
 
-    /// nTV (build 59): the button language; a hairline at rest, none in focus.
+    /// nTV redesign: text first. The selected filter carries the outline of
+    /// an active control; focus is the solid pill.
     private var ring: Color {
-        if isNTV { return isFocused ? .clear : .white.opacity(0.08) }
+        if isNTV { return !isFocused && selected ? NTVDesign.textPrimary.opacity(0.8) : .clear }
         return isFocused ? theme.palette.focusRing : .clear
     }
 
@@ -2257,7 +2258,7 @@ private struct AddonFilterChipLabel: View {
 
     private var background: Color {
         if isFocused { return theme.palette.secondary }
-        if isNTV { return .white.opacity(selected ? 0.22 : 0.12) }
+        if isNTV { return .clear }
         if selected { return theme.palette.secondary.opacity(0.22) }
         return theme.palette.backgroundCard.opacity(0.85)
     }

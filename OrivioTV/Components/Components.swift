@@ -943,7 +943,8 @@ struct PosterCard: View {
                 width: cardWidth, height: cardHeight,
                 focused: isFocused && !perf.cardParallaxEffective, watched: watched.isWatched(item),
                 progress: effectiveProgress, shadowsEnabled: perf.settings.cardShadows && !perf.cardParallaxEffective,
-                placeholderSymbol: item.isSeries ? "tv" : "film", cornerRadius: cornerRadius
+                placeholderSymbol: item.isSeries ? "tv" : "film", cornerRadius: cornerRadius,
+                showsRing: !perf.focusZoomEffective
             )
             // Cache only the artwork description; the button keeps its live focus binding.
             .equatable()
@@ -1208,7 +1209,7 @@ struct LandscapeCardCaption: View {
         }
         .frame(width: width, height: captionHeight, alignment: .topLeading)
         .clipped()
-        .offset(y: lowered && perf.cardParallaxEffective ? dropDistance : 0)
+        .offset(y: lowered && (perf.cardParallaxEffective || perf.focusZoomEffective) ? dropDistance : 0)
         .animation(perf.motion(FusionMotion.focusEntry), value: lowered)
     }
 
@@ -1369,7 +1370,9 @@ struct ATVCardCaption: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(FusionType.cardTitle(theme.font))
-                .foregroundStyle(theme.palette.textPrimary)
+                // nTV redesign: only the focused title is bright.
+                .foregroundStyle(theme.palette.id == NTVDesign.palette.id && !lowered
+                                 ? theme.palette.textSecondary : theme.palette.textPrimary)
                 .lineLimit(1)
             if let subtitle, !subtitle.isEmpty {
                 Text(subtitle)
@@ -1386,7 +1389,7 @@ struct ATVCardCaption: View {
         // defaults) the caption used to slide 18pt away from a poster that had
         // not moved: an unrequested animation AND a layout bug. It also had no
         // Reduce Motion gate of its own, unlike everything else on the card.
-        .offset(y: lowered && perf.cardParallaxEffective ? dropDistance : 0)
+        .offset(y: lowered && (perf.cardParallaxEffective || perf.focusZoomEffective) ? dropDistance : 0)
         .animation(perf.motion(FusionMotion.focusEntry), value: lowered)
     }
 }
@@ -1495,7 +1498,8 @@ struct FlatCardButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .focusLift(OrivioFocus.card, isFocused)
+                // Redesign: a clear lift (tvOS 1.05-1.1 range) replaces the ring.
+                .focusLift(1.1, isFocused)
                 .cardPressDip(configuration.isPressed)
                 .onChange(of: configuration.isPressed) { _, pressed in
                     onPressChanged?(pressed)

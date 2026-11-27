@@ -1945,14 +1945,15 @@ private struct CircleIconLabel: View {
     private static let paintDelay = Duration.milliseconds(50)
 
     private var isFocused: Bool { painted }
+    private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
 
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: 30, weight: .semibold))
-            .foregroundStyle(isFocused || active ? theme.palette.onSecondary : theme.palette.textPrimary)
+            .foregroundStyle(isFocused || (active && !isNTV) ? theme.palette.onSecondary : theme.palette.textPrimary)
             .frame(width: 78, height: 78)
             .background {
-                if isFocused || active {
+                if isFocused || (active && !isNTV) {
                     Circle().fill(active && !isFocused
                                   ? theme.palette.secondary.opacity(0.85)
                                   : theme.palette.secondary)
@@ -1960,13 +1961,12 @@ private struct CircleIconLabel: View {
             }
             // Glass circle at rest, matching the rail.
             .liquidGlassIf(!isFocused && !active && theme.palette.id != NTVDesign.palette.id, in: Circle())
-            // nTV (build 59): the same language as the action pills, a
-            // translucent circle with a hairline at rest, solid off-white with
-            // a soft shadow in focus, without a second ring.
-            .background {
-                if !isFocused && !active && theme.palette.id == NTVDesign.palette.id {
-                    Circle().fill(Color.white.opacity(0.12))
-                        .overlay(Circle().strokeBorder(.white.opacity(0.08), lineWidth: 1))
+            // nTV redesign: "text first" like the action pills. The icon sits
+            // on the artwork at rest, an outline marks an active state, focus
+            // is a solid off-white disc with a soft shadow.
+            .overlay {
+                if !isFocused && active && theme.palette.id == NTVDesign.palette.id {
+                    Circle().strokeBorder(NTVDesign.textPrimary.opacity(0.8), lineWidth: 2)
                 }
             }
             .overlay(Circle().strokeBorder(isFocused && theme.palette.id != NTVDesign.palette.id

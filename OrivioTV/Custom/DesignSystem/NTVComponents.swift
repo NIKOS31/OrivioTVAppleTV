@@ -52,6 +52,9 @@ struct NTVPosterArtwork: View, Equatable {
     let shadowsEnabled: Bool
     var placeholderSymbol = "film"
     var cornerRadius: CGFloat = NTVDesign.cardRadius
+    /// Build 59 redesign: the focused poster is lifted and shadowed; the white
+    /// ring only returns when nothing moves the card (Reduce Motion, zoom off).
+    var showsRing = true
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -89,8 +92,8 @@ struct NTVPosterArtwork: View, Equatable {
             if watched { WatchedBadge().padding(12) }
         }
         // Always visible, including when parallax, zoom or motion is disabled.
-        .overlay(shape.strokeBorder(focused ? NTVDesign.accent : .clear, lineWidth: 3))
-        .shadow(color: .black.opacity(focused && shadowsEnabled ? 0.5 : 0), radius: 18, y: 8)
+        .overlay(shape.strokeBorder(focused && showsRing ? NTVDesign.accent : .clear, lineWidth: 3))
+        .shadow(color: .black.opacity(focused && shadowsEnabled ? 0.6 : 0), radius: 24, y: 14)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
     }
@@ -144,21 +147,27 @@ struct NTVSidebarLabel: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.trailing, expanded ? 14 : 0)
+        .padding(.trailing, expanded ? 22 : 0)
         .frame(minHeight: 56)
         .frame(maxWidth: expanded ? .infinity : nil, alignment: .leading)
-        .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+        // Redesign: the focused entry is a solid off-white pill with dark
+        // text, like every focused control; the open section is bright and
+        // bold with a dot, the others recede.
+        .foregroundStyle(focused ? NTVDesign.background
+                         : selected ? NTVDesign.textPrimary : NTVDesign.textSecondary.opacity(0.85))
         .background {
-            RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
-                .fill(focused ? Color.white.opacity(0.34)
-                      : selected ? Color.white.opacity(0.08) : .clear)
-        }
-        // The open section stays marked at a glance, rail open or closed.
-        .overlay(alignment: .leading) {
             Capsule(style: .continuous)
                 .fill(NTVDesign.textPrimary)
-                .frame(width: 4, height: 24)
-                .offset(x: -9)
+                .opacity(focused ? 1 : 0)
+        }
+        .shadow(color: .black.opacity(focused ? 0.4 : 0), radius: 12, y: 6)
+        .overlay(alignment: .bottom) {
+            Circle()
+                .fill(NTVDesign.textPrimary)
+                .frame(width: 6, height: 6)
+                .offset(y: -3)
+                .frame(width: 56, alignment: .center)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .opacity(selected && !focused ? 1 : 0)
                 .accessibilityHidden(true)
         }
@@ -187,32 +196,27 @@ struct NTVActionButtonStyle: ButtonStyle {
         let capsule: Bool
         private var radius: CGFloat { capsule ? 100 : NTVDesign.controlRadius }
 
-        // Build 59: one button language. At rest a translucent pill that lets
-        // the artwork through (the principal action a little brighter); in
-        // focus solid off-white with dark text, lifted with a soft neutral
-        // shadow. The second white ring around the focused button is gone:
-        // the fill change already reads from the sofa.
+        // Build 59 redesign, "text first": no grey bubbles. At rest a control
+        // is its icon and label straight on the artwork; the principal action
+        // carries an outline. Focus turns it into a solid off-white pill with
+        // dark text, lifted with a soft shadow. Every control is a pill.
         var body: some View {
-            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+            let shape = Capsule(style: .continuous)
             configuration.label
-                .font(.system(size: capsule ? labelSize * 0.86 : labelSize, weight: legibility == .bold ? .bold : .medium))
+                .font(.system(size: capsule ? labelSize * 0.86 : labelSize,
+                              weight: legibility == .bold || prominent ? .semibold : .medium))
                 .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
-                .padding(.horizontal, capsule ? 20 : 28)
-                .frame(minHeight: capsule ? 56 : 70)
+                .padding(.horizontal, capsule ? 24 : 30)
+                .frame(minHeight: capsule ? 58 : 70)
                 .background {
-                    if focused {
-                        shape.fill(NTVDesign.textPrimary)
-                    } else if glass {
-                        NTVGlassSurface(shape: shape, clear: true)
-                    } else {
-                        shape.fill(Color.white.opacity(prominent ? 0.22 : 0.12))
-                    }
+                    shape.fill(NTVDesign.textPrimary).opacity(focused ? 1 : 0)
                 }
                 .overlay {
-                    shape.strokeBorder(.white.opacity(focused ? 0 : 0.08), lineWidth: 1)
+                    shape.strokeBorder(NTVDesign.textPrimary.opacity(prominent && !focused ? 0.8 : 0),
+                                       lineWidth: 2)
                 }
-                .shadow(color: .black.opacity(focused ? 0.45 : 0), radius: 16, y: 8)
-                .focusLift(1.05, focused)
+                .shadow(color: .black.opacity(focused ? 0.5 : 0), radius: 18, y: 10)
+                .focusLift(1.08, focused)
                 .cardPressDip(configuration.isPressed)
         }
     }

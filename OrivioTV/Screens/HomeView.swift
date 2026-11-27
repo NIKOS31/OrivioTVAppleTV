@@ -3254,7 +3254,8 @@ private struct HomePosterCell: View {
                     subtitle: item.year,
                     width: captionWidth,
                     lowered: focused,
-                    dropDistance: useLandscape ? 13 : 18
+                    // Half the 1.1 lift's growth plus breathing room.
+                    dropDistance: useLandscape ? 16 : captionWidth * 1.5 * 0.05 + 8
                 )
             }
         }

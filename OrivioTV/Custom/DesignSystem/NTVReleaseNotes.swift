@@ -10,18 +10,18 @@ struct NTVReleaseNotes: Sendable {
     static let current = NTVReleaseNotes(build: "59", improvements: [
         "Version alternative de la 58, qui reste la version de secours.",
         "Films et Séries : changer de rangée fait glisser la page au lieu de la déplacer d’un coup. Monter vers Voir la fiche glisse aussi. Avec Réduire les animations, le déplacement reste instantané.",
-        "Menu latéral : les icônes et le logo restent en place à l’ouverture ; seuls les libellés apparaissent à côté, en fondu. L’ouverture ralentit en arrivant, la fermeture est un peu plus vive.",
-        "Menu latéral : un repère blanc marque la section ouverte, menu ouvert ou fermé. À l’ouverture, un voile sombre assure la lisibilité des libellés sur les affiches.",
-        "Ouvrir ou fermer le menu n’anime plus toute la page derrière lui.",
-        "Boutons : un seul style dans toute l’app. Au repos, une pilule translucide ; sélectionné, un blanc plein qui s’agrandit légèrement avec une ombre douce, sans second anneau. Catégories adopte la même pilule que Voir la fiche ; les boutons ronds des fiches et les filtres des sources suivent le même style.",
+        "Refonte visuelle. Boutons : fini les bulles grises. Au repos, un bouton n’est plus que son icône et son texte posés sur l’image ; l’action principale (Regarder, Voir la fiche) porte un contour blanc. Sélectionné, il devient une pilule blanche pleine, plus grande, avec une ombre. Les boutons ronds des fiches et les filtres des sources suivent la même règle.",
+        "Refonte visuelle. Affiches : plus grandes, environ six par rangée au lieu de sept. L’affiche sélectionnée se soulève nettement avec une ombre au lieu d’être entourée de blanc ; son titre s’éclaire, les autres restent discrets. Avec Réduire les animations, le contour blanc revient.",
+        "Refonte visuelle. Menu latéral : fermé, les icônes flottent dans une pilule sombre posée sur l’image. Ouvert, plus de panneau gris : les libellés apparaissent sur un fondu noir profond, l’entrée sélectionnée est une pilule blanche, la section ouverte est marquée d’un point.",
+        "Menu latéral : les icônes et le logo restent en place à l’ouverture ; seuls les libellés apparaissent à côté, en fondu. Ouvrir ou fermer le menu n’anime plus toute la page derrière lui.",
         "Recommandations : un titre sur une ligne se place juste au-dessus de son année, sans grand vide entre les deux.",
-        "Sources : le nom de l’addon n’est plus écrit en majuscules, et le filtre sélectionné se lit clairement.",
+        "Sources : le nom de l’addon n’est plus écrit en majuscules, et le filtre sélectionné est entouré.",
         "Reprend tout le contenu de la 58 : inclinaison des cartes désactivée par défaut, Haut depuis la première rangée vers Voir la fiche."
     ], checks: [
         "Films et Séries : faire plusieurs Haut/Bas entre les rangées. La page doit glisser sans saut, et le compteur de cadence rester stable.",
         "Ouvrir et fermer le menu latéral plusieurs fois : les icônes ne doivent pas bouger, les libellés apparaître en douceur, la page derrière rester immobile.",
-        "Vérifier le repère de la section ouverte dans le menu fermé.",
-        "Parcourir les boutons d’une fiche puis Voir la fiche et Catégories : le bouton sélectionné doit se distinguer nettement des autres depuis le canapé.",
+        "Parcourir les boutons d’une fiche puis Voir la fiche et Catégories : le bouton sélectionné doit se distinguer nettement des autres depuis le canapé, et les boutons au repos rester lisibles sur l’image.",
+        "Parcourir une rangée d’affiches : l’affiche sélectionnée doit se repérer d’un coup d’œil sans contour, et la navigation rester fluide avec des affiches plus grandes.",
         "Depuis la première rangée de Films : Haut doit mener à Voir la fiche, puis Haut à Catégories."
     ])
 

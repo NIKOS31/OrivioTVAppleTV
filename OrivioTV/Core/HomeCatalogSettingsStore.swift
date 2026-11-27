@@ -131,9 +131,10 @@ enum PosterSize: String, CaseIterable, Identifiable, Codable {
     /// Portrait poster width (points). Height is width × 3/2.
     var posterWidth: CGFloat {
         switch self {
-        case .small: return 180
-        case .medium: return 220
-        case .large: return 264
+        // Redesign (build 59): fewer, larger posters per row.
+        case .small: return 210
+        case .medium: return 256
+        case .large: return 300
         }
     }
 }

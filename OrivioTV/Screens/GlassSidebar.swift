@@ -301,6 +301,19 @@ struct GlassSidebar: View {
                     .disabled(!expanded && tab.rawValue != selected)
                 }
             }
+            // Redesign: closed, the icons sit in one floating pill over the
+            // artwork instead of a bare column; it fades as the rail opens.
+            .background(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(NTVDesign.surface.opacity(0.78))
+                    .overlay(Capsule(style: .continuous).strokeBorder(.white.opacity(0.10), lineWidth: 1))
+                    .frame(width: 72)
+                    .padding(.vertical, -12)
+                    .offset(x: Self.ntvFocusGuard - 8)
+                    .opacity(expanded ? 0 : 1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             // Same leading inset open and closed: the icons stay put and only
             // the labels arrive beside them (build 59).
             .padding(.leading, 12 - Self.ntvFocusGuard)
@@ -335,25 +348,19 @@ struct GlassSidebar: View {
         // drawn behind fades in at its final size (build 59).
         .animation(nil, value: expanded)
         .frame(maxHeight: .infinity)
-        .background(alignment: .leading) {
-            // The collapsed rail shares the root artwork and its fade to black.
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(NTVDesign.surface)
-                .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(.white.opacity(0.08), lineWidth: 1) }
-                .frame(width: NTVDesign.sidebarExpandedWidth)
-                .opacity(expanded ? 1 : 0)
-        }
+        // Redesign: no grey panel when open. The labels float on a deep
+        // cinematic fade that swallows the page's leading edge.
         .padding(.leading, 12)
         .padding(.vertical, 20)
         // Opening dims the page's leading edge so the labels read over any
         // artwork; opacity only, nothing behind it is laid out again.
         .background(alignment: .leading) {
-            LinearGradient(stops: [.init(color: .black.opacity(0.72), location: 0),
-                                   .init(color: .black.opacity(0.45), location: 0.45),
+            LinearGradient(stops: [.init(color: .black.opacity(0.92), location: 0),
+                                   .init(color: .black.opacity(0.80), location: 0.38),
+                                   .init(color: .black.opacity(0.35), location: 0.7),
                                    .init(color: .clear, location: 1)],
                            startPoint: .leading, endPoint: .trailing)
-                .frame(width: NTVDesign.sidebarExpandedWidth + 520)
+                .frame(width: NTVDesign.sidebarExpandedWidth + 640)
                 .frame(maxHeight: .infinity)
                 .opacity(expanded ? 1 : 0)
                 .allowsHitTesting(false)

@@ -1025,6 +1025,27 @@ final class NTVDesignSmoke: XCTestCase {
         app.terminate()
     }
 
+    func testChristmasDecorAndSnowStayOutOfNavigation() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvChristmasDemo", "-ntvSnowDemo"]
+        app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
+        app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
+        let focusedControl = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        XCTAssertTrue(focusedControl.waitForExistence(timeout: 20), "Ornaments and snow must leave a real control focused.")
+        Thread.sleep(forTimeInterval: 1)
+        capture("ntv-christmas-home-snow")
+        let before = focusedControl.identifier
+        XCUIRemote.shared.press(.down)
+        let moved = app.descendants(matching: .any).matching(
+            NSPredicate(format: "hasFocus == true AND identifier != %@", before)).firstMatch
+        XCTAssertTrue(moved.waitForExistence(timeout: 10), "Down must still move focus with the December decor.")
+        capture("ntv-christmas-home-row")
+    }
+
     func testCatalogCategoryPanelReturnsToItsPosterRow() {
         continueAfterFailure = false
         let app = XCUIApplication()

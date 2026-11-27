@@ -22,7 +22,7 @@ struct NTVLiveHub: View {
                 Text("TV en direct")
                     .font(.system(size: 38, weight: .semibold))
                     .accessibilityIdentifier("ntv.live.hub.heading")
-                    .ntvHalloweenDecor(.heading)
+                    .ntvSeasonalDecor(.heading)
                 Spacer(minLength: 20)
                 HStack(spacing: 0) {
                     ForEach(Section.allCases, id: \.self) { choice in

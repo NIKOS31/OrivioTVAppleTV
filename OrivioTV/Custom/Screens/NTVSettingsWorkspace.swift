@@ -22,7 +22,7 @@ struct NTVSettingsWorkspace: View {
                 Text("Réglages")
                     .font(.system(size: 38, weight: .semibold))
                     .accessibilityIdentifier("ntv.settings.heading")
-                    .ntvHalloweenDecor(.heading)
+                    .ntvSeasonalDecor(.heading)
                 Spacer()
                 Button { editingProfile = true } label: {
                     HStack(spacing: 14) {

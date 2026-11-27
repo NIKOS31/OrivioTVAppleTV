@@ -479,12 +479,19 @@ struct DetailScaffold<Content: View>: View {
 struct AppearanceDetail: View {
     @EnvironmentObject private var theme: ThemeManager
     @AppStorage("ntv.seasonal.halloween.enabled") private var halloweenEnabled = true
+    @AppStorage("ntv.seasonal.christmas.enabled") private var christmasEnabled = true
+    @AppStorage("ntv.seasonal.snow.enabled") private var snowEnabled = false
 
     var body: some View {
         DetailScaffold(title: SettingsCategory.appearance.title, subtitle: SettingsCategory.appearance.subtitle) {
-            SettingsGroupCard(title: "Décor saisonnier", subtitle: "De petits ornements en octobre, avec les couleurs habituelles de l’app") {
+            SettingsGroupCard(title: "Décor saisonnier", subtitle: "De petits ornements en octobre et pour les fêtes, avec les couleurs habituelles de l’app") {
                 SettingsToggleCard(title: "Décor d’octobre", subtitle: "Citrouille, chauve-souris et détails discrets sur les bords des menus", isOn: $halloweenEnabled)
                     .accessibilityIdentifier("ntv.settings.halloween")
+                SettingsToggleCard(title: "Décor de Noël", subtitle: "Du 1er décembre au 6 janvier : flocons, étoile, sapin et guirlande discrète sur le menu", isOn: $christmasEnabled)
+                    .accessibilityIdentifier("ntv.settings.christmas")
+                SettingsToggleCard(title: "Neige sur l’Accueil", subtitle: "Une neige légère derrière les affiches. Coupée avec Réduire les animations et sur les Apple TV plus anciennes", isOn: $snowEnabled)
+                    .disabled(!christmasEnabled)
+                    .accessibilityIdentifier("ntv.settings.snow")
             }
             SettingsGroupCard(title: "Couleur d’accent", subtitle: "Couleur des éléments sélectionnés") {
                 ScrollView(.horizontal) {

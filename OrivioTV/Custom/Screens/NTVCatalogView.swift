@@ -364,7 +364,7 @@ struct NTVCatalogView: View {
     private var catalogBand: some View {
         HStack(alignment: .center, spacing: 26) {
             Text(title).font(.system(size: 38, weight: .semibold))
-                .ntvHalloweenDecor(.heading)
+                .ntvSeasonalDecor(.heading)
                 .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
                 #if DEBUG
                 .accessibilityValue(ProcessInfo.processInfo.arguments.contains("-ntvCatalogEvaluationFixture")
@@ -457,7 +457,7 @@ struct NTVCatalogView: View {
                     }
                 }.padding(4)
             }
-            .ntvHalloweenDecor(.panel)
+            .ntvSeasonalDecor(.panel)
         }
         .padding(20).frame(maxHeight: 760)
         .background {

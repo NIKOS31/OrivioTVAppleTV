@@ -309,6 +309,7 @@ struct GlassSidebar: View {
                     .overlay(Capsule(style: .continuous).strokeBorder(.white.opacity(0.10), lineWidth: 1))
                     .frame(width: 72)
                     .padding(.vertical, -12)
+                    .ntvSeasonalDecor(.rail)
                     .offset(x: Self.ntvFocusGuard - 8)
                     .opacity(expanded ? 0 : 1)
                     .allowsHitTesting(false)

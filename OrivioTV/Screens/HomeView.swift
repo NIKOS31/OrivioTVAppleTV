@@ -1766,13 +1766,15 @@ struct HomeView: View {
     private var ntvLayout: some View {
         ZStack {
             NTVFocusBackdrop(hero: hero, identifier: "ntv.home.backdrop")
+            // Optional December snowfall, behind every control (build 59).
+            NTVSnowfall()
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 32) {
                     Text("Accueil")
                         .font(.system(size: 38, weight: .semibold))
                         .foregroundStyle(NTVDesign.textPrimary)
                         .accessibilityIdentifier("ntv.home.heading")
-                        .ntvHalloweenDecor(.heading)
+                        .ntvSeasonalDecor(.heading)
                         .padding(.horizontal, NTVViewport.horizontalInset)
                     NTVHomeSpotlight(hero: hero, playFocus: $heroPlayFocused,
                                      onSelect: heroSelect, onBack: onHomeBack)
@@ -2596,7 +2598,7 @@ struct HomeView: View {
     private func catalogHeader(_ row: HomeRow) -> some View {
         HStack(alignment: .firstTextBaseline) {
             RowHeader(title: row.title)
-                .ntvHalloweenDecor(.row)
+                .ntvSeasonalDecor(.row)
             if let addon = row.addon, let catalog = row.catalog {
                 Spacer()
                 Button {

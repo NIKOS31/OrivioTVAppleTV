@@ -312,8 +312,10 @@ final class NTVDesignSmoke: XCTestCase {
             let beforeDown = settledFrame(nextSecond)
             XCTAssertGreaterThan(beforeDown.height, 0)
             XCTAssertGreaterThanOrEqual(beforeDown.minY, viewport.frame.minY)
-            XCTAssertLessThanOrEqual(beforeDown.maxY, viewport.frame.maxY,
-                                     "The observed poster must already fit vertically before testing an unnecessary page jump.")
+            // Build 59: tvOS owns the scroll between adjacent shelves, as on
+            // Home, and keeps the focused shelf near the middle, so the next
+            // shelf may be partly below the edge (approved change, 2026-11-27).
+            let wasFullyVisible = beforeDown.maxY <= viewport.frame.maxY
             capture("ntv-seanime-visible-row-before-down")
             remote.press(.down)
             XCTAssertTrue(focused(nextFirst, timeout: 8))
@@ -324,8 +326,16 @@ final class NTVDesignSmoke: XCTestCase {
             geometry.name = "ntv-catalog-visible-row-geometry"
             geometry.lifetime = .keepAlways
             add(geometry)
-            XCTAssertLessThanOrEqual(abs(afterDown.minY - beforeDown.minY), beforeDown.height / 2,
-                                     "An already visible poster may make room for its caption, but must not jump a whole shelf to the top.")
+            if wasFullyVisible {
+                XCTAssertLessThanOrEqual(abs(afterDown.minY - beforeDown.minY), beforeDown.height / 2,
+                                         "An already visible poster may make room for its caption, but must not jump a whole shelf to the top.")
+            } else {
+                // A partly hidden shelf is brought fully on screen by one move.
+                let landed = settledFrame(nextFirst)
+                XCTAssertGreaterThanOrEqual(landed.minY, viewport.frame.minY - 2)
+                XCTAssertLessThanOrEqual(landed.maxY, viewport.frame.maxY + 2,
+                                         "Down must bring the focused poster of a partly hidden shelf fully on screen.")
+            }
             Thread.sleep(forTimeInterval: 0.8)
             XCTAssertEqual(nextSecond.frame.minY, afterDown.minY, accuracy: 2,
                            "Settled row entry must not cause a second vertical adjustment.")

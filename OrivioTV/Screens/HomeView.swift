@@ -2990,7 +2990,13 @@ private struct HomePosterRowContent: View {
                     guard let focusFirstRequest,
                           ContentFocusRouter.shared.consumeEntry(focusFirstRequest) else { return }
                     guard let first = displayedItems.first?.id else {
-                        if onLeftAtStart != nil { emptyRowFocused = true }
+                        // A filtered-out row lands on its Categories action with
+                        // the same retries as a poster: a single write made
+                        // while the page is still gliding can be dropped.
+                        if onLeftAtStart != nil {
+                            ContentFocusRouter.shared.land(in: row.id, kind: focusFirstRequest.kind,
+                                assign: { emptyRowFocused = true }, landed: { emptyRowFocused })
+                        }
                         return
                     }
                     // This task belongs to ONE catalog move. A newer move, a
@@ -3043,7 +3049,9 @@ private struct HomePosterRowContent: View {
         ContentFocusRouter.shared.register(row.id) {
             guard let first = firstID else {
                 guard onLeftAtStart != nil else { return false }
-                emptyRowFocused = true; return true
+                ContentFocusRouter.shared.land(in: row.id,
+                    assign: { emptyRowFocused = true }, landed: { emptyRowFocused })
+                return true
             }
             // Retry until the card actually holds focus: deep in the row the
             // first card is unloaded, and it takes the scroll a few ticks to

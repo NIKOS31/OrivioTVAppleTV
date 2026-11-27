@@ -3251,7 +3251,9 @@ private struct HomePosterCell: View {
             if showLabel {
                 ATVCardCaption(
                     title: item.name,
-                    subtitle: item.year,
+                    // nTV redesign: the year is already in the spotlight that
+                    // follows focus; one line per poster keeps two rows on screen.
+                    subtitle: theme.palette.id == NTVDesign.palette.id ? nil : item.year,
                     width: captionWidth,
                     lowered: focused,
                     // Half the 1.1 lift's growth plus breathing room.
@@ -3554,6 +3556,7 @@ struct SeeAllLabel: View {
     @EnvironmentObject private var theme: ThemeManager
     @Environment(\.isFocused) private var isFocused
     var text: String = "Tout voir"
+    private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -3562,18 +3565,22 @@ struct SeeAllLabel: View {
             Image(systemName: "chevron.right")
                 .font(.system(size: 18, weight: .bold))
         }
-        .foregroundStyle(isFocused ? theme.palette.textPrimary : theme.palette.textSecondary)
+        .foregroundStyle(isNTV ? (isFocused ? NTVDesign.background : NTVDesign.textSecondary)
+                         : isFocused ? theme.palette.textPrimary : theme.palette.textSecondary)
         .padding(.horizontal, OrivioSpacing.md)
         .padding(.vertical, 6)
         .background(
+            // nTV redesign: text first, a solid off-white pill only in focus.
             Capsule(style: .continuous)
-                .fill(isFocused ? theme.palette.focusBackground : Color.primary.opacity(0.08))
+                .fill(isNTV ? (isFocused ? NTVDesign.textPrimary : .clear)
+                      : isFocused ? theme.palette.focusBackground : Color.primary.opacity(0.08))
         )
         .overlay(
             Capsule(style: .continuous)
-                .strokeBorder(isFocused ? theme.palette.focusRing : .clear, lineWidth: 3)
+                .strokeBorder(isFocused && !isNTV ? theme.palette.focusRing : .clear, lineWidth: 3)
         )
-        .focusLift(OrivioFocus.card, isFocused)
+        .shadow(color: .black.opacity(isNTV && isFocused ? 0.45 : 0), radius: 14, y: 8)
+        .focusLift(isNTV ? 1.08 : OrivioFocus.card, isFocused)
         .animation(PerformanceSettingsStore.shared.buttonMotion(FusionMotion.focusEntry),
                    value: isFocused)
     }

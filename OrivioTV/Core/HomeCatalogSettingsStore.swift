@@ -132,9 +132,9 @@ enum PosterSize: String, CaseIterable, Identifiable, Codable {
     var posterWidth: CGFloat {
         switch self {
         // Redesign (build 59): fewer, larger posters per row.
-        case .small: return 210
-        case .medium: return 256
-        case .large: return 300
+        case .small: return 200
+        case .medium: return 244
+        case .large: return 288
         }
     }
 }

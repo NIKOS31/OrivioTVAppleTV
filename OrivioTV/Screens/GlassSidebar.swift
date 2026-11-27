@@ -270,11 +270,12 @@ struct GlassSidebar: View {
     /// The root's existing focus routing, Back and Right hand-off remain in charge.
     private var ntvVerticalBody: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // The mark keeps the collapsed rail's centre while the panel opens.
             NTVWordmark(size: 22)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(NTVBrand.name)
-                .frame(maxWidth: .infinity, alignment: expanded ? .leading : .center)
-                .padding(.horizontal, expanded ? OrivioSpacing.md : 0)
+                .frame(width: 80)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: 64)
 
             Spacer(minLength: 20)
@@ -295,7 +296,9 @@ struct GlassSidebar: View {
                     .disabled(!expanded && tab.rawValue != selected)
                 }
             }
-            .padding(.leading, (expanded ? OrivioSpacing.sm : 12) - Self.ntvFocusGuard)
+            // Same leading inset open and closed: the icons stay put and only
+            // the labels arrive beside them (build 59).
+            .padding(.leading, 12 - Self.ntvFocusGuard)
             .padding(.trailing, expanded ? OrivioSpacing.sm : 12)
             .defaultFocus(focusBinding, selected)
 
@@ -332,9 +335,23 @@ struct GlassSidebar: View {
         }
         .padding(.leading, 12)
         .padding(.vertical, 20)
+        // Opening dims the page's leading edge so the labels read over any
+        // artwork; opacity only, nothing behind it is laid out again.
+        .background(alignment: .leading) {
+            LinearGradient(stops: [.init(color: .black.opacity(0.72), location: 0),
+                                   .init(color: .black.opacity(0.45), location: 0.45),
+                                   .init(color: .clear, location: 1)],
+                           startPoint: .leading, endPoint: .trailing)
+                .frame(width: NTVDesign.sidebarExpandedWidth + 520)
+                .frame(maxHeight: .infinity)
+                .opacity(expanded ? 1 : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .ignoresSafeArea()
+        // Opening decelerates into place; closing leaves a little quicker.
         .animation(PerformanceSettingsStore.shared.sidebarAnimationEffective
-                   ? .easeOut(duration: 0.18) : nil, value: expanded)
+                   ? (expanded ? FusionMotion.focusEntry : FusionMotion.focusExit) : nil, value: expanded)
         .onChange(of: expanded) { _, isExpanded in
             if isExpanded && focusBinding.wrappedValue != selected {
                 focusBinding.wrappedValue = selected

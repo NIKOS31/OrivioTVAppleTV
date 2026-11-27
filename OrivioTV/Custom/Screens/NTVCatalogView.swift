@@ -330,7 +330,7 @@ struct NTVCatalogView: View {
                 .onAppear {
                     ContentFocusRouter.shared.register(spotlightID) {
                         guard isAtRoot, !menuVisible, !hero.spotlight.isEmpty else { return false }
-                        proxy.scrollTo("catalogTop", anchor: .top)
+                        glide(proxy, to: "catalogTop", anchor: .top, motion: FusionMotion.pageEnter)
                         spotlightFocused = true
                         return true
                     }
@@ -487,7 +487,19 @@ struct NTVCatalogView: View {
         viewModel.requestedCategory = .init(sourceID: sourceID, entry: entry, scrollToStart: !keepViewport)
         if !keepViewport {
             // Adjacent rows need only be revealed, not forced to the top of the page.
-            proxy.scrollTo(sourceID, anchor: kind == .orderedRow ? nil : .top)
+            glide(proxy, to: sourceID, anchor: kind == .orderedRow ? nil : .top,
+                  motion: kind == .orderedRow ? FusionMotion.focusMove : FusionMotion.pageEnter)
+        }
+    }
+    /// A remote-driven scroll glides on the app's motion curve (build 59):
+    /// the plain scrollTo moved the page in one frame, which read as a jump
+    /// on every Up/Down between rows. Reduce Motion keeps the instant move;
+    /// returning from a detail keeps its instant restore elsewhere.
+    private func glide(_ proxy: ScrollViewProxy, to id: some Hashable, anchor: UnitPoint?, motion: Animation) {
+        if let animation = PerformanceSettingsStore.shared.motion(motion) {
+            withAnimation(animation) { proxy.scrollTo(id, anchor: anchor) }
+        } else {
+            proxy.scrollTo(id, anchor: anchor)
         }
     }
     private func cancelEntryRequests() {
@@ -504,7 +516,7 @@ struct NTVCatalogView: View {
             else {
                 cancelEntryRequests()
                 viewModel.requestedCategory = nil; restoreSelection = nil; restoreFocusRequest = nil
-                proxy.scrollTo("catalogTop", anchor: .top)
+                glide(proxy, to: "catalogTop", anchor: .top, motion: FusionMotion.pageEnter)
                 // Up reaches the recommendation directly above the shelves (build 58):
                 // going through Categories, then Left, was the only path and the TV
                 // feedback showed it was not found. Categories stays one Up above it.

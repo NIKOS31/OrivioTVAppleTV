@@ -129,21 +129,22 @@ struct NTVSidebarLabel: View {
     let expanded: Bool
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 4) {
+            // One icon column, open or closed: the icon never shifts (build 59).
             tab.navigationIcon
                 .font(.system(size: 25, weight: .medium))
-                .frame(width: expanded ? 32 : 56)
+                .frame(width: 56)
             // A zero-width hidden label still enlarges the native button's focus frame.
             if expanded {
                 Text(NTVBrand.navigationTitle(for: tab))
                     .font(.system(size: labelSize, weight: focused || selected ? .bold : .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
-                    .transition(.opacity)
+                    .transition(.opacity.combined(with: .offset(x: -10)))
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, expanded ? 14 : 0)
+        .padding(.trailing, expanded ? 14 : 0)
         .frame(minHeight: 56)
         .frame(maxWidth: expanded ? .infinity : nil, alignment: .leading)
         .foregroundStyle(focused || selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
@@ -151,6 +152,15 @@ struct NTVSidebarLabel: View {
             RoundedRectangle(cornerRadius: NTVDesign.controlRadius, style: .continuous)
                 .fill(focused ? Color.white.opacity(0.34)
                       : selected ? Color.white.opacity(0.08) : .clear)
+        }
+        // The open section stays marked at a glance, rail open or closed.
+        .overlay(alignment: .leading) {
+            Capsule(style: .continuous)
+                .fill(NTVDesign.textPrimary)
+                .frame(width: 4, height: 24)
+                .offset(x: -9)
+                .opacity(selected && !focused ? 1 : 0)
+                .accessibilityHidden(true)
         }
         .accessibilityLabel(NTVBrand.navigationTitle(for: tab))
         .accessibilityAddTraits(selected ? .isSelected : [])

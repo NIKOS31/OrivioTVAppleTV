@@ -7,16 +7,18 @@ struct NTVReleaseNotes: Sendable {
     let checks: [String]
 
     // Keep this entry and the app/extension build number together at release.
-    static let current = NTVReleaseNotes(build: "58", improvements: [
-        "Fluidité : l’inclinaison des cartes est désactivée par défaut sur toutes les Apple TV. Sur l’Apple TV 4K 2021, Haut/Bas est passé à environ 58 images par seconde une fois cet effet coupé. La carte sélectionnée garde son agrandissement ; l’effet reste disponible dans Réglages, Performance.",
-        "Films et Séries : Haut depuis la première rangée mène directement à Voir la fiche. Catégories se trouve juste au-dessus.",
-        "Films et Séries : Gauche et droite sur Voir la fiche changent toujours de proposition, avec les indicateurs de position.",
-        "Rappel : l’image derrière les recommandations suit le réglage Illustration en fond, dans Réglages, Performance."
+    static let current = NTVReleaseNotes(build: "59", improvements: [
+        "Version alternative de la 58, qui reste la version de secours.",
+        "Films et Séries : changer de rangée fait glisser la page au lieu de la déplacer d’un coup. Monter vers Voir la fiche glisse aussi. Avec Réduire les animations, le déplacement reste instantané.",
+        "Menu latéral : les icônes et le logo restent en place à l’ouverture ; seuls les libellés apparaissent à côté, en fondu. L’ouverture ralentit en arrivant, la fermeture est un peu plus vive.",
+        "Menu latéral : un repère blanc marque la section ouverte, menu ouvert ou fermé. À l’ouverture, un voile sombre assure la lisibilité des libellés sur les affiches.",
+        "Ouvrir ou fermer le menu n’anime plus toute la page derrière lui.",
+        "Reprend tout le contenu de la 58 : inclinaison des cartes désactivée par défaut, Haut depuis la première rangée vers Voir la fiche."
     ], checks: [
-        "Films et Séries : depuis la première rangée, appuyer sur Haut. Le focus doit arriver sur Voir la fiche, pas sur Catégories.",
-        "Sur Voir la fiche : gauche et droite changent de proposition ; Haut mène à Catégories ; Bas revient aux affiches.",
-        "Avec le compteur de cadence affiché, faire des Haut/Bas et des Gauche/Droite sur l’Accueil et dans Films. Relever le plus bas observé.",
-        "Si l’inclinaison des cartes avait été activée à la main, elle le reste : la vérifier dans Réglages, Performance."
+        "Films et Séries : faire plusieurs Haut/Bas entre les rangées. La page doit glisser sans saut, et le compteur de cadence rester stable.",
+        "Ouvrir et fermer le menu latéral plusieurs fois : les icônes ne doivent pas bouger, les libellés apparaître en douceur, la page derrière rester immobile.",
+        "Vérifier le repère de la section ouverte dans le menu fermé.",
+        "Depuis la première rangée de Films : Haut doit mener à Voir la fiche, puis Haut à Catégories."
     ])
 
     func shouldPresent(installedBuild: String, seenBuild: String, arguments: [String] = []) -> Bool {

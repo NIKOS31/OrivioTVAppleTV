@@ -1033,17 +1033,24 @@ final class NTVDesignSmoke: XCTestCase {
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
         app.launch()
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["ntv.home.heading"].waitForExistence(timeout: 20))
-        let focusedControl = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
-        XCTAssertTrue(focusedControl.waitForExistence(timeout: 20), "Ornaments and snow must leave a real control focused.")
+        let spotlight = app.buttons["ntv.home.spotlight"]
+        XCTAssertTrue(spotlight.waitForExistence(timeout: 20))
         Thread.sleep(forTimeInterval: 1)
         capture("ntv-christmas-home-snow")
-        let before = focusedControl.identifier
-        XCUIRemote.shared.press(.down)
-        let moved = app.descendants(matching: .any).matching(
-            NSPredicate(format: "hasFocus == true AND identifier != %@", before)).firstMatch
-        XCTAssertTrue(moved.waitForExistence(timeout: 10), "Down must still move focus with the December decor.")
-        capture("ntv-christmas-home-row")
+        let remote = XCUIRemote.shared
+        let home = app.buttons["ntv.navigation.0"]
+        for _ in 0..<4 {
+            if home.hasFocus { break }
+            remote.press(.menu)
+            if focused(home, timeout: 2) { break }
+        }
+        XCTAssertTrue(focused(home, timeout: 5), "The rail must stay reachable with the December decor.")
+        remote.press(.right)
+        let content = app.buttons.matching(NSPredicate(format: "hasFocus == true AND NOT (identifier BEGINSWITH %@)",
+                                                       "ntv.navigation.")).firstMatch
+        XCTAssertTrue(content.waitForExistence(timeout: 8), "Ornaments and snow must never take focus from the content.")
+        Thread.sleep(forTimeInterval: 0.5)
+        capture("ntv-christmas-home-content")
     }
 
     func testCatalogCategoryPanelReturnsToItsPosterRow() {

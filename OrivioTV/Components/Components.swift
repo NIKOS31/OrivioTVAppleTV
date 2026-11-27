@@ -1370,9 +1370,7 @@ struct ATVCardCaption: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(FusionType.cardTitle(theme.font))
-                // nTV redesign: only the focused title is bright.
-                .foregroundStyle(theme.palette.id == NTVDesign.palette.id && !lowered
-                                 ? theme.palette.textSecondary : theme.palette.textPrimary)
+                .foregroundStyle(theme.palette.textPrimary)
                 .lineLimit(1)
             if let subtitle, !subtitle.isEmpty {
                 Text(subtitle)
@@ -1390,6 +1388,10 @@ struct ATVCardCaption: View {
         // not moved: an unrequested animation AND a layout bug. It also had no
         // Reduce Motion gate of its own, unlike everything else on the card.
         .offset(y: lowered && (perf.cardParallaxEffective || perf.focusZoomEffective) ? dropDistance : 0)
+        // nTV redesign (build 59): like the Apple TV app, only the selected
+        // poster is captioned; the rows read as artwork. The space stays
+        // reserved, so nothing moves when the caption appears.
+        .opacity(theme.palette.id == NTVDesign.palette.id && !lowered ? 0 : 1)
         .animation(perf.motion(FusionMotion.focusEntry), value: lowered)
     }
 }
@@ -1800,8 +1802,12 @@ struct RowHeader: View {
     let title: String
 
     var body: some View {
+        // nTV redesign (build 59): row titles a step larger and bolder, so
+        // the page reads as clear sections from the sofa now that the posters
+        // carry no captions at rest.
         Text(NTVFrench.catalogTitle(title))
-            .font(FusionType.moduleHeading(theme.font))
+            .font(theme.palette.id == NTVDesign.palette.id
+                  ? .system(size: 36, weight: .bold) : FusionType.moduleHeading(theme.font))
             .foregroundStyle(theme.palette.textPrimary)
             .padding(.leading, theme.palette.id == NTVDesign.palette.id
                      ? NTVViewport.horizontalInset : OrivioSpacing.huge)

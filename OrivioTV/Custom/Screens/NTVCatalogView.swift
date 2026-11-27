@@ -176,6 +176,8 @@ struct NTVCatalogView: View {
     let onBackAtRoot: () -> Void
     let onOpenSettings: () -> Void
     @State private var hero = HeroFocus()
+    /// Unobserved here (like `hero`): only the band's selection label redraws.
+    @State private var band = NTVCatalogBandState()
     @State private var restoreSelection: NTVCatalogBrowserModel.Selection?
     @State private var restoreFocusRequest: ContentFocusRouter.EntryRequest?
     @State private var menuVisible = false
@@ -204,45 +206,25 @@ struct NTVCatalogView: View {
         ZStack(alignment: .leading) {
             NTVFocusBackdrop(hero: hero, identifier: "ntv.catalog.\(mediaType).backdrop")
             ScrollViewReader { proxy in
+              // Build 59 redesign: the section title and Categories form a
+              // fixed band above the page. Once the recommendation has
+              // scrolled away, the band also names the selected title, so the
+              // presentation never disappears entirely while browsing rows.
+              // Constant height: nothing below it moves when it changes.
+              VStack(alignment: .leading, spacing: 0) {
+                catalogBand(proxy)
                 ZStack(alignment: .leading) {
                     ScrollView(.vertical) {
                         LazyVStack(alignment: .leading, spacing: 22) {
                             VStack(alignment: .leading, spacing: 22) {
-                                HStack {
-                                    Text(title).font(.system(size: 38, weight: .semibold))
-                                        .ntvHalloweenDecor(.heading)
-                                        .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
-                                        #if DEBUG
-                                        .accessibilityValue(ProcessInfo.processInfo.arguments.contains("-ntvCatalogEvaluationFixture")
-                                            ? String(NTVRenderProbe.snapshot()?[.catalog]?.evaluations ?? -1) : "")
-                                        #endif
-                                    Spacer()
-                                    if !viewModel.sources.isEmpty {
-                                        Button {
-                                            if let source = viewModel.lastSelection?.sourceID ?? viewModel.firstNavigableSourceID {
-                                                openCategory(source)
-                                            }
-                                        } label: {
-                                            Label("Catégories", systemImage: "line.3.horizontal.decrease")
-                                        }
-                                        .buttonStyle(NTVActionButtonStyle(capsule: true))
-                                        .focused($categoryTriggerFocused)
-                                        .onChange(of: categoryTriggerFocused) { _, focused in
-                                            if focused { ContentFocusRouter.shared.noteFocused(row: routerID) }
-                                        }
-                                        .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
-                                        .onMoveCommand { direction in
-                                            guard categoryTriggerFocused else { return }
-                                            if direction == .down, let first = viewModel.firstNavigableSourceID {
-                                                requestRow(first, proxy: proxy)
-                                            } else if direction == .left, !hero.spotlight.isEmpty {
-                                                spotlightFocused = true
-                                            }
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, NTVViewport.horizontalInset)
                                 catalogSpotlight(proxy)
+                                    // Written to an object the catalog body does
+                                    // not observe: a row move redraws the band only.
+                                    .onGeometryChange(for: Bool.self) { geometry in
+                                        geometry.frame(in: .scrollView).maxY < 150
+                                    } action: { collapsed in
+                                        band.collapsed = collapsed
+                                    }
                             }
                             // The full header bridges the gap between the shelves and Categories.
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -281,7 +263,7 @@ struct NTVCatalogView: View {
                                     .accessibilityIdentifier("ntv.catalog.shelf.\(source.id)")
                                     .id(source.id)
                             }
-                        }.padding(.top, 26).padding(.bottom, 100)
+                        }.padding(.top, 6).padding(.bottom, 100)
                     }
                     // Vertical clipping reserves the top bar; horizontal rows
                     // retain their own focus-lift margin.
@@ -344,6 +326,7 @@ struct NTVCatalogView: View {
                     ContentFocusRouter.shared.unregister(routerID)
                     ContentFocusRouter.shared.unregister(spotlightID)
                 }
+              }
             }
         }
         .foregroundStyle(theme.palette.textPrimary)
@@ -371,6 +354,49 @@ struct NTVCatalogView: View {
             menuVisible = false; menuSourceID = nil; categoryFocus = nil
         }
         .onExitCommand { onBackAtRoot() }
+    }
+    private func catalogBand(_ proxy: ScrollViewProxy) -> some View {
+        HStack(alignment: .center, spacing: 26) {
+            Text(title).font(.system(size: 38, weight: .semibold))
+                .ntvHalloweenDecor(.heading)
+                .accessibilityIdentifier("ntv.catalog.\(mediaType).heading")
+                #if DEBUG
+                .accessibilityValue(ProcessInfo.processInfo.arguments.contains("-ntvCatalogEvaluationFixture")
+                    ? String(NTVRenderProbe.snapshot()?[.catalog]?.evaluations ?? -1) : "")
+                #endif
+                .layoutPriority(1)
+            NTVCatalogBandSelection(hero: hero, state: band)
+            Spacer(minLength: 0)
+            if !viewModel.sources.isEmpty {
+                Button {
+                    if let source = viewModel.lastSelection?.sourceID ?? viewModel.firstNavigableSourceID {
+                        openCategory(source)
+                    }
+                } label: {
+                    Label("Catégories", systemImage: "line.3.horizontal.decrease")
+                }
+                .buttonStyle(NTVActionButtonStyle(capsule: true))
+                .focused($categoryTriggerFocused)
+                .onChange(of: categoryTriggerFocused) { _, focused in
+                    if focused { ContentFocusRouter.shared.noteFocused(row: routerID) }
+                }
+                .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
+                .onMoveCommand { direction in
+                    guard categoryTriggerFocused else { return }
+                    if direction == .down, let first = viewModel.firstNavigableSourceID {
+                        requestRow(first, proxy: proxy)
+                    } else if direction == .left, !hero.spotlight.isEmpty {
+                        spotlightFocused = true
+                    }
+                }
+                .disabled(menuVisible)
+            }
+        }
+        .frame(minHeight: 66)
+        .padding(.horizontal, NTVViewport.horizontalInset)
+        .padding(.top, 26)
+        .padding(.bottom, 8)
+        .focusSection()
     }
     @ViewBuilder
     private func catalogSpotlight(_ proxy: ScrollViewProxy) -> some View {
@@ -639,5 +665,43 @@ private struct NTVCatalogShelf: View {
               let focusRequest,
               ContentFocusRouter.shared.consumeEntry(focusRequest) else { return }
         emptyFocus = model.failed ? .retry : .categories
+    }
+}
+
+/// Whether the catalog recommendation has scrolled out of view (build 59).
+final class NTVCatalogBandState: ObservableObject {
+    @Published var collapsed = false
+}
+
+/// The selected title in the fixed catalog band, shown once the full
+/// presentation has scrolled away. Opacity only: the band keeps its height.
+private struct NTVCatalogBandSelection: View {
+    @ObservedObject var hero: HeroFocus
+    @ObservedObject var state: NTVCatalogBandState
+    @ScaledMetric(relativeTo: .title3) private var titleSize: CGFloat = 30
+    @ScaledMetric(relativeTo: .callout) private var metaSize: CGFloat = 25
+
+    var body: some View {
+        let item = hero.item
+        let visible = state.collapsed && item != nil
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(item?.name ?? "")
+                .font(.system(size: titleSize, weight: .semibold))
+                .foregroundStyle(NTVDesign.textPrimary)
+                .lineLimit(1)
+            Text([item?.year, item?.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.system(size: metaSize, weight: .medium))
+                .foregroundStyle(NTVDesign.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.leading, 26)
+        .overlay(alignment: .leading) {
+            Capsule().fill(NTVDesign.textSecondary.opacity(0.6)).frame(width: 3, height: 30)
+        }
+        .opacity(visible ? 1 : 0)
+        .animation(PerformanceSettingsStore.shared.motion(.easeOut(duration: 0.2)), value: visible)
+        .accessibilityHidden(!visible)
+        .allowsHitTesting(false)
     }
 }

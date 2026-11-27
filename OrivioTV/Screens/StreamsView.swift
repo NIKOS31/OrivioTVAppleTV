@@ -1876,16 +1876,18 @@ struct StreamsView: View {
                             VStack(alignment: .leading, spacing: OrivioSpacing.sm) {
                                 // Level 2: resolution (hidden when untiered).
                                 if !section.title.isEmpty {
+                                    // nTV: the quality is the large anchor of each group;
+                                    // its rows then carry only size and release name.
                                     Text(isNTV ? (section.title == "Other" ? "Qualité non précisée" : section.title) : section.title.uppercased())
-                                        .font(isNTV ? .body.weight(.semibold) : .system(size: 20, weight: .heavy))
-                                        .foregroundStyle(theme.palette.secondary)
+                                        .font(isNTV ? .system(size: 34, weight: .bold) : .system(size: 20, weight: .heavy))
+                                        .foregroundStyle(isNTV ? theme.palette.textPrimary : theme.palette.secondary)
                                         .lineLimit(1)
                                         .accessibilityIdentifier("ntv.sources.quality")
                                         .padding(.leading, 8)
                                         .padding(.top, 2)
                                 }
                                 ForEach(section.entries) { entry in
-                                    sourceRow(entry)
+                                    sourceRow(entry, showsResolution: section.title.isEmpty)
                                 }
                             }
                         }
@@ -1964,14 +1966,15 @@ struct StreamsView: View {
         }
     }
 
-    private func sourceRow(_ entry: StreamEntry) -> some View {
+    private func sourceRow(_ entry: StreamEntry, showsResolution: Bool = true) -> some View {
         Button {
             handleSelection(entry, viewModel.allEntries)
         } label: {
             StreamRowView(
                 entry: entry,
                 debridShortName: entry.stream.isTorrent ? debrid.resolverProvider?.shortName : nil,
-                badges: streamBadges.badges(for: entry)
+                badges: streamBadges.badges(for: entry),
+                showsResolution: showsResolution
             )
         }
         .buttonStyle(PlainCardButtonStyle())
@@ -2038,6 +2041,8 @@ struct StreamRowView: View {
     var debridShortName: String?
     /// Badger badge chips matched for this link (see StreamBadgeStore).
     var badges: [StreamBadge] = []
+    /// nTV: false when the group header above already names the quality.
+    var showsResolution = true
 
     @ViewBuilder
     var body: some View {
@@ -2048,30 +2053,41 @@ struct StreamRowView: View {
         }
     }
 
+    // Build 59 redesign: an airy list, no grey cards. At rest a source is
+    // its quality, size and name straight on the page, separated by a
+    // hairline; focus turns the whole row into the same solid off-white
+    // surface with dark text as every focused nTV control. No scale: a row
+    // is wide, and scaling it re-composites the whole card on each move.
     private var ntvRow: some View {
-        HStack(alignment: .top, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(entry.resolutionLabel ?? "Source")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(NTVDesign.textPrimary)
-                    .lineLimit(1)
+        let primary = isFocused ? NTVDesign.background : NTVDesign.textPrimary
+        let secondary = isFocused ? NTVDesign.background.opacity(0.68) : NTVDesign.textSecondary
+        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
+        return HStack(alignment: .center, spacing: 28) {
+            VStack(alignment: .leading, spacing: 4) {
+                if showsResolution {
+                    Text(entry.resolutionLabel ?? "Source")
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundStyle(primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
                 if let size = entry.fileSizeLabel {
                     Text(size)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(NTVDesign.textSecondary)
+                        .font(showsResolution ? .callout.weight(.medium) : .body.weight(.semibold))
+                        .foregroundStyle(showsResolution ? secondary : primary)
                         .lineLimit(1)
                 }
             }
-            .frame(width: 128, alignment: .leading)
-            VStack(alignment: .leading, spacing: 10) {
+            .frame(width: 150, alignment: .leading)
+            VStack(alignment: .leading, spacing: 8) {
                 Text(entry.stream.name == nil ? "Source vidéo" : entry.displayName)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(NTVDesign.textPrimary)
+                    .foregroundStyle(primary)
                     .lineLimit(homeCatalogSettings.fullStreamTitles ? 3 : 1)
                 if !entry.displayDetail.isEmpty {
                     Text(entry.displayDetail)
                         .font(.callout)
-                        .foregroundStyle(NTVDesign.textSecondary)
+                        .foregroundStyle(secondary)
                         .lineLimit(homeCatalogSettings.fullStreamTitles ? 4 : 2)
                 }
                 if entry.stream.isTorrent && entry.isInstant || debridShortName != nil {
@@ -2082,27 +2098,30 @@ struct StreamRowView: View {
                         if let debridShortName { Text(debridShortName) }
                     }
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(NTVDesign.textSecondary)
+                    .foregroundStyle(secondary)
                     .lineLimit(1)
                 }
                 if !badges.isEmpty { StreamBadgeChips(badges: badges) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: entry.stream.isTorrent ? "bolt.horizontal.circle.fill" : "play.circle.fill")
-                .font(.title2)
-                .foregroundStyle(isFocused ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+                .font(.system(size: 40))
+                .foregroundStyle(isFocused ? NTVDesign.background : NTVDesign.textSecondary.opacity(0.7))
                 .accessibilityHidden(true)
         }
-        .padding(24)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(isFocused ? theme.palette.focusBackground : theme.palette.backgroundCard)
+        .background { shape.fill(NTVDesign.textPrimary).opacity(isFocused ? 1 : 0) }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 1)
+                .padding(.horizontal, 28)
+                .opacity(isFocused ? 0 : 1)
+                .accessibilityHidden(true)
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(isFocused ? theme.palette.focusRing : .clear, lineWidth: 3)
-        }
+        .shadow(color: .black.opacity(isFocused ? 0.45 : 0), radius: 18, y: 10)
         .animation(perf.motion(FusionFocus.liftAnimation), value: isFocused)
     }
 

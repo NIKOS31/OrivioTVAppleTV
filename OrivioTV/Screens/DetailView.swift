@@ -1960,12 +1960,19 @@ private struct CircleIconLabel: View {
             }
             // Glass circle at rest, matching the rail.
             .liquidGlassIf(!isFocused && !active && theme.palette.id != NTVDesign.palette.id, in: Circle())
+            // nTV (build 59): the same language as the action pills, a
+            // translucent circle with a hairline at rest, solid off-white with
+            // a soft shadow in focus, without a second ring.
             .background {
                 if !isFocused && !active && theme.palette.id == NTVDesign.palette.id {
-                    Circle().fill(.black.opacity(0.28))
+                    Circle().fill(Color.white.opacity(0.12))
+                        .overlay(Circle().strokeBorder(.white.opacity(0.08), lineWidth: 1))
                 }
             }
-            .overlay(Circle().strokeBorder(isFocused ? Color.white.opacity(0.95) : .clear, lineWidth: 3))
+            .overlay(Circle().strokeBorder(isFocused && theme.palette.id != NTVDesign.palette.id
+                                           ? Color.white.opacity(0.95) : .clear, lineWidth: 3))
+            .shadow(color: .black.opacity(isFocused && theme.palette.id == NTVDesign.palette.id ? 0.45 : 0),
+                    radius: 16, y: 8)
             .focusLift(OrivioFocus.control, isFocused)
             .onAppear {
                 focusedNow = rawFocused

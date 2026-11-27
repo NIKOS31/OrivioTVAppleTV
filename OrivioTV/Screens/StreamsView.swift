@@ -2231,13 +2231,24 @@ private struct AddonFilterChipLabel: View {
             .padding(.vertical, OrivioSpacing.sm)
             .background(Capsule().fill(background))
             .overlay(
-                Capsule().strokeBorder(isFocused ? theme.palette.focusRing : .clear, lineWidth: 3)
+                Capsule().strokeBorder(ring, lineWidth: isNTV ? 1 : 3)
             )
             .focusLift(OrivioFocus.card, isFocused)
     }
 
+    private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
+
+    /// nTV (build 59): the button language; a hairline at rest, none in focus.
+    private var ring: Color {
+        if isNTV { return isFocused ? .clear : .white.opacity(0.08) }
+        return isFocused ? theme.palette.focusRing : .clear
+    }
+
     private var foreground: Color {
         if isFocused { return theme.palette.onSecondary }
+        // nTV: the dark ink on the faint tint read poorly; light text on the
+        // brighter translucent pill marks the selected addon instead.
+        if selected && isNTV { return NTVDesign.textPrimary }
         // A light accent (White/Lavender/Mint) has to use its own dark ink on
         // the faint accent tint, or the label disappears into it.
         if selected { return theme.palette.hasLightAccent ? theme.palette.onSecondary : theme.palette.secondary }
@@ -2246,6 +2257,7 @@ private struct AddonFilterChipLabel: View {
 
     private var background: Color {
         if isFocused { return theme.palette.secondary }
+        if isNTV { return .white.opacity(selected ? 0.22 : 0.12) }
         if selected { return theme.palette.secondary.opacity(0.22) }
         return theme.palette.backgroundCard.opacity(0.85)
     }

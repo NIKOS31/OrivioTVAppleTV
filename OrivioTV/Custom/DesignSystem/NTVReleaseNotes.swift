@@ -7,24 +7,16 @@ struct NTVReleaseNotes: Sendable {
     let checks: [String]
 
     // Keep this entry and the app/extension build number together at release.
-    static let current = NTVReleaseNotes(build: "56", improvements: [
-        "Films et Séries : les recommandations retrouvent le carrousel de l’Accueil, avec Voir la fiche, navigation gauche/droite et indicateurs de position. Au repos sur le bandeau, les propositions défilent ; Réduire les animations conserve la navigation manuelle.",
-        "Accueil : désactiver l’illustration de fond conserve maintenant le carrousel et ses actions. Ce réglage agit sur l’image de fond seulement.",
-        "Films et Séries : les demandes de changement de rangée sont transmises aux rangées concernées, pour éviter de réévaluer le catalogue entier à chaque appui Haut ou Bas.",
-        "Le retour sur la TV a confirmé des chutes de cadence dans Films et Séries sur la version55. Elles restent à résoudre : cette mise à jour ne prétend pas rétablir 60 images par seconde.",
-        "Les rangées d’affiches nTV réservent une marge à gauche lors du retour sur la première affiche, pour garder son agrandissement visible.",
-        "Les cartes d’épisodes laissent davantage d’espace à leur voisin pendant l’agrandissement au focus.",
-        "Les rangées d’affiches nTV de l’Accueil, des Films et des Séries sont davantage espacées.",
-        "Films et Séries : les changements de rangée limitent le défilement au nécessaire pour conserver les repères à l’écran."
+    static let current = NTVReleaseNotes(build: "58", improvements: [
+        "Fluidité : l’inclinaison des cartes est désactivée par défaut sur toutes les Apple TV. Sur l’Apple TV 4K 2021, Haut/Bas est passé à environ 58 images par seconde une fois cet effet coupé. La carte sélectionnée garde son agrandissement ; l’effet reste disponible dans Réglages, Performance.",
+        "Films et Séries : Haut depuis la première rangée mène directement à Voir la fiche. Catégories se trouve juste au-dessus.",
+        "Films et Séries : Gauche et droite sur Voir la fiche changent toujours de proposition, avec les indicateurs de position.",
+        "Rappel : l’image derrière les recommandations suit le réglage Illustration en fond, dans Réglages, Performance."
     ], checks: [
-        "Films et Séries : depuis la première rangée, monter à Catégories puis aller à gauche vers Voir la fiche. Changer de proposition, ouvrir la fiche et revenir, puis descendre dans les affiches. Les indicateurs et le titre doivent rester cohérents.",
-        "Accueil : désactiver temporairement Illustration en fond dans Performances. Les recommandations et Voir la fiche doivent rester accessibles ; rétablir ensuite le réglage souhaité.",
-        "Pour le diagnostic accompagné : dans Performances, activer le compteur de cadence et Enregistrer les diagnostics sur cette TV. Reproduire une ouverture de section ou un changement de rangée, puis relever le bloc local sans quitter l’écran. Désactiver les diagnostics après l’essai.",
-        "Films et Séries : avancer loin dans une rangée, descendre puis remonter. Le bord gauche et les coins de l’affiche sélectionnée doivent rester entiers, y compris après deux secondes au repos.",
-        "Animés ou série : focaliser le premier épisode puis un épisode au milieu. Les images doivent rester séparées et leurs textes lisibles.",
-        "Films et Séries : parcourir plusieurs affiches et changer de rangée. Vérifier la séparation des cartes, puis signaler tout saut vertical inattendu.",
-        "Comparer les changements de rangée par appuis et par balayages. Les baisses de fluidité restent à diagnostiquer : relever UI Hz, max ms et retards pendant les mouvements puis après 10 secondes immobile.",
-        "Lecteur : confirmer que l’aperçu reste disponible entre deux glissements, que Retour annule et qu’OK valide."
+        "Films et Séries : depuis la première rangée, appuyer sur Haut. Le focus doit arriver sur Voir la fiche, pas sur Catégories.",
+        "Sur Voir la fiche : gauche et droite changent de proposition ; Haut mène à Catégories ; Bas revient aux affiches.",
+        "Avec le compteur de cadence affiché, faire des Haut/Bas et des Gauche/Droite sur l’Accueil et dans Films. Relever le plus bas observé.",
+        "Si l’inclinaison des cartes avait été activée à la main, elle le reste : la vérifier dans Réglages, Performance."
     ])
 
     func shouldPresent(installedBuild: String, seenBuild: String, arguments: [String] = []) -> Bool {

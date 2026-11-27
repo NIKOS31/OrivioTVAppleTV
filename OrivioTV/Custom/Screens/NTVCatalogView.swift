@@ -505,8 +505,16 @@ struct NTVCatalogView: View {
                 cancelEntryRequests()
                 viewModel.requestedCategory = nil; restoreSelection = nil; restoreFocusRequest = nil
                 proxy.scrollTo("catalogTop", anchor: .top)
-                ContentFocusRouter.shared.land(in: routerID,
-                    assign: { categoryTriggerFocused = true }, landed: { categoryTriggerFocused })
+                // Up reaches the recommendation directly above the shelves (build 58):
+                // going through Categories, then Left, was the only path and the TV
+                // feedback showed it was not found. Categories stays one Up above it.
+                if !hero.spotlight.isEmpty, !menuVisible {
+                    ContentFocusRouter.shared.land(in: spotlightID,
+                        assign: { spotlightFocused = true }, landed: { spotlightFocused })
+                } else {
+                    ContentFocusRouter.shared.land(in: routerID,
+                        assign: { categoryTriggerFocused = true }, landed: { categoryTriggerFocused })
+                }
             }
         }
     }

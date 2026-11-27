@@ -22,10 +22,12 @@ final class NTVDesignSmoke: XCTestCase {
             if app.buttons["ntv.catalog.\(type).spotlight"].hasFocus { remote.press(.down) }
             XCTAssertTrue(focused(first, timeout: 10))
             let categories = app.buttons["ntv.catalog.\(type).openCategories"]
-            remote.press(.up)
-            XCTAssertTrue(focused(categories, timeout: 8))
-            remote.press(.left)
             let feature = app.buttons["ntv.catalog.\(type).spotlight"]
+            remote.press(.up)
+            XCTAssertTrue(focused(feature, timeout: 8), "Up from the first shelf must reach See details directly.")
+            remote.press(.up)
+            XCTAssertTrue(focused(categories, timeout: 8), "Categories stays one Up above See details.")
+            remote.press(.left)
             XCTAssertTrue(focused(feature, timeout: 8))
             XCTAssertEqual(feature.value as? String, "Proposition 1 sur 10")
             let firstLabel = feature.label
@@ -267,8 +269,7 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(seanime ? .right : .down)
         XCTAssertTrue(focused(first, timeout: 8))
         if seanime {
-            remote.press(.up)
-            XCTAssertTrue(focused(app.buttons["ntv.catalog.movie.openCategories"], timeout: 8))
+            XCTAssertTrue(reachCategories(app, type: "movie"))
             remote.press(.select)
         } else { remote.press(.left) }
         let categoryPrefix = "ntv.category.movie."
@@ -406,13 +407,12 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(focused(first, timeout: 8))
         let trigger = app.buttons["ntv.catalog.movie.openCategories"]
         for _ in 0..<3 {
-            remote.press(.up)
-            XCTAssertTrue(focused(trigger, timeout: 8), "Up from the first shelf must reach Categories in the left-menu layout.")
+            XCTAssertTrue(reachCategories(app, type: "movie"),
+                "Up from the first shelf must reach Categories, through See details when it exists, in the left-menu layout.")
             remote.press(.down)
             XCTAssertTrue(focused(first, timeout: 8), "Down from Categories must reach the first poster even if UIKit initially chooses See All.")
         }
-        remote.press(.up)
-        XCTAssertTrue(focused(trigger, timeout: 8))
+        XCTAssertTrue(reachCategories(app, type: "movie"))
         remote.press(.select)
         let panel = app.descendants(matching: .any)["ntv.catalog.movie.categoryPanel"].firstMatch
         XCTAssertTrue(panel.waitForExistence(timeout: 8))
@@ -2376,6 +2376,19 @@ final class NTVDesignSmoke: XCTestCase {
         }
         XCTFail("Native focus geometry did not settle within the deadline.")
         return previous
+    }
+
+    /// From the first shelf, Up lands on See details when recommendations exist
+    /// (build 58), and one more Up reaches Categories.
+    private func reachCategories(_ app: XCUIApplication, type: String) -> Bool {
+        let remote = XCUIRemote.shared
+        let categories = app.buttons["ntv.catalog.\(type).openCategories"]
+        let feature = app.buttons["ntv.catalog.\(type).spotlight"]
+        remote.press(.up)
+        if focused(categories, timeout: 3) { return true }
+        guard feature.hasFocus else { return false }
+        remote.press(.up)
+        return focused(categories, timeout: 8)
     }
 
     private func focused(_ element: XCUIElement, timeout: TimeInterval) -> Bool {

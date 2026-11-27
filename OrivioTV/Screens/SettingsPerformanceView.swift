@@ -88,7 +88,7 @@ struct PerformanceSettingsDetail: View {
                 PerfToggleRow(
                     icon: "move.3d",
                     title: "Inclinaison des cartes",
-                    subtitle: "Incliner la carte avec le pavé tactile. Cet effet est plus coûteux sur les anciens appareils.",
+                    subtitle: "Incliner la carte avec le pavé tactile. Désactivé par défaut : cet effet réduit la fluidité de la navigation, y compris sur Apple TV 4K.",
                     isOn: s.cardParallax
                 )
             }

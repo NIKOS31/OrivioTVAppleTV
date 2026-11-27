@@ -68,12 +68,12 @@ final class PerformanceSettingsStore: ObservableObject {
         var cardShadows = true
         /// Cards spring slightly larger when focused.
         var focusZoom = true
-        /// Apple TV theme only: the native tvOS card platter — the focused
-        /// poster lifts and tilts/parallaxes with the trackpad. It's the
-        /// heaviest per-frame focus effect (the system re-composites the whole
-        /// focused card as the finger moves). OFF swaps in a lightweight
-        /// scale-only focus so cards still respond, without the tilt.
-        var cardParallax = true
+        /// The native tvOS card platter: the focused poster lifts and tilts
+        /// with the trackpad. OFF by default on every model since build 58:
+        /// with it on, Home Up/Down fell to about 44 fps in the simulator
+        /// bench (run 45888159543) and the Apple TV 4K 2021 held about 58 Hz
+        /// only once it was off. OFF keeps the scale-only focus lift.
+        var cardParallax = false
         /// Background download of below-the-fold row artwork.
         var artworkPrefetch = true
         /// Fade posters in as they finish loading.
@@ -113,7 +113,7 @@ final class PerformanceSettingsStore: ObservableObject {
             heroCrossfade = (try? c.decode(Bool.self, forKey: .heroCrossfade)) ?? true
             cardShadows = (try? c.decode(Bool.self, forKey: .cardShadows)) ?? true
             focusZoom = (try? c.decode(Bool.self, forKey: .focusZoom)) ?? true
-            cardParallax = (try? c.decode(Bool.self, forKey: .cardParallax)) ?? true
+            cardParallax = (try? c.decode(Bool.self, forKey: .cardParallax)) ?? false
             artworkPrefetch = (try? c.decode(Bool.self, forKey: .artworkPrefetch)) ?? true
             artworkFadeIn = (try? c.decode(Bool.self, forKey: .artworkFadeIn)) ?? true
             sidebarAnimation = (try? c.decode(Bool.self, forKey: .sidebarAnimation)) ?? true

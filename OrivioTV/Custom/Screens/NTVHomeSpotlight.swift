@@ -110,10 +110,17 @@ struct NTVHomeSpotlight: View {
         let _ = NTVRenderProbe.evaluated(.homeSpotlight)
         if let item = hero.item {
             VStack(alignment: .leading, spacing: 16) {
-                Text(item.name)
-                    .font(.system(size: titleSize, weight: .semibold))
-                    .lineLimit(2, reservesSpace: true)
-                    .minimumScaleFactor(0.75)
+                ZStack(alignment: .bottomLeading) {
+                    Text("\u{00A0}\n\u{00A0}")
+                        .font(.system(size: titleSize, weight: .semibold))
+                        .lineLimit(2)
+                        .hidden()
+                        .accessibilityHidden(true)
+                    Text(item.name)
+                        .font(.system(size: titleSize, weight: .semibold))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.75)
+                }
                 Text([item.year, item.genres?.prefix(2).map(NTVFrench.genre).joined(separator: " · ")]
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.system(size: metadataSize, weight: .medium))

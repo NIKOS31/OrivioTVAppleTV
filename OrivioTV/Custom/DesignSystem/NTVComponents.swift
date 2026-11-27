@@ -164,6 +164,8 @@ struct NTVSidebarLabel: View {
         }
         .accessibilityLabel(NTVBrand.navigationTitle(for: tab))
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .animation(PerformanceSettingsStore.shared.sidebarAnimationEffective
+                   ? (expanded ? FusionMotion.focusEntry : FusionMotion.focusExit) : nil, value: expanded)
     }
 }
 
@@ -185,35 +187,32 @@ struct NTVActionButtonStyle: ButtonStyle {
         let capsule: Bool
         private var radius: CGFloat { capsule ? 100 : NTVDesign.controlRadius }
 
+        // Build 59: one button language. At rest a translucent pill that lets
+        // the artwork through (the principal action a little brighter); in
+        // focus solid off-white with dark text, lifted with a soft neutral
+        // shadow. The second white ring around the focused button is gone:
+        // the fill change already reads from the sofa.
         var body: some View {
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
             configuration.label
                 .font(.system(size: capsule ? labelSize * 0.86 : labelSize, weight: legibility == .bold ? .bold : .medium))
-                .foregroundStyle(focused || prominent ? NTVDesign.background : NTVDesign.textPrimary)
+                .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
                 .padding(.horizontal, capsule ? 20 : 28)
                 .frame(minHeight: capsule ? 56 : 70)
                 .background {
-                    if focused || prominent {
-                        RoundedRectangle(cornerRadius: radius, style: .continuous)
-                            .fill(NTVDesign.textPrimary.opacity(focused ? 1 : 0.92))
+                    if focused {
+                        shape.fill(NTVDesign.textPrimary)
                     } else if glass {
-                        NTVGlassSurface(shape: RoundedRectangle(cornerRadius: radius, style: .continuous), clear: true)
+                        NTVGlassSurface(shape: shape, clear: true)
                     } else {
-                        RoundedRectangle(cornerRadius: radius, style: .continuous)
-                            .fill(NTVDesign.raised.opacity(0.92))
+                        shape.fill(Color.white.opacity(prominent ? 0.22 : 0.12))
                     }
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .strokeBorder(.white.opacity(focused ? 0 : 0.12), lineWidth: 1)
+                    shape.strokeBorder(.white.opacity(focused ? 0 : 0.08), lineWidth: 1)
                 }
-                .overlay {
-                    RoundedRectangle(cornerRadius: radius + 4, style: .continuous)
-                        .inset(by: -4).stroke(.white, lineWidth: 2)
-                        .opacity(focused ? 1 : 0)
-                }
-                // Glass is opt-in for the few principal actions. Scrolling
-                // rows keep the lighter alpha fill and the same focus cue.
-                .focusLift(1.015, focused)
+                .shadow(color: .black.opacity(focused ? 0.45 : 0), radius: 16, y: 8)
+                .focusLift(1.05, focused)
                 .cardPressDip(configuration.isPressed)
         }
     }

@@ -225,7 +225,7 @@ struct NTVCatalogView: View {
                                         } label: {
                                             Label("Catégories", systemImage: "line.3.horizontal.decrease")
                                         }
-                                        .buttonStyle(NTVActionButtonStyle())
+                                        .buttonStyle(NTVActionButtonStyle(capsule: true))
                                         .focused($categoryTriggerFocused)
                                         .onChange(of: categoryTriggerFocused) { _, focused in
                                             if focused { ContentFocusRouter.shared.noteFocused(row: routerID) }

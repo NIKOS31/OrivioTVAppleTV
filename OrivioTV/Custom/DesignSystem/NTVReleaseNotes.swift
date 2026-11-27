@@ -13,11 +13,15 @@ struct NTVReleaseNotes: Sendable {
         "Menu latéral : les icônes et le logo restent en place à l’ouverture ; seuls les libellés apparaissent à côté, en fondu. L’ouverture ralentit en arrivant, la fermeture est un peu plus vive.",
         "Menu latéral : un repère blanc marque la section ouverte, menu ouvert ou fermé. À l’ouverture, un voile sombre assure la lisibilité des libellés sur les affiches.",
         "Ouvrir ou fermer le menu n’anime plus toute la page derrière lui.",
+        "Boutons : un seul style dans toute l’app. Au repos, une pilule translucide ; sélectionné, un blanc plein qui s’agrandit légèrement avec une ombre douce, sans second anneau. Catégories adopte la même pilule que Voir la fiche.",
+        "Recommandations : un titre sur une ligne se place juste au-dessus de son année, sans grand vide entre les deux.",
+        "Sources : le nom de l’addon n’est plus écrit en majuscules.",
         "Reprend tout le contenu de la 58 : inclinaison des cartes désactivée par défaut, Haut depuis la première rangée vers Voir la fiche."
     ], checks: [
         "Films et Séries : faire plusieurs Haut/Bas entre les rangées. La page doit glisser sans saut, et le compteur de cadence rester stable.",
         "Ouvrir et fermer le menu latéral plusieurs fois : les icônes ne doivent pas bouger, les libellés apparaître en douceur, la page derrière rester immobile.",
         "Vérifier le repère de la section ouverte dans le menu fermé.",
+        "Parcourir les boutons d’une fiche puis Voir la fiche et Catégories : le bouton sélectionné doit se distinguer nettement des autres depuis le canapé.",
         "Depuis la première rangée de Films : Haut doit mener à Voir la fiche, puis Haut à Catégories."
     ])
 

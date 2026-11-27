@@ -116,6 +116,11 @@ struct GlassSidebar: View {
     /// sit CLOSE to the bar rather than marooned below it.
     static let topBarClearance: CGFloat = 52
 
+    private var railMotion: Animation? {
+        PerformanceSettingsStore.shared.sidebarAnimationEffective
+            ? (expanded ? FusionMotion.focusEntry : FusionMotion.focusExit) : nil
+    }
+
     private var panelShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: expanded ? 34 : 42, style: .continuous)
     }
@@ -319,19 +324,25 @@ struct GlassSidebar: View {
                 .accessibilityIdentifier("ntv.navigation.profile")
                 // Mount once; opening the rail only fades the cached avatar.
                 .opacity(expanded ? 1 : 0)
+                .animation(railMotion, value: expanded)
                 .disabled(!expanded)
                 .accessibilityHidden(!expanded)
         }
         .padding(.vertical, 20)
         .frame(width: expanded ? NTVDesign.sidebarExpandedWidth : 80, alignment: .leading)
         .clipped()
+        // The width only decides the focus frames: it snaps, and the panel
+        // drawn behind fades in at its final size (build 59).
+        .animation(nil, value: expanded)
         .frame(maxHeight: .infinity)
-        .background {
+        .background(alignment: .leading) {
             // The collapsed rail shares the root artwork and its fade to black.
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(expanded ? NTVDesign.surface : Color.clear)
+                .fill(NTVDesign.surface)
                 .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(.white.opacity(expanded ? 0.08 : 0), lineWidth: 1) }
+                    .strokeBorder(.white.opacity(0.08), lineWidth: 1) }
+                .frame(width: NTVDesign.sidebarExpandedWidth)
+                .opacity(expanded ? 1 : 0)
         }
         .padding(.leading, 12)
         .padding(.vertical, 20)
@@ -350,8 +361,7 @@ struct GlassSidebar: View {
         }
         .ignoresSafeArea()
         // Opening decelerates into place; closing leaves a little quicker.
-        .animation(PerformanceSettingsStore.shared.sidebarAnimationEffective
-                   ? (expanded ? FusionMotion.focusEntry : FusionMotion.focusExit) : nil, value: expanded)
+        .animation(railMotion, value: expanded)
         .onChange(of: expanded) { _, isExpanded in
             if isExpanded && focusBinding.wrappedValue != selected {
                 focusBinding.wrappedValue = selected

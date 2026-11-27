@@ -1867,7 +1867,7 @@ struct StreamsView: View {
                 ForEach(viewModel.groups) { group in
                     VStack(alignment: .leading, spacing: OrivioSpacing.md) {
                         // Level 1: addon.
-                        Text(group.addonName.uppercased())
+                        Text(isNTV ? group.addonName : group.addonName.uppercased())
                             .font(isNTV ? .callout.weight(.semibold) : .system(size: 24, weight: .heavy))
                             .foregroundStyle(isNTV ? theme.palette.textSecondary : theme.palette.textPrimary)
                             .lineLimit(isNTV ? 1 : nil)

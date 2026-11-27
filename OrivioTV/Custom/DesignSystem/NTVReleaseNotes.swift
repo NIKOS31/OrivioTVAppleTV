@@ -16,7 +16,7 @@ struct NTVReleaseNotes: Sendable {
         "Menu latéral : les icônes et le logo restent en place à l’ouverture ; seuls les libellés apparaissent à côté, en fondu. Ouvrir ou fermer le menu n’anime plus toute la page derrière lui.",
         "Recommandations : un titre sur une ligne se place juste au-dessus de son année, sans grand vide entre les deux.",
         "Refonte visuelle. Sources : plus de cartes grises. La qualité (1080p, 720p…) devient un grand titre de groupe, chaque source une ligne aérée avec sa taille et son nom ; la source sélectionnée devient une pilule blanche avec le texte sombre. Le nom de l’addon n’est plus en majuscules et le filtre sélectionné est entouré.",
-        "Refonte visuelle. Films et Séries : le titre de la page et Catégories restent fixés en haut. Quand la présentation a défilé, ce bandeau affiche le titre, l’année et les genres de l’affiche sélectionnée.",
+        "Refonte visuelle. Films et Séries : le titre de la page reste fixé en haut. Quand la présentation a défilé, ce bandeau affiche aussi le titre, l’année et les genres de l’affiche sélectionnée. Catégories se place en haut à droite de la présentation.",
         "Reprend tout le contenu de la 58 : inclinaison des cartes désactivée par défaut, Haut depuis la première rangée vers Voir la fiche."
     ], checks: [
         "Films et Séries : faire plusieurs Haut/Bas entre les rangées, lentement puis vite. La page doit suivre la sélection sans saut ni retour en arrière, comme sur l’Accueil.",

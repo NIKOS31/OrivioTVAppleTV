@@ -212,19 +212,23 @@ struct NTVCatalogView: View {
               // presentation never disappears entirely while browsing rows.
               // Constant height: nothing below it moves when it changes.
               VStack(alignment: .leading, spacing: 0) {
-                catalogBand(proxy)
+                catalogBand
                 ZStack(alignment: .leading) {
                     ScrollView(.vertical) {
                         LazyVStack(alignment: .leading, spacing: 22) {
                             VStack(alignment: .leading, spacing: 22) {
-                                catalogSpotlight(proxy)
-                                    // Written to an object the catalog body does
-                                    // not observe: a row move redraws the band only.
-                                    .onGeometryChange(for: Bool.self) { geometry in
-                                        geometry.frame(in: .scrollView).maxY < 150
-                                    } action: { collapsed in
-                                        band.collapsed = collapsed
-                                    }
+                                ZStack(alignment: .topTrailing) {
+                                    catalogSpotlight(proxy)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    categoriesTrigger(proxy)
+                                }
+                                // Written to an object the catalog body does
+                                // not observe: a row move redraws the band only.
+                                .onGeometryChange(for: Bool.self) { geometry in
+                                    geometry.frame(in: .scrollView).maxY < 150
+                                } action: { collapsed in
+                                    band.collapsed = collapsed
+                                }
                             }
                             // The full header bridges the gap between the shelves and Categories.
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -355,7 +359,9 @@ struct NTVCatalogView: View {
         }
         .onExitCommand { onBackAtRoot() }
     }
-    private func catalogBand(_ proxy: ScrollViewProxy) -> some View {
+    /// Fixed above the page and never focusable, so it cannot change how
+    /// the remote moves between Categories, See details and the shelves.
+    private var catalogBand: some View {
         HStack(alignment: .center, spacing: 26) {
             Text(title).font(.system(size: 38, weight: .semibold))
                 .ntvHalloweenDecor(.heading)
@@ -367,36 +373,40 @@ struct NTVCatalogView: View {
                 .layoutPriority(1)
             NTVCatalogBandSelection(hero: hero, state: band)
             Spacer(minLength: 0)
-            if !viewModel.sources.isEmpty {
-                Button {
-                    if let source = viewModel.lastSelection?.sourceID ?? viewModel.firstNavigableSourceID {
-                        openCategory(source)
-                    }
-                } label: {
-                    Label("Catégories", systemImage: "line.3.horizontal.decrease")
-                }
-                .buttonStyle(NTVActionButtonStyle(capsule: true))
-                .focused($categoryTriggerFocused)
-                .onChange(of: categoryTriggerFocused) { _, focused in
-                    if focused { ContentFocusRouter.shared.noteFocused(row: routerID) }
-                }
-                .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
-                .onMoveCommand { direction in
-                    guard categoryTriggerFocused else { return }
-                    if direction == .down, let first = viewModel.firstNavigableSourceID {
-                        requestRow(first, proxy: proxy)
-                    } else if direction == .left, !hero.spotlight.isEmpty {
-                        spotlightFocused = true
-                    }
-                }
-                .disabled(menuVisible)
-            }
         }
-        .frame(minHeight: 66)
+        .frame(minHeight: 58)
         .padding(.horizontal, NTVViewport.horizontalInset)
         .padding(.top, 26)
-        .padding(.bottom, 8)
-        .focusSection()
+        .padding(.bottom, 4)
+    }
+    /// Stays inside the scrolling header, top right above the shelves'
+    /// See all: the geometry UIKit's Down/Up searches were tuned against.
+    @ViewBuilder
+    private func categoriesTrigger(_ proxy: ScrollViewProxy) -> some View {
+        if !viewModel.sources.isEmpty {
+            Button {
+                if let source = viewModel.lastSelection?.sourceID ?? viewModel.firstNavigableSourceID {
+                    openCategory(source)
+                }
+            } label: {
+                Label("Catégories", systemImage: "line.3.horizontal.decrease")
+            }
+            .buttonStyle(NTVActionButtonStyle(capsule: true))
+            .focused($categoryTriggerFocused)
+            .onChange(of: categoryTriggerFocused) { _, focused in
+                if focused { ContentFocusRouter.shared.noteFocused(row: routerID) }
+            }
+            .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
+            .onMoveCommand { direction in
+                guard categoryTriggerFocused else { return }
+                if direction == .down, let first = viewModel.firstNavigableSourceID {
+                    requestRow(first, proxy: proxy)
+                } else if direction == .left, !hero.spotlight.isEmpty {
+                    spotlightFocused = true
+                }
+            }
+            .padding(.trailing, NTVViewport.horizontalInset)
+        }
     }
     @ViewBuilder
     private func catalogSpotlight(_ proxy: ScrollViewProxy) -> some View {
@@ -545,8 +555,9 @@ struct NTVCatalogView: View {
             else {
                 cancelEntryRequests()
                 viewModel.requestedCategory = nil; restoreSelection = nil; restoreFocusRequest = nil
-                // No app scroll here either: focus moves into the header just
-                // above and tvOS reveals it, without a second competing scroll.
+                // The header may already be unloaded by the lazy stack, so
+                // this one jump keeps its app scroll (unlike row-to-row moves).
+                glide(proxy, to: "catalogTop", anchor: .top, motion: FusionMotion.pageEnter)
                 // Up reaches the recommendation directly above the shelves (build 58):
                 // going through Categories, then Left, was the only path and the TV
                 // feedback showed it was not found. Categories stays one Up above it.

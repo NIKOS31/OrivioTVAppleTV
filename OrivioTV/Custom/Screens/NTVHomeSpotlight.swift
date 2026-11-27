@@ -170,8 +170,10 @@ struct NTVSpotlightAction: View {
         HStack(spacing: 24) {
             HStack(spacing: 0) {
                 stepTarget(-1)
-                Button(action: onSelect) { Label("Voir la fiche", systemImage: "info.circle") }
-                    .buttonStyle(NTVActionButtonStyle(prominent: true, capsule: true))
+                // Build 59: a round "i" like the detail page's icon buttons,
+                // instead of a labelled pill (owner's choice, 28 Nov 2026).
+                Button(action: onSelect) { Image(systemName: "info") }
+                    .buttonStyle(NTVRoundIconButtonStyle())
                     .focused(focus)
                     .accessibilityLabel("Voir la fiche de " + title)
                     .accessibilityValue(count > 1 ? "Proposition \(index + 1) sur \(count)" : "")
@@ -263,5 +265,29 @@ struct NTVEmptyCatalog: View {
         .padding(36)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(NTVDesign.surface, in: RoundedRectangle(cornerRadius: NTVDesign.cardRadius))
+    }
+}
+
+/// A round icon control alone on the artwork: a thin ring at rest so it is
+/// found without a label, a solid off-white disc with a dark icon in focus.
+struct NTVRoundIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { Chrome(configuration: configuration) }
+
+    private struct Chrome: View {
+        @Environment(\.isFocused) private var focused
+        let configuration: ButtonStyle.Configuration
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
+                .frame(width: 74, height: 74)
+                .background { Circle().fill(NTVDesign.textPrimary).opacity(focused ? 1 : 0) }
+                .overlay { Circle().strokeBorder(NTVDesign.textPrimary.opacity(focused ? 0 : 0.7), lineWidth: 2) }
+                .shadow(color: .black.opacity(focused ? 0.5 : 0), radius: 18, y: 10)
+                .contentShape(Circle())
+                .focusLift(1.1, focused)
+                .cardPressDip(configuration.isPressed)
+        }
     }
 }

@@ -63,7 +63,9 @@ final class NTVDesignSmoke: XCTestCase {
             remote.press(.down)
             XCTAssertTrue(focused(first, timeout: 8))
             remote.press(.up)
-            XCTAssertTrue(focused(categories, timeout: 8), "The existing Categories route remains intact.")
+            XCTAssertTrue(focused(feature, timeout: 8), "After a detail round trip, Up from the first shelf reaches See details again.")
+            remote.press(.up)
+            XCTAssertTrue(focused(categories, timeout: 8), "The Categories route remains intact, one Up above See details.")
         }
     }
 

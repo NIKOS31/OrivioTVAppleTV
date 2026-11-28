@@ -168,7 +168,8 @@ private enum NTVChristmasPalette {
 
 /// Optional, Home only: a sparse, slow snowfall behind the content. Off by
 /// default; never drawn with Reduce Motion, on low-power models or while the
-/// app is in the background. One Canvas, about forty flakes, 30 fps.
+/// app is in the background. One Canvas, forty flakes (six-armed near ones,
+/// small far dots), 30 fps.
 struct NTVSnowfall: View {
     @AppStorage("ntv.seasonal.christmas.enabled") private var christmas = true
     @AppStorage("ntv.seasonal.snow.enabled") private var snow = false
@@ -190,14 +191,29 @@ struct NTVSnowfall: View {
                         let time = context.date.timeIntervalSinceReferenceDate
                         for index in 0..<40 {
                             let seed = Double(index)
-                            let speed = 26 + (seed * 7).truncatingRemainder(dividingBy: 22)
-                            let radius = 1.6 + (seed * 3.7).truncatingRemainder(dividingBy: 2.6)
                             let baseX = (seed * 0.618_034).truncatingRemainder(dividingBy: 1) * size.width
-                            let travel = size.height + 40
-                            let y = (time * speed + seed * 97).truncatingRemainder(dividingBy: travel) - 20
-                            let x = baseX + sin(time * 0.35 + seed) * 18
-                            let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
-                            graphics.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.18 + radius * 0.06)))
+                            let travel = size.height + 60
+                            // Two layers (owner: "just dots"): every third flake is a
+                            // small far-away dot, the rest are real six-armed flakes
+                            // that fall faster and turn slowly, nearer the viewer.
+                            let near = index % 3 != 0
+                            let speed = (near ? 34 : 18) + (seed * 7).truncatingRemainder(dividingBy: 18)
+                            let y = (time * speed + seed * 97).truncatingRemainder(dividingBy: travel) - 30
+                            let x = baseX + sin(time * 0.35 + seed) * 22
+                            if near {
+                                let radius = 7 + (seed * 3.7).truncatingRemainder(dividingBy: 7)
+                                var flake = graphics
+                                flake.translateBy(x: x, y: y)
+                                flake.rotate(by: .radians(time * 0.4 + seed))
+                                let path = NTVSnowflake().path(in: CGRect(x: -radius, y: -radius,
+                                                                          width: radius * 2, height: radius * 2))
+                                flake.stroke(path, with: .color(.white.opacity(0.32 + radius * 0.02)),
+                                             style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
+                            } else {
+                                let radius = 1.4 + (seed * 3.7).truncatingRemainder(dividingBy: 1.4)
+                                let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                                graphics.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.22)))
+                            }
                         }
                     }
                 }

@@ -340,7 +340,10 @@ struct NTVCatalogView: View {
                     }
                     ContentFocusRouter.shared.register(routerID) {
                         guard let first = viewModel.firstNavigableSourceID else { return false }
-                        requestRow(first, proxy: proxy); return true
+                        // Entering from the menu: scroll first, instantly, so the
+                        // focus write never lands while the row is still gliding
+                        // in from off screen (intermittent CI failure).
+                        requestRow(first, proxy: proxy, animated: false); return true
                     }
                 }
                 .onDisappear {
@@ -537,7 +540,7 @@ struct NTVCatalogView: View {
         requestRow(sourceID, proxy: proxy)
     }
     private func requestRow(_ sourceID: String, proxy: ScrollViewProxy,
-                            kind: ContentFocusRouter.EntryKind = .rowStart) {
+                            kind: ContentFocusRouter.EntryKind = .rowStart, animated: Bool = true) {
         if initialEntryGeneration != nil { initialEntryGeneration = nil }
         let keepViewport = menuVisible && menuSourceID == sourceID
         if categoryFocus != nil { categoryFocus = nil }
@@ -556,7 +559,8 @@ struct NTVCatalogView: View {
         // the page jumped, sometimes backwards, mid-move (TV video, build 59).
         // Only real jumps (a category chosen in the drawer) move the page here.
         if !keepViewport, kind != .orderedRow {
-            glide(proxy, to: sourceID, anchor: .top, motion: FusionMotion.pageEnter)
+            if animated { glide(proxy, to: sourceID, anchor: .top, motion: FusionMotion.pageEnter) }
+            else { proxy.scrollTo(sourceID, anchor: .top) }
         }
     }
     /// A remote-driven scroll glides on the app's motion curve (build 59):

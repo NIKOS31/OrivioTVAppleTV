@@ -1046,7 +1046,7 @@ final class NTVDesignSmoke: XCTestCase {
         capture("ntv-christmas-home-snow")
         app.terminate()
         // 2. Navigation with the static December decor.
-        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvRowLayoutFixture", "-ntvChristmasDemo"]
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvRowLayoutFixture", "-ntvCatalogCategoriesDemo", "-ntvChristmasDemo"]
         app.launch()
         defer { app.terminate() }
         let spotlight = app.buttons["ntv.home.spotlight"]
@@ -1065,6 +1065,26 @@ final class NTVDesignSmoke: XCTestCase {
         XCTAssertTrue(content.waitForExistence(timeout: 8), "Ornaments must never take focus from the content.")
         Thread.sleep(forTimeInterval: 0.5)
         capture("ntv-christmas-home-content")
+        // 3. Preview captures of the decor on other screens (no layout
+        //    assertions: Films and its band, the category drawer, Settings).
+        openMainDestination("5", in: app)
+        Thread.sleep(forTimeInterval: 1.5)
+        capture("ntv-christmas-films")
+        let categories = app.buttons["ntv.catalog.movie.openCategories"]
+        for _ in 0..<4 {
+            if categories.hasFocus { break }
+            remote.press(.up)
+            _ = focused(categories, timeout: 2)
+        }
+        if categories.hasFocus {
+            remote.press(.select)
+            Thread.sleep(forTimeInterval: 1.5)
+            capture("ntv-christmas-categories")
+            remote.press(.menu)
+        }
+        openMainDestination("3", in: app, enterContent: false)
+        Thread.sleep(forTimeInterval: 1.5)
+        capture("ntv-christmas-settings")
     }
 
     func testCatalogCategoryPanelReturnsToItsPosterRow() {

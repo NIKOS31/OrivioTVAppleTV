@@ -100,13 +100,13 @@ private struct NTVSeasonalModifier: ViewModifier {
     @ViewBuilder private func christmasDecor(_ content: Content) -> some View {
         switch placement {
         case .heading:
-            HStack(alignment: .center, spacing: 18) {
+            // Santa's sleigh and reindeer sit beside every page title
+            // (owner's request, 28 Nov 2026): visible on each main screen,
+            // clear of every control.
+            HStack(alignment: .center, spacing: 20) {
                 content
-                HStack(spacing: 12) {
-                    NTVSnowflake().stroke(.white.opacity(0.62), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .frame(width: 28, height: 28)
-                    NTVStar().fill(NTVChristmasPalette.gold).frame(width: 26, height: 26)
-                }.allowsHitTesting(false).accessibilityHidden(true)
+                NTVSleighScene().frame(width: 160, height: 56)
+                    .allowsHitTesting(false).accessibilityHidden(true)
             }
         case .row:
             content.overlay(alignment: .trailing) {
@@ -128,14 +128,15 @@ private struct NTVSeasonalModifier: ViewModifier {
                 .allowsHitTesting(false).accessibilityHidden(true)
             }
         case .stage:
-            // Santa's sleigh and two reindeer rest in the top-right corner of
-            // every main screen (owner's request, 28 Nov 2026). Static, drawn
-            // once, behind every control.
             content.overlay(alignment: .topTrailing) {
-                NTVSleighScene()
-                    .frame(width: 230, height: 80)
-                    .padding(.top, 14).padding(.trailing, 18)
-                    .allowsHitTesting(false).accessibilityHidden(true)
+                HStack(alignment: .top, spacing: 10) {
+                    NTVSnowflake().stroke(.white.opacity(0.18), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+                        .frame(width: 18, height: 18).offset(y: 14)
+                    NTVSnowflake().stroke(.white.opacity(0.24), style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
+                        .frame(width: 30, height: 30)
+                }
+                .padding(.top, 10).padding(.trailing, 12)
+                .allowsHitTesting(false).accessibilityHidden(true)
             }
         case .rail:
             content.overlay(alignment: .top) {

@@ -212,20 +212,17 @@ struct NTVCatalogView: View {
               // presentation never disappears entirely while browsing rows.
               // Constant height: nothing below it moves when it changes.
               VStack(alignment: .leading, spacing: 0) {
-                catalogBand
+                catalogBand(proxy)
                 ZStack(alignment: .leading) {
                     ScrollView(.vertical) {
                         LazyVStack(alignment: .leading, spacing: 22) {
                             VStack(alignment: .leading, spacing: 22) {
-                                ZStack(alignment: .topTrailing) {
-                                    catalogSpotlight(proxy)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        // Its own full-width section: UIKit's Down
-                                        // from Categories (top right) enters it
-                                        // instead of the first shelf's See all.
-                                        .focusSection()
-                                    categoriesTrigger(proxy)
-                                }
+                                catalogSpotlight(proxy)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    // Its own full-width section right under the
+                                    // band: UIKit's Down from Categories enters it
+                                    // instead of the first shelf's See all.
+                                    .focusSection()
                                 // Written to an object the catalog body does
                                 // not observe: a row move redraws the band only.
                                 .onGeometryChange(for: Bool.self) { geometry in
@@ -363,9 +360,11 @@ struct NTVCatalogView: View {
         }
         .onExitCommand { onBackAtRoot() }
     }
-    /// Fixed above the page and never focusable, so it cannot change how
-    /// the remote moves between Categories, See details and the shelves.
-    private var catalogBand: some View {
+    /// Fixed above the page: the page title, the selected title once the
+    /// recommendation has scrolled away, and Categories, always reachable.
+    /// Down from Categories enters the recommendation section just below
+    /// (owner's order, 28 Nov 2026), then the first shelf.
+    private func catalogBand(_ proxy: ScrollViewProxy) -> some View {
         HStack(alignment: .center, spacing: 26) {
             Text(title).font(.system(size: 38, weight: .semibold))
                 .ntvSeasonalDecor(.heading)
@@ -377,14 +376,16 @@ struct NTVCatalogView: View {
                 .layoutPriority(1)
             NTVCatalogBandSelection(hero: hero, state: band)
             Spacer(minLength: 0)
+            categoriesTrigger(proxy)
+                .disabled(menuVisible)
         }
-        .frame(minHeight: 58)
+        .frame(minHeight: 62)
         .padding(.horizontal, NTVViewport.horizontalInset)
         .padding(.top, 26)
         .padding(.bottom, 4)
+        .focusSection()
     }
-    /// Stays inside the scrolling header, top right above the shelves'
-    /// See all: the geometry UIKit's Down/Up searches were tuned against.
+    /// Categories, at the trailing end of the fixed band.
     @ViewBuilder
     private func categoriesTrigger(_ proxy: ScrollViewProxy) -> some View {
         if !viewModel.sources.isEmpty {
@@ -413,7 +414,6 @@ struct NTVCatalogView: View {
                     spotlightFocused = true
                 }
             }
-            .padding(.trailing, NTVViewport.horizontalInset)
         }
     }
     @ViewBuilder

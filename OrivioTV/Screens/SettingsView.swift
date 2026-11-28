@@ -463,6 +463,7 @@ struct SettingsActionRow: View {
 /// nTV settings rows (build 59): focus is the solid off-white surface every
 /// focused nTV control uses, so a focused row's text turns dark, and rows
 /// are set larger for the sofa. Other themes keep their palette and sizes.
+@MainActor
 struct SettingsInk {
     let theme: ThemeManager
     let focused: Bool

@@ -1028,15 +1028,22 @@ final class NTVDesignSmoke: XCTestCase {
     func testChristmasDecorAndSnowStayOutOfNavigation() {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvChristmasDemo", "-ntvSnowDemo"]
         app.launchEnvironment["MTL_DEBUG_LAYER"] = "0"
         app.launchEnvironment["MTL_SHADER_VALIDATION"] = "0"
+        // 1. Snow: a screen capture only. The snowfall animates continuously,
+        //    so this phase takes no accessibility snapshot (XCTest waits for
+        //    an idle app before evaluating a query).
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvRowLayoutFixture", "-ntvChristmasDemo", "-ntvSnowDemo"]
+        app.launch()
+        Thread.sleep(forTimeInterval: 8)
+        capture("ntv-christmas-home-snow")
+        app.terminate()
+        // 2. Navigation with the static December decor.
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvRowLayoutFixture", "-ntvChristmasDemo"]
         app.launch()
         defer { app.terminate() }
         let spotlight = app.buttons["ntv.home.spotlight"]
         XCTAssertTrue(spotlight.waitForExistence(timeout: 20))
-        Thread.sleep(forTimeInterval: 1)
-        capture("ntv-christmas-home-snow")
         let remote = XCUIRemote.shared
         let home = app.buttons["ntv.navigation.0"]
         for _ in 0..<4 {
@@ -1048,7 +1055,7 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.right)
         let content = app.buttons.matching(NSPredicate(format: "hasFocus == true AND NOT (identifier BEGINSWITH %@)",
                                                        "ntv.navigation.")).firstMatch
-        XCTAssertTrue(content.waitForExistence(timeout: 8), "Ornaments and snow must never take focus from the content.")
+        XCTAssertTrue(content.waitForExistence(timeout: 8), "Ornaments must never take focus from the content.")
         Thread.sleep(forTimeInterval: 0.5)
         capture("ntv-christmas-home-content")
     }

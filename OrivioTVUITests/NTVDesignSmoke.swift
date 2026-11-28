@@ -422,7 +422,14 @@ final class NTVDesignSmoke: XCTestCase {
             XCTAssertTrue(reachCategories(app, type: "movie"),
                 "Up from the first shelf must reach Categories, through See details when it exists, in the left-menu layout.")
             remote.press(.down)
-            XCTAssertTrue(focused(first, timeout: 8), "Down from Categories must reach the first poster even if UIKit initially chooses See All.")
+            // Owner's order (28 Nov 2026): Categories, then See details just
+            // below it when a recommendation exists, then the first shelf.
+            let feature = app.buttons["ntv.catalog.movie.spotlight"]
+            if feature.exists {
+                XCTAssertTrue(focused(feature, timeout: 8), "Down from Categories must reach See details first.")
+                remote.press(.down)
+            }
+            XCTAssertTrue(focused(first, timeout: 8), "Down must then reach the first poster even if UIKit initially chooses See All.")
         }
         XCTAssertTrue(reachCategories(app, type: "movie"))
         remote.press(.select)

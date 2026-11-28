@@ -220,6 +220,10 @@ struct NTVCatalogView: View {
                                 ZStack(alignment: .topTrailing) {
                                     catalogSpotlight(proxy)
                                         .frame(maxWidth: .infinity, alignment: .leading)
+                                        // Its own full-width section: UIKit's Down
+                                        // from Categories (top right) enters it
+                                        // instead of the first shelf's See all.
+                                        .focusSection()
                                     categoriesTrigger(proxy)
                                 }
                                 // Written to an object the catalog body does
@@ -399,7 +403,11 @@ struct NTVCatalogView: View {
             .accessibilityIdentifier("ntv.catalog.\(mediaType).openCategories")
             .onMoveCommand { direction in
                 guard categoryTriggerFocused else { return }
-                if direction == .down, let first = viewModel.firstNavigableSourceID {
+                // Owner's order (28 Nov 2026): Categories, then the
+                // recommendation just below it, then the first shelf.
+                if direction == .down, !hero.spotlight.isEmpty, !menuVisible {
+                    spotlightFocused = true
+                } else if direction == .down, let first = viewModel.firstNavigableSourceID {
                     requestRow(first, proxy: proxy)
                 } else if direction == .left, !hero.spotlight.isEmpty {
                     spotlightFocused = true

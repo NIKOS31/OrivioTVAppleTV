@@ -541,9 +541,9 @@ struct AppearanceDetail: View {
             SettingsGroupCard(title: "Décor saisonnier", subtitle: "De petits ornements en octobre et pour les fêtes, avec les couleurs habituelles de l’app") {
                 SettingsToggleCard(title: "Décor d’octobre", subtitle: "Citrouille, chauve-souris et détails discrets sur les bords des menus", isOn: $halloweenEnabled)
                     .accessibilityIdentifier("ntv.settings.halloween")
-                SettingsToggleCard(title: "Décor de Noël", subtitle: "Du 1er décembre au 6 janvier : flocons, étoile, sapin et guirlande discrète sur le menu", isOn: $christmasEnabled)
+                SettingsToggleCard(title: "Décor de Noël", subtitle: "Du 20 novembre au 6 janvier : traîneau du Père Noël, flocons, étoile, sapin et guirlande sur le menu", isOn: $christmasEnabled)
                     .accessibilityIdentifier("ntv.settings.christmas")
-                SettingsToggleCard(title: "Neige sur l’Accueil", subtitle: "Une neige légère derrière les affiches. Coupée avec Réduire les animations et sur les Apple TV plus anciennes", isOn: $snowEnabled)
+                SettingsToggleCard(title: "Neige sur l’Accueil", subtitle: "Une neige légère derrière les affiches, dès qu’elle est activée. Coupée avec Réduire les animations et sur les Apple TV plus anciennes", isOn: $snowEnabled)
                     .disabled(!christmasEnabled)
                     .accessibilityIdentifier("ntv.settings.snow")
             }

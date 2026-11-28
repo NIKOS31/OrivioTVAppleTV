@@ -170,10 +170,10 @@ struct NTVSpotlightAction: View {
         HStack(spacing: 24) {
             HStack(spacing: 0) {
                 stepTarget(-1)
-                // Build 59: a round "i" like the detail page's icon buttons,
-                // instead of a labelled pill (owner's choice, 28 Nov 2026).
-                Button(action: onSelect) { Image(systemName: "info") }
-                    .buttonStyle(NTVRoundIconButtonStyle())
+                // Build 59: a small, quiet grey pill (owner's choice after the
+                // outlined pill and the round "i", 28 Nov 2026).
+                Button(action: onSelect) { Text("Voir la fiche") }
+                    .buttonStyle(NTVQuietPillButtonStyle())
                     .focused(focus)
                     .accessibilityLabel("Voir la fiche de " + title)
                     .accessibilityValue(count > 1 ? "Proposition \(index + 1) sur \(count)" : "")
@@ -268,9 +268,9 @@ struct NTVEmptyCatalog: View {
     }
 }
 
-/// A round icon control alone on the artwork: a thin ring at rest so it is
-/// found without a label, a solid off-white disc with a dark icon in focus.
-struct NTVRoundIconButtonStyle: ButtonStyle {
+/// A small secondary action on the artwork: a quiet translucent grey pill at
+/// rest, the solid off-white pill with dark text in focus.
+struct NTVQuietPillButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { Chrome(configuration: configuration) }
 
     private struct Chrome: View {
@@ -279,14 +279,17 @@ struct NTVRoundIconButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
-                .frame(width: 74, height: 74)
-                .background { Circle().fill(NTVDesign.textPrimary).opacity(focused ? 1 : 0) }
-                .overlay { Circle().strokeBorder(NTVDesign.textPrimary.opacity(focused ? 0 : 0.7), lineWidth: 2) }
-                .shadow(color: .black.opacity(focused ? 0.5 : 0), radius: 18, y: 10)
-                .contentShape(Circle())
-                .focusLift(1.1, focused)
+                .font(.system(size: 23, weight: .medium))
+                .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary.opacity(0.9))
+                .padding(.horizontal, 20)
+                .frame(minHeight: 48)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(focused ? NTVDesign.textPrimary : Color.white.opacity(0.14))
+                }
+                .shadow(color: .black.opacity(focused ? 0.45 : 0), radius: 14, y: 6)
+                .contentShape(Capsule())
+                .focusLift(1.06, focused)
                 .cardPressDip(configuration.isPressed)
         }
     }

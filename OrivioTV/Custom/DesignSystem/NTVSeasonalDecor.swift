@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Static ornaments sit beside page headings, away from navigation controls.
 /// Each season has its own local preference: Halloween in October, Christmas
-/// from 1 December to 6 January. Nothing here is focusable or animated,
+/// from 20 November to 6 January. Nothing here is focusable or animated,
 /// except the optional Home snowfall below.
 enum NTVHalloweenPlacement: Equatable { case heading, row, panel, stage, rail }
 typealias NTVSeasonalPlacement = NTVHalloweenPlacement
@@ -16,6 +16,7 @@ enum NTVSeason: Equatable {
         let parts = Calendar.current.dateComponents([.month, .day], from: date)
         switch (parts.month ?? 0, parts.day ?? 0) {
         case (10, _): return .halloween
+        case (11, let day) where day >= 20: return .christmas
         case (12, _): return .christmas
         case (1, let day) where day <= 6: return .christmas
         default: return nil
@@ -127,15 +128,14 @@ private struct NTVSeasonalModifier: ViewModifier {
                 .allowsHitTesting(false).accessibilityHidden(true)
             }
         case .stage:
+            // Santa's sleigh and two reindeer rest in the top-right corner of
+            // every main screen (owner's request, 28 Nov 2026). Static, drawn
+            // once, behind every control.
             content.overlay(alignment: .topTrailing) {
-                HStack(alignment: .top, spacing: 10) {
-                    NTVSnowflake().stroke(.white.opacity(0.22), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
-                        .frame(width: 18, height: 18).offset(y: 14)
-                    NTVSnowflake().stroke(.white.opacity(0.3), style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
-                        .frame(width: 30, height: 30)
-                }
-                .padding(.top, 10).padding(.trailing, 12)
-                .allowsHitTesting(false).accessibilityHidden(true)
+                NTVSleighScene()
+                    .frame(width: 230, height: 80)
+                    .padding(.top, 14).padding(.trailing, 18)
+                    .allowsHitTesting(false).accessibilityHidden(true)
             }
         case .rail:
             content.overlay(alignment: .top) {
@@ -170,8 +170,8 @@ struct NTVSnowfall: View {
 
     private var active: Bool {
         let demo = ProcessInfo.processInfo.arguments.contains("-ntvSnowDemo")
-        return season == .christmas && christmas && (snow || demo)
-            && !reduceMotion && !PerformanceProfile.isLowPower
+        // An explicit choice: once enabled, it snows whatever the date.
+        return christmas && (snow || demo) && !reduceMotion && !PerformanceProfile.isLowPower
     }
 
     var body: some View {
@@ -408,5 +408,79 @@ private struct NTVCandy: Shape {
             path.closeSubpath()
         }
         return path
+    }
+}
+
+/// Two reindeer pulling Santa's sleigh, in side view, facing left. A static
+/// Canvas in the app's palette: warm off-white reindeer, a deep red sleigh
+/// and coat, gold runner and harness.
+struct NTVSleighScene: View {
+    var body: some View {
+        Canvas { context, size in
+            let w = size.width, h = size.height
+            func point(_ x: CGFloat, _ y: CGFloat, in box: CGRect) -> CGPoint {
+                CGPoint(x: box.minX + x * box.width, y: box.minY + y * box.height)
+            }
+            func reindeer(in box: CGRect) {
+                let outline: [(CGFloat, CGFloat)] = [
+                    (0.30, 0.36), (0.70, 0.33), (0.82, 0.40), (0.90, 0.32), (0.86, 0.46),
+                    (0.82, 0.54), (0.97, 0.78), (0.93, 0.83), (0.72, 0.62), (0.46, 0.61),
+                    (0.30, 0.63), (0.10, 0.79), (0.07, 0.74), (0.24, 0.55), (0.23, 0.45),
+                    (0.17, 0.30), (0.12, 0.22), (0.02, 0.27), (0.04, 0.33), (0.15, 0.35)
+                ]
+                var body = Path()
+                body.addLines(outline.map { point($0.0, $0.1, in: box) })
+                body.closeSubpath()
+                context.fill(body, with: .color(NTVDesign.textPrimary.opacity(0.78)))
+                var antlers = Path()
+                for (from, to) in [((0.14, 0.22), (0.21, 0.02)), ((0.18, 0.11), (0.28, 0.06)),
+                                   ((0.13, 0.21), (0.08, 0.04)), ((0.10, 0.12), (0.03, 0.09))] {
+                    antlers.move(to: point(from.0, from.1, in: box))
+                    antlers.addLine(to: point(to.0, to.1, in: box))
+                }
+                context.stroke(antlers, with: .color(NTVDesign.textPrimary.opacity(0.78)),
+                               style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            }
+            let first = CGRect(x: 0, y: h * 0.18, width: w * 0.26, height: h * 0.62)
+            let second = CGRect(x: w * 0.24, y: h * 0.10, width: w * 0.26, height: h * 0.62)
+            reindeer(in: first)
+            reindeer(in: second)
+
+            let sleigh = CGRect(x: w * 0.55, y: h * 0.05, width: w * 0.45, height: h * 0.9)
+            // Harness from the reindeer to the sleigh's front.
+            var harness = Path()
+            harness.move(to: point(0.10, 0.45, in: first.union(second)))
+            harness.addQuadCurve(to: point(0.10, 0.62, in: sleigh),
+                                 control: CGPoint(x: w * 0.50, y: h * 0.62))
+            context.stroke(harness, with: .color(NTVChristmasPalette.gold.opacity(0.8)), lineWidth: 1.2)
+            // Runner with a curled front.
+            var runner = Path()
+            runner.move(to: point(0.10, 0.70, in: sleigh))
+            runner.addQuadCurve(to: point(0.12, 0.92, in: sleigh), control: point(0.0, 0.84, in: sleigh))
+            runner.addLine(to: point(0.94, 0.92, in: sleigh))
+            runner.addQuadCurve(to: point(0.98, 0.80, in: sleigh), control: point(1.0, 0.92, in: sleigh))
+            context.stroke(runner, with: .color(NTVChristmasPalette.gold), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            // Sleigh body.
+            var box = Path()
+            box.addLines([point(0.14, 0.80, in: sleigh), point(0.18, 0.56, in: sleigh), point(0.46, 0.60, in: sleigh),
+                          point(0.62, 0.60, in: sleigh), point(0.76, 0.30, in: sleigh), point(0.94, 0.28, in: sleigh),
+                          point(0.90, 0.80, in: sleigh)])
+            box.closeSubpath()
+            context.fill(box, with: .color(NTVChristmasPalette.red))
+            // Santa: coat, beard and face, hat with its pompom.
+            let coat = CGRect(x: sleigh.minX + sleigh.width * 0.44, y: sleigh.minY + sleigh.height * 0.30,
+                              width: sleigh.width * 0.26, height: sleigh.height * 0.36)
+            context.fill(Path(ellipseIn: coat), with: .color(NTVChristmasPalette.red.opacity(0.95)))
+            let face = CGRect(x: sleigh.minX + sleigh.width * 0.49, y: sleigh.minY + sleigh.height * 0.14,
+                              width: sleigh.width * 0.15, height: sleigh.height * 0.20)
+            context.fill(Path(ellipseIn: face), with: .color(NTVDesign.textPrimary.opacity(0.92)))
+            var hat = Path()
+            hat.addLines([point(0.48, 0.17, in: sleigh), point(0.65, 0.17, in: sleigh), point(0.74, 0.02, in: sleigh)])
+            hat.closeSubpath()
+            context.fill(hat, with: .color(NTVChristmasPalette.red))
+            let pompom = CGRect(x: sleigh.minX + sleigh.width * 0.715, y: sleigh.minY - sleigh.height * 0.02,
+                                width: sleigh.width * 0.06, height: sleigh.width * 0.06)
+            context.fill(Path(ellipseIn: pompom), with: .color(NTVDesign.textPrimary))
+        }
     }
 }

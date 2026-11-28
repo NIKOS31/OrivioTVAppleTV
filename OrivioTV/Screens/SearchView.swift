@@ -242,6 +242,13 @@ final class SearchViewModel: ObservableObject {
     }
 }
 
+/// One titled row of search results (Films, Séries or Animés).
+struct SearchResultRow: Identifiable {
+    let title: String
+    let items: [MetaItem]
+    var id: String { title }
+}
+
 struct SearchView: View {
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var posterLayout: HomeCatalogSettingsStore
@@ -295,12 +302,17 @@ struct SearchView: View {
     private func searchContent(availableWidth: CGFloat?) -> some View {
         let profile = ProfileScopedDefaults.activeProfileID
         let presentation = NTVRenderProbe.measure(.searchPartition) {
-            let results = viewModel.results.filter { animeContext || !NTVAnimeLibrary.shared.contains($0, profile: profile) }
+            let results = viewModel.results
             let trending = viewModel.trending.filter { animeContext || !NTVAnimeLibrary.shared.contains($0, profile: profile) }
-            return (results: results, trending: trending, movies: results.filter { !$0.isSeries }, shows: results.filter(\.isSeries))
+            // Main search: anime get their own row instead of being dropped.
+            let anime = animeContext ? [] : results.filter { NTVAnimeLibrary.shared.contains($0, profile: profile) }
+            let animeIDs = Set(anime.map(\.id))
+            let rest = results.filter { !animeIDs.contains($0.id) }
+            return (results: results, trending: trending, movies: rest.filter { !$0.isSeries },
+                    shows: rest.filter(\.isSeries), anime: anime)
         }
         let results = presentation.results, trending = presentation.trending
-        let movieResults = presentation.movies, showResults = presentation.shows
+        let movieResults = presentation.movies, showResults = presentation.shows, animeResults = presentation.anime
         return ZStack {
             ATVBackground()
             VStack(alignment: .leading, spacing: OrivioSpacing.lg) {
@@ -342,16 +354,12 @@ struct SearchView: View {
                             // films (seven rows) above the first series, so a
                             // series search looked like it returned films only.
                             // The type holding the closest title leads.
-                            let movieRow = resultRow(title: animeContext ? "Films et résultats de mes addons" : "Films",
-                                                     items: movieResults, availableWidth: availableWidth)
-                            let showRow = resultRow(title: animeContext ? "Séries et épisodes" : "Séries",
-                                                    items: showResults, availableWidth: availableWidth)
-                            if Self.matchScore(showResults, query: viewModel.query) > Self.matchScore(movieResults, query: viewModel.query) {
-                                if !showResults.isEmpty { showRow }
-                                if !movieResults.isEmpty { movieRow }
-                            } else {
-                                if !movieResults.isEmpty { movieRow }
-                                if !showResults.isEmpty { showRow }
+                            ForEach(Self.orderedRows([
+                                SearchResultRow(title: animeContext ? "Films et résultats de mes addons" : "Films", items: movieResults),
+                                SearchResultRow(title: animeContext ? "Séries et épisodes" : "Séries", items: showResults),
+                                SearchResultRow(title: "Animés", items: animeResults)
+                            ], query: viewModel.query)) { row in
+                                resultRow(title: row.title, items: row.items, availableWidth: availableWidth)
                             }
                         }
                         .padding(.top, OrivioSpacing.sm)
@@ -423,6 +431,19 @@ struct SearchView: View {
         }
         .padding(.horizontal, contentInset)
         .focusSection()
+    }
+
+    /// Non-empty result rows, the one holding the closest title first; equal
+    /// scores keep the given order (Films, Séries, Animés).
+    static func orderedRows(_ rows: [SearchResultRow], query: String) -> [SearchResultRow] {
+        let scored = rows.enumerated()
+            .filter { !$0.element.items.isEmpty }
+            .map { entry -> (index: Int, row: SearchResultRow, score: Int) in
+                (entry.offset, entry.element, matchScore(entry.element.items, query: query))
+            }
+        return scored
+            .sorted { $0.score == $1.score ? $0.index < $1.index : $0.score > $1.score }
+            .map { $0.row }
     }
 
     /// How closely the best title in `items` matches the query: 3 exact,

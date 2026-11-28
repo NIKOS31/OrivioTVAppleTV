@@ -261,7 +261,10 @@ struct RootView: View {
     @StateObject private var homeViewModel = HomeViewModel()
     // Persisted here (not inside SearchView) so leaving the Search tab and
     // coming back keeps the query and results instead of clearing them.
-    @StateObject private var searchViewModel = SearchViewModel()
+    // Build 59: the main search also asks anime catalogs and shows anime in
+    // its own row; hiding them made titles found by Stremio on the PC, with
+    // the same add-ons, missing on the TV.
+    @StateObject private var searchViewModel = SearchViewModel(includesAnime: true)
     @StateObject private var animeSearchViewModel = SearchViewModel(includesAnime: true)
     @State private var playback: PlaybackRequest?
     /// An Auto Link Selector auto-play is on screen; pop its source page once the

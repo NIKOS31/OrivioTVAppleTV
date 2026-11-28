@@ -372,7 +372,12 @@ struct PlayerScreen: View {
         .onChange(of: viewModel.skipIntroFocused) { _, focused in
             if focused {
                 skipIntroFocused = true
-            } else if viewModel.overlay == .none, !usesNTVControls || !viewModel.isScrubbing {
+                return
+            }
+            // The pill stays mounted above the transport now (build 59), so it
+            // must give its focus up explicitly or it keeps it over Play.
+            skipIntroFocused = false
+            if viewModel.overlay == .none, !usesNTVControls || !viewModel.isScrubbing {
                 // The pill let go — the invisible catcher has to take focus
                 // back or the remote goes dead over bare video.
                 DispatchQueue.main.async { catcherFocused = true }

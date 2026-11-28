@@ -13,6 +13,13 @@ enum NTVSeason: Equatable {
     static func active(on date: Date = Date(), arguments: [String] = ProcessInfo.processInfo.arguments) -> NTVSeason? {
         if arguments.contains("-ntvHalloweenDemo") { return .halloween }
         if arguments.contains("-ntvChristmasDemo") { return .christmas }
+        #if DEBUG
+        // UI test fixtures must not depend on the calendar: no seasonal decor
+        // in a demo or fixture launch unless one of the flags above asks.
+        if arguments.contains(where: { $0.hasPrefix("-") && ($0.hasSuffix("Demo") || $0.hasSuffix("Fixture")) }) {
+            return nil
+        }
+        #endif
         let parts = Calendar.current.dateComponents([.month, .day], from: date)
         switch (parts.month ?? 0, parts.day ?? 0) {
         case (10, _): return .halloween

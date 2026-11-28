@@ -217,12 +217,19 @@ struct NTVCatalogView: View {
                     ScrollView(.vertical) {
                         LazyVStack(alignment: .leading, spacing: 22) {
                             VStack(alignment: .leading, spacing: 22) {
-                                catalogSpotlight(proxy)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    // Its own full-width section right under the
-                                    // band: UIKit's Down from Categories enters it
-                                    // instead of the first shelf's See all.
-                                    .focusSection()
+                                ZStack(alignment: .topTrailing) {
+                                    catalogSpotlight(proxy)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        // Its own full-width section right under the
+                                        // band: UIKit's Down from Categories enters it
+                                        // instead of the first shelf's See all.
+                                        .focusSection()
+                                    // Top-menu layout keeps Categories in the page.
+                                    if navigationIsTop {
+                                        categoriesTrigger(proxy)
+                                            .padding(.trailing, NTVViewport.horizontalInset)
+                                    }
+                                }
                                 // Written to an object the catalog body does
                                 // not observe: a row move redraws the band only.
                                 .onGeometryChange(for: Bool.self) { geometry in
@@ -376,8 +383,12 @@ struct NTVCatalogView: View {
                 .layoutPriority(1)
             NTVCatalogBandSelection(hero: hero, state: band)
             Spacer(minLength: 0)
-            categoriesTrigger(proxy)
-                .disabled(menuVisible)
+            // Side-rail layout only: under a top menu, the band would sit
+            // straight below it and catch the Down meant for the shelves.
+            if !navigationIsTop {
+                categoriesTrigger(proxy)
+                    .disabled(menuVisible)
+            }
         }
         .frame(minHeight: 62)
         .padding(.horizontal, NTVViewport.horizontalInset)

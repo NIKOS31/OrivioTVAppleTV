@@ -1046,7 +1046,7 @@ final class NTVDesignSmoke: XCTestCase {
         capture("ntv-christmas-home-snow")
         app.terminate()
         // 2. Navigation with the static December decor.
-        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvRowLayoutFixture", "-ntvCatalogCategoriesDemo", "-ntvChristmasDemo"]
+        app.launchArguments = ["-homeDemo", "-ntvSeanimeDemo", "-ntvRowLayoutFixture", "-ntvChristmasDemo"]
         app.launch()
         defer { app.terminate() }
         let spotlight = app.buttons["ntv.home.spotlight"]
@@ -1066,10 +1066,17 @@ final class NTVDesignSmoke: XCTestCase {
         Thread.sleep(forTimeInterval: 0.5)
         capture("ntv-christmas-home-content")
         // 3. Preview captures of the decor on other screens (no layout
-        //    assertions: Films and its band, the category drawer, Settings).
-        openMainDestination("5", in: app)
+        //    assertions): Films and its band, the category drawer, Settings.
+        //    Same launch as the catalog tests, which open on Films.
+        app.terminate()
+        app.launchArguments = ["-homeDemo", "-ntvCatalogCategoriesDemo", "-ntvRowLayoutFixture", "-ntvSeanimeDemo",
+                               "-ntvCatalogThreeRowsFixture", "-ntvChristmasDemo"]
+        app.launch()
+        let firstMovie = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "ntv.poster.movie.")).firstMatch
+        XCTAssertTrue(firstMovie.waitForExistence(timeout: 20))
         Thread.sleep(forTimeInterval: 1.5)
         capture("ntv-christmas-films")
+        openMainDestination("5", in: app)
         let categories = app.buttons["ntv.catalog.movie.openCategories"]
         for _ in 0..<4 {
             if categories.hasFocus { break }

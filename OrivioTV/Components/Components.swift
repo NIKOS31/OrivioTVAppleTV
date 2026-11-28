@@ -1086,7 +1086,16 @@ struct LandscapeCard: View {
                 }
             }
             .frame(width: width, height: width * 9 / 16)
-            .background(theme.palette.backgroundCard)
+            .background {
+                // nTV (build 59 audit): a still that has not loaded, or never
+                // will, reads as a soft dark gradient, not a flat grey slab.
+                if theme.palette.id == NTVDesign.palette.id {
+                    LinearGradient(colors: [NTVDesign.raised, NTVDesign.surface],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                } else {
+                    theme.palette.backgroundCard
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: cardRadius, style: .continuous))
             .overlay(alignment: .topLeading) {
                 if let rating { RatingBadge(rating: rating).padding(10) }

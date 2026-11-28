@@ -33,13 +33,15 @@ struct NTVLiveHub: View {
                                 .lineLimit(1)
                                 .frame(width: 144, height: 52)
                                 .foregroundStyle(choice == section ? NTVDesign.background : NTVDesign.textPrimary)
+                                // Build 59 audit: no second white ring. The active
+                                // section is the white pill; focus lifts it (or lights
+                                // the other one) with a soft shadow.
                                 .background {
-                                    Capsule().fill(choice == section ? NTVDesign.textPrimary : .clear)
+                                    Capsule().fill(choice == section ? NTVDesign.textPrimary
+                                                   : sectionFocus == choice ? Color.white.opacity(0.22) : .clear)
                                 }
-                                .overlay {
-                                    Capsule().inset(by: -4)
-                                        .strokeBorder(sectionFocus == choice ? .white : .clear, lineWidth: 2)
-                                }
+                                .shadow(color: .black.opacity(sectionFocus == choice ? 0.4 : 0), radius: 12, y: 6)
+                                .scaleEffect(sectionFocus == choice ? 1.06 : 1)
                         }
                         .buttonStyle(PlainCardButtonStyle())
                         .focused($sectionFocus, equals: choice)

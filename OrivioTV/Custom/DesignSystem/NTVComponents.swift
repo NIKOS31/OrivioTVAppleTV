@@ -180,10 +180,9 @@ struct NTVSidebarLabel: View {
 
 struct NTVActionButtonStyle: ButtonStyle {
     var prominent = false
-    var glass = false
     var capsule = false
     func makeBody(configuration: Configuration) -> some View {
-        Chrome(configuration: configuration, prominent: prominent, glass: glass, capsule: capsule)
+        Chrome(configuration: configuration, prominent: prominent, capsule: capsule)
     }
 
     private struct Chrome: View {
@@ -192,9 +191,7 @@ struct NTVActionButtonStyle: ButtonStyle {
         @ScaledMetric(relativeTo: .body) private var labelSize: CGFloat = 29
         let configuration: ButtonStyle.Configuration
         let prominent: Bool
-        let glass: Bool
         let capsule: Bool
-        private var radius: CGFloat { capsule ? 100 : NTVDesign.controlRadius }
 
         // Build 59 redesign, "text first": no grey bubbles. At rest a control
         // is its icon and label straight on the artwork; the principal action

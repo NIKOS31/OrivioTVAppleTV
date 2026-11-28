@@ -8,7 +8,7 @@ struct NTVPlayerControls: View {
     var onRestoreFocus: () -> Void = {}
     @FocusState private var focus: Control?
 
-    private enum Control: String, Hashable { case timeline, play, runtime, video, speed, audio, subtitles, sources, episodes, more, info, next }
+    private enum Control: String, Hashable { case timeline, play, video, speed, audio, subtitles, sources, episodes, more, info, next }
     private var pickingTracks: Bool { viewModel.overlay == .audio || viewModel.overlay == .subtitles }
     private var toolOrder: [Control] {
         var order: [Control] = [.video, .speed, .subtitles, .audio, .sources]
@@ -73,7 +73,7 @@ struct NTVPlayerControls: View {
                     Spacer()
                     // Time remaining, read only (build 59): it was a focusable
                     // toggle, so Up from the rightmost tool landed on "04:03".
-                    NTVPlayerRuntimeLabel(clock: viewModel.clock, remaining: true)
+                    NTVPlayerRuntimeLabel(clock: viewModel.clock)
                         .accessibilityIdentifier("ntv.player.runtime")
                 }
                 .frame(height: 42)
@@ -298,10 +298,9 @@ private struct NTVPlayerHeading: View {
 /// observes the playback clock; ticking time does not rebuild the rail.
 private struct NTVPlayerRuntimeLabel: View {
     @ObservedObject var clock: PlaybackClock
-    let remaining: Bool
     var body: some View {
         Text(NTVNuvioRuntime.text(position: clock.scrubTarget ?? clock.position,
-                                 duration: clock.duration, remaining: remaining))
+                                 duration: clock.duration, remaining: true))
             .font(.system(size: 20, weight: .medium).monospacedDigit())
             .foregroundStyle(.white.opacity(0.75))
             .frame(height: 42)

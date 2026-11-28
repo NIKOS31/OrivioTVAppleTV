@@ -556,6 +556,7 @@ private struct NTVAnimePoster: View {
 private struct NTVAnimeCard: View {
     @Environment(\.isFocused) private var focused
     let entry: NTVAnimeEntry
+    private var secondary: Color { focused ? NTVDesign.background.opacity(0.68) : NTVDesign.textSecondary }
     var body: some View {
         HStack(alignment: .center, spacing: 20) {
             RemoteImage(url: entry.media.artwork, maxDimension: 126)
@@ -567,8 +568,10 @@ private struct NTVAnimeCard: View {
                         Text(date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()))
                             .font(.system(size: 24, weight: .bold).monospacedDigit())
                     }
-                    Text(entry.media.formatLabel)
-                        .font(.system(size: 21)).foregroundStyle(NTVDesign.textSecondary)
+                    if entry.media.formatLabel != "Série" {
+                        Text(entry.media.formatLabel)
+                            .font(.system(size: 21)).foregroundStyle(secondary)
+                    }
                 }
                 Text(entry.media.displayTitle)
                     .font(.system(size: 27, weight: .semibold))
@@ -578,16 +581,18 @@ private struct NTVAnimeCard: View {
                     if let episode = entry.episode { Text("Épisode \(episode)") }
                     else if let count = entry.media.episodes, count > 0 { Text("\(count) épisodes") }
                 }
-                .font(.system(size: 23)).foregroundStyle(NTVDesign.textSecondary)
+                .font(.system(size: 23)).foregroundStyle(secondary)
             }
             .frame(maxWidth: .infinity, minHeight: 126, alignment: .topLeading)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .foregroundStyle(NTVDesign.textPrimary)
-        .background(focused ? NTVDesign.raised : NTVDesign.surface, in: RoundedRectangle(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(focused ? Color.white.opacity(0.85) : .white.opacity(0.07), lineWidth: focused ? 3 : 1) }
-        .scaleEffect(focused ? 1.025 : 1)
+        // Build 59 audit: no grey card or white frame. A quiet line at rest,
+        // the solid off-white surface with dark text in focus, no scale.
+        .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .fill(focused ? NTVDesign.textPrimary : Color.white.opacity(0.05)))
+        .shadow(color: .black.opacity(focused ? 0.45 : 0), radius: 16, y: 8)
     }
 }
 

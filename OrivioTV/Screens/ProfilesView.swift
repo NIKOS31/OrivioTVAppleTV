@@ -918,11 +918,20 @@ struct ProfileEditView: View {
         if direction == .up, topRow.contains(id) { editorFocus = .name }
     }
 
+    @ViewBuilder
     private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 20, weight: .bold))
-            .foregroundStyle(theme.palette.textTertiary)
-            .kerning(2)
+        if theme.palette.id == NTVDesign.palette.id {
+            // nTV (build 59 audit): readable section titles from the sofa,
+            // like Settings, instead of small grey capitals.
+            Text(text)
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(theme.palette.textPrimary)
+        } else {
+            Text(text.uppercased())
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(theme.palette.textTertiary)
+                .kerning(2)
+        }
     }
 
     private func commitName() {

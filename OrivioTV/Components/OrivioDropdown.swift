@@ -64,9 +64,10 @@ private struct DropdownTrigger: View {
     private var compact: Bool { width != nil }
 
     var body: some View {
+        let ink = SettingsInk(theme: theme, focused: isFocused && !compact)
         HStack(alignment: compact ? .center : .top, spacing: OrivioSpacing.md) {
             if let icon, !compact {
-                SettingsIconTile(symbol: icon)
+                SettingsIconTile(symbol: icon, onLight: ink.onLight)
             }
             VStack(alignment: .leading, spacing: compact ? 3 : 5) {
                 if compact {
@@ -78,12 +79,12 @@ private struct DropdownTrigger: View {
                         .foregroundStyle(theme.palette.textPrimary)
                 } else {
                     Text(title)
-                        .font(.system(size: 25, weight: .semibold))
-                        .foregroundStyle(theme.palette.textPrimary)
+                        .font(.system(size: ink.titleSize, weight: .semibold))
+                        .foregroundStyle(ink.primary)
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.system(size: 20))
-                            .foregroundStyle(theme.palette.textSecondary)
+                            .font(.system(size: ink.subtitleSize))
+                            .foregroundStyle(ink.secondary)
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: 1000, alignment: .leading)
@@ -93,13 +94,13 @@ private struct DropdownTrigger: View {
             Spacer(minLength: OrivioSpacing.sm)
             if !compact {
                 Text(NTVFrench.label(NTVFrench.catalogTitle(NTVFrench.genre(value))))
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(theme.palette.secondary)
+                    .font(.system(size: ink.isNTV ? 25 : 22, weight: .semibold))
+                    .foregroundStyle(ink.accent)
                     .padding(.top, 2)
             }
             Image(systemName: "chevron.down")
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(theme.palette.textSecondary)
+                .foregroundStyle(compact ? theme.palette.textSecondary : ink.secondary)
                 .padding(.top, compact ? 0 : 2)
         }
         .padding(.horizontal, compact ? OrivioSpacing.lg : OrivioSpacing.md)
@@ -228,27 +229,30 @@ private struct DropdownOptionRow: View {
     let selected: Bool
 
     var body: some View {
+        let ink = SettingsInk(theme: theme, focused: isFocused)
         HStack {
             Text(NTVFrench.label(NTVFrench.catalogTitle(NTVFrench.genre(label))))
-                .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(theme.palette.textPrimary)
+                .font(.system(size: ink.isNTV ? 28 : 26, weight: .medium))
+                .foregroundStyle(ink.primary)
             Spacer()
             if selected {
                 Image(systemName: "checkmark")
                     .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(theme.palette.secondary)
+                    .foregroundStyle(ink.accent)
             }
         }
         .padding(.horizontal, OrivioSpacing.lg)
         .frame(minHeight: 72)
         .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous)
-                .fill(isFocused ? theme.palette.focusBackground : theme.palette.backgroundCard.opacity(0.5))
+            RoundedRectangle(cornerRadius: ink.isNTV ? 20 : OrivioRadius.md, style: .continuous)
+                .fill(ink.isNTV ? (isFocused ? NTVDesign.textPrimary : Color.clear)
+                      : (isFocused ? theme.palette.focusBackground : theme.palette.backgroundCard.opacity(0.5)))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous)
-                .strokeBorder(isFocused ? theme.palette.focusRing : (selected ? theme.palette.secondary.opacity(0.5) : .clear),
+            RoundedRectangle(cornerRadius: ink.isNTV ? 20 : OrivioRadius.md, style: .continuous)
+                .strokeBorder(ink.isNTV ? Color.clear
+                              : (isFocused ? theme.palette.focusRing : (selected ? theme.palette.secondary.opacity(0.5) : .clear)),
                               lineWidth: isFocused ? 4 : 2)
         )
         .focusLift(OrivioFocus.row, isFocused)

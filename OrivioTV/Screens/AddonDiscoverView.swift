@@ -254,26 +254,27 @@ private struct AddonDiscoverRowLabel: View {
     var errorMessage: String? = nil
 
     var body: some View {
+        let ink = SettingsInk(theme: theme, focused: isFocused)
         HStack(alignment: .top, spacing: OrivioSpacing.md) {
-            SettingsIconTile(symbol: item.category.icon)
+            SettingsIconTile(symbol: item.category.icon, onLight: ink.onLight)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: OrivioSpacing.sm) {
                     Text(item.name)
-                        .font(.system(size: 25, weight: .semibold))
-                        .foregroundStyle(theme.palette.textPrimary)
+                        .font(.system(size: ink.titleSize, weight: .semibold))
+                        .foregroundStyle(ink.primary)
                         .lineLimit(1)
                     if item.needsSetup {
                         Text("À configurer")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(theme.palette.secondary)
+                            .foregroundStyle(ink.accent)
                             .padding(.horizontal, 8).padding(.vertical, 2)
                             .background(Capsule().fill(theme.palette.secondary.opacity(0.18)))
                     }
                 }
                 if !item.subtitle.isEmpty {
                     Text(item.subtitle)
-                        .font(.system(size: 20))
-                        .foregroundStyle(theme.palette.textSecondary)
+                        .font(.system(size: ink.subtitleSize))
+                        .foregroundStyle(ink.secondary)
                         .lineSpacing(3)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -298,6 +299,8 @@ private struct AddonDiscoverRowLabel: View {
         .background(SettingsRowBackground(isFocused: isFocused))
     }
 
+    private var ink: SettingsInk { SettingsInk(theme: theme, focused: isFocused) }
+
     @ViewBuilder
     private var accessory: some View {
         if installing {
@@ -315,9 +318,11 @@ private struct AddonDiscoverRowLabel: View {
                 Text("Installer")
             }
             .font(.system(size: 20, weight: .semibold))
-            .foregroundStyle(isFocused ? theme.palette.onSecondary : theme.palette.secondary)
+            // nTV: the focused row is off-white, so its Install pill turns dark.
+            .foregroundStyle(isFocused ? (ink.onLightAccessory ? NTVDesign.textPrimary : theme.palette.onSecondary) : theme.palette.secondary)
             .padding(.horizontal, 16).padding(.vertical, 8)
-            .background(Capsule().fill(isFocused ? theme.palette.secondary : theme.palette.secondary.opacity(0.16)))
+            .background(Capsule().fill(isFocused ? (ink.onLightAccessory ? NTVDesign.background : theme.palette.secondary)
+                                       : theme.palette.secondary.opacity(0.16)))
         }
     }
 }

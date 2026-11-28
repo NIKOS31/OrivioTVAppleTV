@@ -275,8 +275,25 @@ struct SettingsIconTile: View {
     @EnvironmentObject private var theme: ThemeManager
     let symbol: String
     var size: CGFloat = 48
+    /// True inside a focused nTV row (off-white): a dark glyph on a faint tile.
+    var onLight = false
 
     var body: some View {
+        if onLight {
+            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                .fill(NTVDesign.background.opacity(0.08))
+                .overlay(
+                    Image(systemName: symbol)
+                        .font(.system(size: size * 0.46, weight: .semibold))
+                        .foregroundStyle(NTVDesign.background)
+                )
+                .frame(width: size, height: size)
+        } else {
+            tile
+        }
+    }
+
+    private var tile: some View {
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
             .fill(
                 LinearGradient(
@@ -315,7 +332,7 @@ struct SettingsDetailHeader: View {
                         .font(.system(size: 40, weight: .heavy))
                         .foregroundStyle(theme.palette.textPrimary)
                     Text(subtitle)
-                        .font(.system(size: 21))
+                        .font(.system(size: theme.palette.id == NTVDesign.palette.id ? 24 : 21))
                         .foregroundStyle(theme.palette.textSecondary)
                 }
             }
@@ -342,15 +359,22 @@ struct SettingsGroupCard<Content: View>: View {
             if !title.isEmpty || (subtitle?.isEmpty == false) {
                 VStack(alignment: .leading, spacing: 3) {
                     if !title.isEmpty {
-                        Text(title.uppercased())
-                            .font(.system(size: 18, weight: .bold))
-                            .tracking(1.6)
-                            .foregroundStyle(theme.palette.secondary)
+                        // nTV: a readable section title instead of small caps.
+                        if isNTV {
+                            Text(title)
+                                .font(.system(size: 26, weight: .semibold))
+                                .foregroundStyle(theme.palette.textPrimary)
+                        } else {
+                            Text(title.uppercased())
+                                .font(.system(size: 18, weight: .bold))
+                                .tracking(1.6)
+                                .foregroundStyle(theme.palette.secondary)
+                        }
                     }
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.system(size: 19))
-                            .foregroundStyle(theme.palette.textTertiary)
+                            .font(.system(size: isNTV ? 22 : 19))
+                            .foregroundStyle(isNTV ? theme.palette.textSecondary : theme.palette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -364,20 +388,25 @@ struct SettingsGroupCard<Content: View>: View {
             }
             .padding(OrivioSpacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // nTV: no translucent card. Rows sit straight on the opaque pane;
+            // three stacked alpha layers over the full-screen artwork were the
+            // likely cause of the Settings frame drops (build 59 audit).
             .background(
                 RoundedRectangle(cornerRadius: theme.settingsCardRadius, style: .continuous)
-                    .fill(theme.palette.backgroundCard.opacity(0.32))
+                    .fill(isNTV ? Color.clear : theme.palette.backgroundCard.opacity(0.32))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: theme.settingsCardRadius, style: .continuous)
                     // Hairline reads mid-grey on dark; in ATV light mode that
                     // same grey is a heavy outline — use a soft dark line.
-                    .strokeBorder(scheme == .light ? Color.black.opacity(0.10)
-                                  : OrivioPrimitives.neutral750.opacity(0.55), lineWidth: 1)
+                    .strokeBorder(isNTV ? Color.clear : (scheme == .light ? Color.black.opacity(0.10)
+                                  : OrivioPrimitives.neutral750.opacity(0.55)), lineWidth: 1)
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
 }
 
 /// A tappable settings row with strong focus, matching the Android SettingsActionRow.
@@ -391,19 +420,20 @@ struct SettingsActionRow: View {
     var leadingIcon: String?
 
     var body: some View {
+        let ink = SettingsInk(theme: theme, focused: isFocused)
         HStack(spacing: OrivioSpacing.md) {
             if let leadingIcon {
-                SettingsIconTile(symbol: leadingIcon)
+                SettingsIconTile(symbol: leadingIcon, onLight: ink.onLight)
             }
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 25, weight: .semibold))
-                    .foregroundStyle(theme.palette.textPrimary)
+                    .font(.system(size: ink.titleSize, weight: .semibold))
+                    .foregroundStyle(ink.primary)
                     .lineLimit(1)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 20))
-                        .foregroundStyle(theme.palette.textSecondary)
+                        .font(.system(size: ink.subtitleSize))
+                        .foregroundStyle(ink.secondary)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 1000, alignment: .leading)
@@ -413,11 +443,11 @@ struct SettingsActionRow: View {
             if let value, !value.isEmpty {
                 Text(NTVFrench.label(value))
                     .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(theme.palette.secondary)
+                    .foregroundStyle(ink.accent)
             }
             Image(systemName: "chevron.right")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(isFocused ? theme.palette.textSecondary : theme.palette.textTertiary)
+                .foregroundStyle(ink.secondary)
         }
         .padding(.horizontal, OrivioSpacing.md)
         .padding(.vertical, OrivioSpacing.md)
@@ -430,20 +460,43 @@ struct SettingsActionRow: View {
     }
 }
 
+/// nTV settings rows (build 59): focus is the solid off-white surface every
+/// focused nTV control uses, so a focused row's text turns dark, and rows
+/// are set larger for the sofa. Other themes keep their palette and sizes.
+struct SettingsInk {
+    let theme: ThemeManager
+    let focused: Bool
+    var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
+    var onLight: Bool { isNTV && focused }
+    var onLightAccessory: Bool { onLight }
+    var primary: Color { onLight ? NTVDesign.background : theme.palette.textPrimary }
+    var secondary: Color { onLight ? NTVDesign.background.opacity(0.72) : theme.palette.textSecondary }
+    var tertiary: Color { onLight ? NTVDesign.background.opacity(0.6) : theme.palette.textTertiary }
+    var accent: Color { onLight ? NTVDesign.background : theme.palette.secondary }
+    var titleSize: CGFloat { isNTV ? 29 : 25 }
+    var subtitleSize: CGFloat { isNTV ? 23 : 20 }
+}
+
 /// Shared row backdrop for the redesigned settings: transparent when idle so
-/// rows read as one grouped list, and an accent-tinted, ringed highlight when
-/// focused. No per-row scale — the fill/ring alone carries focus.
+/// rows read as one grouped list, and a highlight when focused (nTV: solid
+/// off-white, no ring). No per-row scale — the fill alone carries focus.
 struct SettingsRowBackground: View {
     @EnvironmentObject private var theme: ThemeManager
     let isFocused: Bool
 
     var body: some View {
-        RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous)
-            .fill(isFocused ? theme.palette.focusBackground : Color.clear)
-            .overlay(
-                RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous)
-                    .strokeBorder(isFocused ? theme.palette.focusRing : .clear, lineWidth: 3)
-            )
+        if theme.palette.id == NTVDesign.palette.id {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(isFocused ? NTVDesign.textPrimary : Color.clear)
+                .shadow(color: .black.opacity(isFocused ? 0.35 : 0), radius: 14, y: 6)
+        } else {
+            RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous)
+                .fill(isFocused ? theme.palette.focusBackground : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous)
+                        .strokeBorder(isFocused ? theme.palette.focusRing : .clear, lineWidth: 3)
+                )
+        }
     }
 }
 
@@ -569,6 +622,25 @@ struct SelectableChip: View {
     let selected: Bool
 
     var body: some View {
+        if theme.palette.id == NTVDesign.palette.id { ntvChip } else { legacyChip }
+    }
+
+    /// nTV: text first like the Sources filters — the current choice is
+    /// outlined, focus is the solid off-white pill.
+    private var ntvChip: some View {
+        Text(NTVFrench.label(title))
+            .font(.system(size: 24, weight: selected || isFocused ? .semibold : .medium))
+            .foregroundStyle(isFocused ? NTVDesign.background : (selected ? NTVDesign.textPrimary : NTVDesign.textSecondary))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, OrivioSpacing.md)
+            .background(Capsule(style: .continuous).fill(NTVDesign.textPrimary).opacity(isFocused ? 1 : 0))
+            .overlay(Capsule(style: .continuous)
+                .strokeBorder(NTVDesign.textPrimary.opacity(selected && !isFocused ? 0.8 : 0), lineWidth: 2))
+            .shadow(color: .black.opacity(isFocused ? 0.4 : 0), radius: 14, y: 6)
+            .focusLift(1.05, isFocused)
+    }
+
+    private var legacyChip: some View {
         Text(NTVFrench.label(title))
             .font(.system(size: 22, weight: .semibold))
             .foregroundStyle(isFocused ? theme.palette.onSecondary : (selected ? theme.palette.onAccentTint : theme.palette.textSecondary))
@@ -628,13 +700,16 @@ private struct ColorSwatchCard: View {
 struct OrivioSwitch: View {
     @EnvironmentObject private var theme: ThemeManager
     let isOn: Bool
+    /// True inside a focused nTV row (off-white): dark track when on.
+    var onLight = false
 
     var body: some View {
         ZStack(alignment: isOn ? .trailing : .leading) {
             Capsule()
                 // `.primary` == white under Classic's forced-dark scheme;
                 // flips to a visible dark track in ATV light mode.
-                .fill(isOn ? theme.palette.secondary : Color.primary.opacity(0.18))
+                .fill(onLight ? (isOn ? NTVDesign.background : NTVDesign.background.opacity(0.2))
+                      : (isOn ? theme.palette.secondary : Color.primary.opacity(0.18)))
                 .frame(width: 64, height: 36)
             Circle()
                 // The knob has to read against TWO different tracks: the dark
@@ -643,7 +718,7 @@ struct OrivioSwitch: View {
                 // — the "toggles are invisible with the white colour" report.
                 // `onSecondary` is the accent's own ink (dark on White), so the
                 // knob contrasts when on; white is right for the dark off-track.
-                .fill(isOn ? theme.palette.onSecondary : .white)
+                .fill(onLight ? Color.white : (isOn ? theme.palette.onSecondary : Color.white))
                 .frame(width: 28, height: 28)
                 .padding(4)
         }
@@ -674,28 +749,30 @@ private struct ToggleCardLabel: View {
     let isOn: Bool
 
     var body: some View {
+        let ink = SettingsInk(theme: theme, focused: isFocused)
         HStack(spacing: OrivioSpacing.lg) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(theme.palette.textPrimary)
+                Text(title).font(.system(size: ink.isNTV ? 28 : 24, weight: .medium))
+                    .foregroundStyle(ink.primary)
                 if !subtitle.isEmpty {
-                    Text(subtitle).font(.system(size: 18))
-                        .foregroundStyle(theme.palette.textSecondary)
+                    Text(subtitle).font(.system(size: ink.isNTV ? 22 : 18))
+                        .foregroundStyle(ink.secondary)
                         .lineLimit(2)
                 }
             }
             Spacer()
-            OrivioSwitch(isOn: isOn)
+            OrivioSwitch(isOn: isOn, onLight: ink.onLight)
         }
         .padding(.horizontal, OrivioSpacing.lg)
         .frame(minHeight: 68)
         .background(
             RoundedRectangle(cornerRadius: theme.settingsRowRadius, style: .continuous)
-                .fill(isFocused ? theme.palette.focusBackground : theme.palette.backgroundCard.opacity(0.5))
+                .fill(ink.isNTV ? (isFocused ? NTVDesign.textPrimary : Color.clear)
+                      : (isFocused ? theme.palette.focusBackground : theme.palette.backgroundCard.opacity(0.5)))
         )
         .overlay(
             RoundedRectangle(cornerRadius: theme.settingsRowRadius, style: .continuous)
-                .strokeBorder(isFocused ? theme.palette.focusRing : .clear, lineWidth: 4)
+                .strokeBorder(isFocused && !ink.isNTV ? theme.palette.focusRing : .clear, lineWidth: 4)
         )
     }
 }
@@ -712,20 +789,21 @@ struct SettingsValueCard: View {
     var icon: String = "puzzlepiece.extension.fill"
 
     var body: some View {
+        let ink = SettingsInk(theme: theme, focused: isFocused)
         HStack(spacing: OrivioSpacing.md) {
-            SettingsIconTile(symbol: icon)
+            SettingsIconTile(symbol: icon, onLight: ink.onLight)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 25, weight: .semibold))
-                    .foregroundStyle(theme.palette.textPrimary)
-                Text(subtitle).font(.system(size: 20))
-                    .foregroundStyle(theme.palette.textSecondary)
+                Text(title).font(.system(size: ink.titleSize, weight: .semibold))
+                    .foregroundStyle(ink.primary)
+                Text(subtitle).font(.system(size: ink.subtitleSize))
+                    .foregroundStyle(ink.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: OrivioSpacing.lg)
-            Text(NTVFrench.label(value)).font(.system(size: 24, weight: .bold))
-                .foregroundStyle(theme.palette.secondary)
+            Text(NTVFrench.label(value)).font(.system(size: ink.isNTV ? 26 : 24, weight: .bold))
+                .foregroundStyle(ink.accent)
             Image(systemName: "chevron.right").font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(isFocused ? theme.palette.textSecondary : theme.palette.textTertiary)
+                .foregroundStyle(ink.secondary)
         }
         .padding(.horizontal, OrivioSpacing.md)
         .padding(.vertical, OrivioSpacing.md)

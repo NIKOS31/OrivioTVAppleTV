@@ -13,6 +13,7 @@ struct NTVReleaseNotes: Sendable {
         "Refonte visuelle. Boutons : fini les bulles grises. Au repos, un bouton n’est plus que son icône et son texte posés sur l’image ; l’action principale (Regarder) porte un contour blanc. Dans la présentation de l’Accueil, de Films et de Séries, Voir la fiche devient un bouton rond « i ». Sélectionné, il devient une pilule blanche pleine, plus grande, avec une ombre. Les boutons ronds des fiches et les filtres des sources suivent la même règle.",
         "Refonte visuelle. Affiches : plus grandes, un peu plus de six par rangée au lieu de sept, sans texte au repos : seule l’affiche sélectionnée montre son titre dessous, comme sur l’app Apple TV. Elle se soulève nettement avec une ombre au lieu d’être entourée de blanc. Les titres de rangée sont plus grands et plus gras. Avec Réduire les animations, le contour blanc revient.",
         "Refonte visuelle. Menu latéral : fermé, les icônes flottent dans une pilule sombre posée sur l’image. Ouvert, plus de panneau gris : les libellés apparaissent sur un fondu noir profond, l’entrée sélectionnée est une pilule blanche, la section ouverte est marquée d’un point.",
+        "Refonte visuelle. Réglages : textes plus grands et plus lisibles depuis le canapé, titres de section en clair au lieu de petites capitales, plus de cartes grises. La ligne sélectionnée devient une pilule blanche avec le texte sombre, la catégorie ouverte est marquée d’un trait. Le panneau est opaque, ce qui devrait rendre le défilement plus fluide.",
         "Décor de Noël, du 1er décembre au 6 janvier : flocons et étoile à côté des titres, sapin et boule dans les catégories, petite guirlande sur le menu fermé. Option Neige sur l’Accueil (désactivée par défaut) dans Réglages > Apparence.",
         "Menu latéral : les icônes et le logo restent en place à l’ouverture ; seuls les libellés apparaissent à côté, en fondu. Ouvrir ou fermer le menu n’anime plus toute la page derrière lui.",
         "Recommandations : un titre sur une ligne se place juste au-dessus de son année, sans grand vide entre les deux.",
@@ -27,6 +28,7 @@ struct NTVReleaseNotes: Sendable {
         "Depuis la première rangée de Films : Haut doit mener à Voir la fiche, puis Haut à Catégories.",
         "Sources : parcourir la liste ; la source sélectionnée doit ressortir nettement et les autres rester lisibles sans carte.",
         "Films et Séries : descendre de deux rangées ; le bandeau du haut doit afficher le titre sélectionné sans que rien ne bouge en dessous.",
+        "Réglages : parcourir plusieurs catégories et faire défiler leurs réglages ; le compteur de cadence doit rester stable et chaque texte se lire du canapé.",
         "Réglages > Apparence : activer Neige sur l’Accueil ; la neige doit rester derrière les affiches et la navigation rester fluide."
     ])
 

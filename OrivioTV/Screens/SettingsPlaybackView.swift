@@ -768,21 +768,22 @@ private struct PlaybackToggleLabel: View {
     var dimmed = false
 
     var body: some View {
+        let ink = SettingsInk(theme: theme, focused: isFocused)
         HStack(alignment: .top, spacing: OrivioSpacing.md) {
-            SettingsIconTile(symbol: icon)
+            SettingsIconTile(symbol: icon, onLight: ink.onLight)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 25, weight: .semibold))
-                    .foregroundStyle(theme.palette.textPrimary)
+                    .font(.system(size: ink.titleSize, weight: .semibold))
+                    .foregroundStyle(ink.primary)
                 Text(subtitle)
-                    .font(.system(size: 20))
-                    .foregroundStyle(theme.palette.textSecondary)
+                    .font(.system(size: ink.subtitleSize))
+                    .foregroundStyle(ink.secondary)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)   // full text, wraps
                     .frame(maxWidth: 1000, alignment: .leading)
             }
             Spacer(minLength: OrivioSpacing.lg)
-            OrivioSwitch(isOn: isOn)
+            OrivioSwitch(isOn: isOn, onLight: ink.onLight)
                 .padding(.top, 4)
         }
         .padding(.horizontal, OrivioSpacing.md)

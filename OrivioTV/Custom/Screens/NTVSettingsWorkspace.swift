@@ -63,14 +63,16 @@ struct NTVSettingsWorkspace: View {
                     }
                     .padding(6)
                 }
-                .frame(width: 288)
+                .frame(width: 310)
                 .focusSection()
                 .defaultFocus($focusedCategory, selected)
                 .accessibilityIdentifier("ntv.settings.categories")
 
                 SettingsCategoryPane(category: selected)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(NTVDesign.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 22))
+                    // Opaque (build 59 audit): one solid surface instead of a
+                    // 60 % layer over the full-screen artwork.
+                    .background(NTVDesign.surface, in: RoundedRectangle(cornerRadius: 22))
                     .clipped()
                     .focusSection()
                     .accessibilityIdentifier("ntv.settings.details")
@@ -101,16 +103,25 @@ private struct NTVSettingsCategoryLabel: View {
     let selected: Bool
 
     var body: some View {
+        // Build 59: no grey fills. The open category is bright and bold, the
+        // others recede; focus is the solid off-white pill.
         HStack(spacing: 14) {
-            Image(systemName: category.icon).frame(width: 24)
-            Text(category.railTitle).lineLimit(1).minimumScaleFactor(0.85)
+            Image(systemName: category.icon).frame(width: 28)
+            Text(category.railTitle).lineLimit(1).minimumScaleFactor(0.8)
             Spacer(minLength: 0)
         }
-        .font(.system(size: 22, weight: .medium))
+        .font(.system(size: 25, weight: focused || selected ? .semibold : .medium))
         .padding(.horizontal, 18)
-        .frame(height: 58)
-        .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
-        .background(focused ? NTVDesign.accent : selected ? NTVDesign.accentMuted : .clear,
-                    in: RoundedRectangle(cornerRadius: 14))
+        .frame(height: 62)
+        .foregroundStyle(focused ? NTVDesign.background
+                         : selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+        .background(Capsule(style: .continuous).fill(NTVDesign.textPrimary).opacity(focused ? 1 : 0))
+        .overlay(alignment: .leading) {
+            Capsule().fill(NTVDesign.textPrimary)
+                .frame(width: 4, height: 26)
+                .offset(x: -2)
+                .opacity(selected && !focused ? 1 : 0)
+                .accessibilityHidden(true)
+        }
     }
 }

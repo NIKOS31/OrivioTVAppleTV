@@ -279,6 +279,16 @@ struct NTVCatalogView: View {
                     }
                     // Vertical clipping reserves the top bar; horizontal rows
                     // retain their own focus-lift margin.
+                    // A shelf scrolling under the fixed band fades into it
+                    // instead of being cut (build 59 audit, P3). An overlay,
+                    // not a mask: no offscreen pass over the page.
+                    .overlay(alignment: .top) {
+                        LinearGradient(colors: [NTVDesign.background.opacity(0.85), .clear],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: 40)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
                     .focusSection()
                     .disabled(menuVisible)
                     .overlay {

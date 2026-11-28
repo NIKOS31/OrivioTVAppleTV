@@ -1180,7 +1180,7 @@ struct InfusePickerScreen: View {
                             // Focusable so Menu still has somewhere to land.
                             Button {} label: {
                                 InfusePickerRow(title: emptyLabel, subtitle: nil, selected: false,
-                                                width: rowWidth)
+                                                width: rowWidth, quiet: anchoredToTransport)
                             }
                             .buttonStyle(PlainCardButtonStyle())
                             .focused($focus, equals: "empty")
@@ -1193,7 +1193,8 @@ struct InfusePickerScreen: View {
                                 InfusePickerRow(title: item.title, subtitle: item.subtitle,
                                                 badges: item.badges, instant: item.instant,
                                                 debridName: item.debridName,
-                                                selected: item.selected, width: rowWidth)
+                                                selected: item.selected, width: rowWidth,
+                                                quiet: anchoredToTransport)
                             }
                             .buttonStyle(PlainCardButtonStyle())
                             .focused($focus, equals: item.id)
@@ -1245,12 +1246,15 @@ private struct InfusePickerRow: View {
     var debridName: String? = nil
     let selected: Bool
     let width: CGFloat
+    /// nTV transport menus (build 59): no grey box at rest, the current
+    /// choice bright with its check, focus the solid off-white pill.
+    var quiet = false
 
     var body: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 29, weight: .medium))
+                    .font(.system(size: 29, weight: quiet && (selected || isFocused) ? .semibold : .medium))
                     .lineLimit(1)
                 if let subtitle {
                     Text(subtitle)
@@ -1288,14 +1292,15 @@ private struct InfusePickerRow: View {
                     .foregroundStyle(isFocused ? .black.opacity(0.5) : .white.opacity(0.6))
             }
         }
-        .foregroundStyle(isFocused ? .black : .white)
+        .foregroundStyle(isFocused ? .black : .white.opacity(quiet && !selected ? 0.78 : 1))
         .padding(.horizontal, 24)
         .padding(.vertical, subtitle == nil && badges.isEmpty ? 0 : 10)
         .frame(width: width)
         .frame(minHeight: 67)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isFocused ? Color.white.opacity(0.93) : Color.white.opacity(0.12))
+            RoundedRectangle(cornerRadius: quiet ? 20 : 12, style: .continuous)
+                .fill(isFocused ? Color.white.opacity(quiet ? 0.96 : 0.93)
+                      : Color.white.opacity(quiet ? 0 : 0.12))
                 .shadow(color: .black.opacity(isFocused ? 0.4 : 0), radius: 14, y: 6)
         )
         .focusLift(OrivioFocus.row, isFocused)

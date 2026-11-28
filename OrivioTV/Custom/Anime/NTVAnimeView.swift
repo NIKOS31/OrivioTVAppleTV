@@ -530,20 +530,26 @@ private struct NTVAnimePoster: View {
             Color.clear.aspectRatio(2.0 / 3.0, contentMode: .fit)
                 .overlay { RemoteImage(url: media.artwork, maxDimension: 640) }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
+                // Build 59 audit: the format only when it is not the usual
+                // series (Film, OVA, special…); "Série" on every poster was noise.
                 .overlay(alignment: .topLeading) {
-                    Text(media.formatLabel).font(.system(size: 21, weight: .semibold))
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(.black.opacity(0.76), in: Capsule())
-                        .padding(12)
+                    if media.formatLabel != "Série" {
+                        Text(media.formatLabel).font(.system(size: 21, weight: .semibold))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(.black.opacity(0.76), in: Capsule())
+                            .padding(12)
+                    }
                 }
-                .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(focused ? 0.9 : 0.08), lineWidth: focused ? 3 : 1) }
+                // Same focus as every nTV poster: lifted with a shadow, no white frame.
+                .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(focused ? 0 : 0.08), lineWidth: 1) }
+                .shadow(color: .black.opacity(focused ? 0.55 : 0), radius: 22, y: 12)
             Text(media.displayTitle).font(.system(size: 27, weight: .semibold)).lineLimit(2)
                 .frame(height: 68, alignment: .topLeading)
             Text(media.episodes.map { "\($0) épisodes" } ?? "Fiche AniList")
                 .font(.system(size: 23)).foregroundStyle(NTVDesign.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .scaleEffect(focused ? 1.025 : 1)
+        .scaleEffect(focused ? 1.06 : 1)
     }
 }
 

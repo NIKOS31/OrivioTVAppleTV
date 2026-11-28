@@ -337,11 +337,21 @@ struct SearchView: View {
                                         .accessibilityIdentifier("ntv.search.retry")
                                 }.padding(.horizontal, contentInset).focusSection()
                             }
-                            if !movieResults.isEmpty {
-                                resultSection(title: animeContext ? "Films et résultats de mes addons" : "Films", items: movieResults, availableWidth: availableWidth)
-                            }
-                            if !showResults.isEmpty {
-                                resultSection(title: animeContext ? "Séries et épisodes" : "Séries", items: showResults, availableWidth: availableWidth)
+                            // Build 59: one horizontal row per type, both on the
+                            // first screen. The old stacked grids put up to 40
+                            // films (seven rows) above the first series, so a
+                            // series search looked like it returned films only.
+                            // The type holding the closest title leads.
+                            let movieRow = resultRow(title: animeContext ? "Films et résultats de mes addons" : "Films",
+                                                     items: movieResults, availableWidth: availableWidth)
+                            let showRow = resultRow(title: animeContext ? "Séries et épisodes" : "Séries",
+                                                    items: showResults, availableWidth: availableWidth)
+                            if Self.matchScore(showResults, query: viewModel.query) > Self.matchScore(movieResults, query: viewModel.query) {
+                                if !showResults.isEmpty { showRow }
+                                if !movieResults.isEmpty { movieRow }
+                            } else {
+                                if !movieResults.isEmpty { movieRow }
+                                if !showResults.isEmpty { showRow }
                             }
                         }
                         .padding(.top, OrivioSpacing.sm)
@@ -412,6 +422,50 @@ struct SearchView: View {
             }
         }
         .padding(.horizontal, contentInset)
+        .focusSection()
+    }
+
+    /// How closely the best title in `items` matches the query: 3 exact,
+    /// 2 starts with it, 1 contains it, 0 otherwise. Accents and case ignored.
+    static func matchScore(_ items: [MetaItem], query: String) -> Int {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        guard !needle.isEmpty else { return 0 }
+        var best = 0
+        for item in items.prefix(12) {
+            let name = item.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            let score = name == needle ? 3 : name.hasPrefix(needle) ? 2 : name.contains(needle) ? 1 : 0
+            best = max(best, score)
+            if best == 3 { break }
+        }
+        return best
+    }
+
+    /// One titled horizontal row of results, its own focus section so Up/Down
+    /// move between the Films and Séries rows.
+    private func resultRow(title: String, items: [MetaItem], availableWidth: CGFloat?) -> some View {
+        let width = posterWidth(in: availableWidth)
+        return VStack(alignment: .leading, spacing: OrivioSpacing.md) {
+            RowHeader(title: title)   // pads itself to the content inset
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: usesNTVLayout ? NTVViewport.posterGap : OrivioSpacing.lg) {
+                    ForEach(items) { item in
+                        GridPosterCell(
+                            item: item,
+                            captionWidth: width,
+                            onSelect: { item in
+                                NTVRecentSearches.current.record(viewModel.query)
+                                onSelect(item)
+                            }
+                        )
+                        .accessibilityIdentifier("ntv.search.poster.\(item.type).\(item.id)")
+                    }
+                }
+                .padding(.horizontal, contentInset)
+                .padding(.vertical, OrivioSpacing.lg)
+            }
+            .scrollClipDisabled()
+        }
         .focusSection()
     }
 

@@ -15,6 +15,7 @@ struct NTVReleaseNotes: Sendable {
         "Refonte visuelle. Menu latéral : fermé, les icônes flottent dans une pilule sombre posée sur l’image. Ouvert, plus de panneau gris : les libellés apparaissent sur un fondu noir profond, l’entrée sélectionnée est une pilule blanche, la section ouverte est marquée d’un point.",
         "Refonte visuelle. Réglages : textes plus grands et plus lisibles depuis le canapé, titres de section en clair au lieu de petites capitales, plus de cartes grises. La ligne sélectionnée devient une pilule blanche avec le texte sombre, la catégorie ouverte est marquée d’un trait. Le panneau est opaque, ce qui devrait rendre le défilement plus fluide.",
         "Décor de Noël, du 20 novembre au 6 janvier : le traîneau du Père Noël et ses rennes en haut à droite, flocons et étoile à côté des titres, sapin et boule dans les catégories, petite guirlande sur le menu fermé. Option Neige sur l’Accueil dans Réglages > Apparence : elle tombe dès qu’elle est activée.",
+        "Recherche : les résultats s’affichent en deux rangées, Séries et Films, toutes deux visibles dès le haut de l’écran. La rangée qui contient le titre le plus proche de ta recherche passe en premier. Avant, jusqu’à quarante films s’affichaient avant la première série.",
         "Menu latéral : les icônes et le logo restent en place à l’ouverture ; seuls les libellés apparaissent à côté, en fondu. Ouvrir ou fermer le menu n’anime plus toute la page derrière lui.",
         "Recommandations : un titre sur une ligne se place juste au-dessus de son année, sans grand vide entre les deux.",
         "Refonte visuelle. Sources : plus de cartes grises. La qualité (1080p, 720p…) devient un grand titre de groupe, chaque source une ligne aérée avec sa taille et son nom ; la source sélectionnée devient une pilule blanche avec le texte sombre. Le nom de l’addon n’est plus en majuscules et le filtre sélectionné est entouré.",
@@ -29,6 +30,7 @@ struct NTVReleaseNotes: Sendable {
         "Sources : parcourir la liste ; la source sélectionnée doit ressortir nettement et les autres rester lisibles sans carte.",
         "Films et Séries : descendre de deux rangées ; le bandeau du haut doit afficher le titre sélectionné sans que rien ne bouge en dessous.",
         "Réglages : parcourir plusieurs catégories et faire défiler leurs réglages ; le compteur de cadence doit rester stable et chaque texte se lire du canapé.",
+        "Recherche : taper le nom d’une série ; la rangée Séries doit apparaître en haut, sans avoir à descendre.",
         "Réglages > Apparence : activer Neige sur l’Accueil ; la neige doit rester derrière les affiches et la navigation rester fluide."
     ])
 

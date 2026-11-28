@@ -62,6 +62,9 @@ private struct DropdownTrigger: View {
     var width: CGFloat?
 
     private var compact: Bool { width != nil }
+    private var isNTV: Bool { theme.palette.id == NTVDesign.palette.id }
+    /// A focused compact trigger on nTV is off-white: its text turns dark.
+    private var compactInk: Bool { compact && isNTV && isFocused }
 
     var body: some View {
         let ink = SettingsInk(theme: theme, focused: isFocused && !compact)
@@ -72,11 +75,11 @@ private struct DropdownTrigger: View {
             VStack(alignment: .leading, spacing: compact ? 3 : 5) {
                 if compact {
                     Text(title)
-                        .font(.system(size: 17))
-                        .foregroundStyle(theme.palette.textTertiary)
+                        .font(.system(size: ink.isNTV ? 19 : 17))
+                        .foregroundStyle(compactInk ? NTVDesign.background.opacity(0.65) : theme.palette.textTertiary)
                     Text(NTVFrench.label(NTVFrench.catalogTitle(NTVFrench.genre(value))))
                         .font(.system(size: 25, weight: .semibold))
-                        .foregroundStyle(theme.palette.textPrimary)
+                        .foregroundStyle(compactInk ? NTVDesign.background : theme.palette.textPrimary)
                 } else {
                     Text(title)
                         .font(.system(size: ink.titleSize, weight: .semibold))
@@ -100,7 +103,7 @@ private struct DropdownTrigger: View {
             }
             Image(systemName: "chevron.down")
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(compact ? theme.palette.textSecondary : ink.secondary)
+                .foregroundStyle(compact ? (compactInk ? NTVDesign.background.opacity(0.7) : theme.palette.textSecondary) : ink.secondary)
                 .padding(.top, compact ? 0 : 2)
         }
         .padding(.horizontal, compact ? OrivioSpacing.lg : OrivioSpacing.md)
@@ -110,7 +113,7 @@ private struct DropdownTrigger: View {
         .frame(maxWidth: width == nil ? .infinity : nil)
         .background(dropdownBackground)
         .overlay {
-            if compact {
+            if compact && !isNTV {
                 RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous)
                     .strokeBorder(isFocused ? Color.white.opacity(0.9) : .clear, lineWidth: 3)
             }
@@ -125,7 +128,12 @@ private struct DropdownTrigger: View {
     // group card and only lights up on focus, matching the other rows.
     @ViewBuilder
     private var dropdownBackground: some View {
-        if compact {
+        if compact && isNTV {
+            // nTV (build 59): a quiet fill at rest instead of glass, the solid
+            // off-white surface with dark text in focus.
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(isFocused ? NTVDesign.textPrimary : Color.white.opacity(0.10))
+        } else if compact {
             // Liquid Glass in every state; focus is the bright ring + lift.
             Color.clear
                 .liquidGlass(in: RoundedRectangle(cornerRadius: OrivioRadius.md, style: .continuous))

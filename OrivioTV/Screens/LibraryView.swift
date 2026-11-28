@@ -251,6 +251,25 @@ private struct LibraryChip: View {
     let selected: Bool
 
     var body: some View {
+        if theme.palette.id == NTVDesign.palette.id { ntvChip } else { legacyChip }
+    }
+
+    /// nTV (build 59): the Sources filters' language — text at rest, the
+    /// current filter outlined, focus the solid off-white pill.
+    private var ntvChip: some View {
+        Text(title)
+            .font(.system(size: 25, weight: selected || isFocused ? .semibold : .medium))
+            .foregroundStyle(isFocused ? NTVDesign.background : selected ? NTVDesign.textPrimary : NTVDesign.textSecondary)
+            .padding(.horizontal, 22)
+            .frame(minHeight: 56)
+            .background(Capsule(style: .continuous).fill(NTVDesign.textPrimary).opacity(isFocused ? 1 : 0))
+            .overlay(Capsule(style: .continuous)
+                .strokeBorder(NTVDesign.textPrimary.opacity(selected && !isFocused ? 0.8 : 0), lineWidth: 2))
+            .shadow(color: .black.opacity(isFocused ? 0.4 : 0), radius: 14, y: 6)
+            .focusLift(1.06, isFocused)
+    }
+
+    private var legacyChip: some View {
         Text(title)
             .font(.system(size: 24, weight: .semibold))
             .foregroundStyle(selected ? theme.palette.onAccentTint : theme.palette.textSecondary)

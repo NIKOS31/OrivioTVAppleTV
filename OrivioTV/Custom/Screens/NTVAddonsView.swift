@@ -53,7 +53,7 @@ struct NTVAddonsView: View {
                             .font(.system(size: 23))
                             .foregroundStyle(NTVDesign.textSecondary)
                     } else {
-                        LazyVStack(spacing: 16) {
+                        LazyVStack(spacing: 6) {
                             ForEach(Array(addons.addons.enumerated()), id: \.element.id) { index, addon in
                                 Button {
                                     addons.setEnabled(addon, !addon.enabled)
@@ -163,27 +163,37 @@ private struct NTVAddonLabel: View {
             .frame(width: 72, height: 72)
             VStack(alignment: .leading, spacing: 8) {
                 Text(addon.manifest.name)
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.system(size: 28, weight: .semibold))
                     .lineLimit(1)
                 if !capabilities.isEmpty {
                     Text(capabilities)
-                        .font(.system(size: 20))
-                        .foregroundStyle(NTVDesign.textSecondary)
+                        .font(.system(size: 22))
+                        .foregroundStyle(focused ? NTVDesign.background.opacity(0.68) : NTVDesign.textSecondary)
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: 20)
             Label(addon.enabled ? "Activé" : "Désactivé",
                 systemImage: addon.enabled ? "checkmark.circle.fill" : "minus.circle")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(addon.enabled ? NTVDesign.accent : NTVDesign.textSecondary)
+                .font(.system(size: 23, weight: .medium))
+                .foregroundStyle(focused ? NTVDesign.background
+                                 : addon.enabled ? NTVDesign.textPrimary : NTVDesign.textSecondary)
         }
-        .foregroundStyle(NTVDesign.textPrimary)
-        .padding(22)
-        .background(NTVDesign.surface, in: RoundedRectangle(cornerRadius: NTVDesign.cardRadius))
-        .overlay(RoundedRectangle(cornerRadius: NTVDesign.cardRadius)
-            .strokeBorder(focused ? NTVDesign.accent : .clear, lineWidth: 3))
-        .focusLift(NTVDesign.controlFocusScale, focused)
-        .opacity(addon.enabled ? 1 : 0.7)
+        // Build 59: an airy list like the Sources — no grey card, a hairline
+        // between rows, and the solid off-white surface with dark text in
+        // focus instead of a white frame. No scale on a full-width row.
+        .foregroundStyle(focused ? NTVDesign.background : NTVDesign.textPrimary)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(NTVDesign.textPrimary).opacity(focused ? 1 : 0))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                .padding(.horizontal, 24)
+                .opacity(focused ? 0 : 1)
+                .accessibilityHidden(true)
+        }
+        .shadow(color: .black.opacity(focused ? 0.45 : 0), radius: 18, y: 10)
+        .opacity(addon.enabled || focused ? 1 : 0.7)
     }
 }

@@ -1921,16 +1921,15 @@ final class NTVDesignSmoke: XCTestCase {
         remote.press(.right)
         XCTAssertTrue(focused(app.buttons["ntv.player.more"], timeout: 5))
         remote.press(.up)
-        let runtime = app.buttons["ntv.player.runtime"]
-        XCTAssertTrue(focused(runtime, timeout: 5), "The time toggle must be reachable from the rightmost tool.")
+        // Owner's request (28 Nov 2026): the time is not a focus stop. Up from
+        // the rightmost tool reaches the timeline; the time remaining is read only.
+        XCTAssertTrue(focused(timeline, timeout: 5), "Up from the rightmost tool must reach the timeline, not the time.")
+        let runtime = app.staticTexts["ntv.player.runtime"].firstMatch
+        XCTAssertTrue(runtime.exists)
         XCTAssertTrue(app.windows.firstMatch.frame.contains(runtime.frame))
-        let previousTimeMode = runtime.value as? String
-        remote.press(.select)
-        XCTAssertNotEqual(runtime.value as? String, previousTimeMode, "Clicking the runtime must toggle elapsed/remaining time.")
+        XCTAssertTrue(runtime.label.hasPrefix("−"), "The trailing time shows the time remaining.")
         capture("ntv-player-nuvio-remaining-time")
-        remote.press(.select)
-        XCTAssertEqual(runtime.value as? String, previousTimeMode)
-        remote.press(.left)
+        remote.press(.down)
         XCTAssertTrue(focused(play, timeout: 5))
         remote.press(.up)
         XCTAssertTrue(focused(timeline, timeout: 5))

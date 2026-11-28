@@ -16,6 +16,7 @@ struct NTVReleaseNotes: Sendable {
         "Refonte visuelle. Réglages : textes plus grands et plus lisibles depuis le canapé, titres de section en clair au lieu de petites capitales, plus de cartes grises. La ligne sélectionnée devient une pilule blanche avec le texte sombre, la catégorie ouverte est marquée d’un trait. Le panneau est opaque, ce qui devrait rendre le défilement plus fluide.",
         "Décor de Noël, du 20 novembre au 6 janvier : le traîneau du Père Noël et ses rennes à côté des titres de page, flocons discrets dans le coin, sapin et boule dans les catégories, petite guirlande sur le menu fermé. Option Neige sur l’Accueil dans Réglages > Apparence : elle tombe dès qu’elle est activée.",
         "Recherche : les résultats s’affichent en rangées Séries, Films et Animés, visibles dès le haut de l’écran ; celle qui contient le titre le plus proche de ta recherche passe en premier. Les animés ne sont plus cachés : la recherche principale interroge aussi les addons d’animés, comme Stremio sur PC. Avant, jusqu’à quarante films s’affichaient avant la première série.",
+        "Lecteur : « Passer l’intro » (en français) est toujours un vrai bouton, même quand les contrôles sont affichés : Haut depuis la barre l’atteint, OK passe l’intro, Bas revient aux contrôles. Le temps restant à droite n’est plus sélectionnable, le curseur ne s’y arrête plus. La barre garde la même épaisseur ; une petite pastille indique la sélection et grossit pendant le déplacement.",
         "Menu latéral : les icônes et le logo restent en place à l’ouverture ; seuls les libellés apparaissent à côté, en fondu. Ouvrir ou fermer le menu n’anime plus toute la page derrière lui.",
         "Recommandations : un titre sur une ligne se place juste au-dessus de son année, sans grand vide entre les deux.",
         "Refonte visuelle. Sources : plus de cartes grises. La qualité (1080p, 720p…) devient un grand titre de groupe, chaque source une ligne aérée avec sa taille et son nom ; la source sélectionnée devient une pilule blanche avec le texte sombre. Le nom de l’addon n’est plus en majuscules et le filtre sélectionné est entouré.",
@@ -31,6 +32,7 @@ struct NTVReleaseNotes: Sendable {
         "Films et Séries : descendre de deux rangées ; le bandeau du haut doit afficher le titre sélectionné sans que rien ne bouge en dessous.",
         "Réglages : parcourir plusieurs catégories et faire défiler leurs réglages ; le compteur de cadence doit rester stable et chaque texte se lire du canapé.",
         "Recherche : taper le nom d’une série, puis d’un animé ; chacun doit apparaître en haut, dans sa rangée, sans avoir à descendre, et retrouver les mêmes titres que sur PC.",
+        "Lecteur, pendant le générique d’une série : afficher les contrôles, Haut depuis la barre doit sélectionner Passer l’intro et OK doit le passer.",
         "Réglages > Apparence : activer Neige sur l’Accueil ; la neige doit rester derrière les affiches et la navigation rester fluide."
     ])
 

@@ -60,6 +60,8 @@ struct NTVPlayerControls: View {
                             if viewModel.isScrubbing { viewModel.cancelScrub() }
                             else { focus = .play }
                         case .up where viewModel.isScrubbing: viewModel.cancelScrub()
+                        // Skip Intro sits above the transport while an intro plays.
+                        case .up: viewModel.focusSkipIntro()
                         default: break
                         }
                     }
@@ -69,21 +71,10 @@ struct NTVPlayerControls: View {
                     NTVPlayerTimeValue(viewModel: viewModel, clock: viewModel.clock)
                     playControl
                     Spacer()
-                    NTVPlayerRuntimeControl(clock: viewModel.clock) {
-                        viewModel.noteSelectPressed()
-                        viewModel.restartHideTimer()
-                    }
-                    .focused($focus, equals: .runtime)
-                    .onMoveCommand { direction in
-                        guard !viewModel.moveSuppressed else { return }
-                        viewModel.restartHideTimer()
-                        switch direction {
-                        case .up: focus = .timeline
-                        case .down: focus = .more
-                        case .left: focus = .play
-                        default: break
-                        }
-                    }
+                    // Time remaining, read only (build 59): it was a focusable
+                    // toggle, so Up from the rightmost tool landed on "04:03".
+                    NTVPlayerRuntimeLabel(clock: viewModel.clock, remaining: true)
+                        .accessibilityIdentifier("ntv.player.runtime")
                 }
                 .frame(height: 42)
                 .disabled(viewModel.isScrubbing)
@@ -211,7 +202,7 @@ struct NTVPlayerControls: View {
             viewModel.noteSelectPressed()
             viewModel.restartHideTimer()
             switch direction {
-            case .up: focus = control == .more ? .runtime : .timeline
+            case .up: focus = .timeline
             case .left, .right:
                 if let index = footerOrder.firstIndex(of: control) {
                     let next = index + (direction == .right ? 1 : -1)
@@ -303,37 +294,17 @@ private struct NTVPlayerHeading: View {
     }
 }
 
-/// Nuvio's runtime toggle, adapted to the remote. Only this leaf observes
-/// the playback clock; ticking time does not rebuild the action/focus rail.
-private struct NTVPlayerRuntimeControl: View {
-    let clock: PlaybackClock
-    let onInteraction: () -> Void
-    @AppStorage("ntv.player.remainingTime") private var remaining = false
-
-    var body: some View {
-        Button {
-            remaining.toggle()
-            onInteraction()
-        } label: { NTVPlayerRuntimeLabel(clock: clock, remaining: remaining) }
-        .buttonStyle(PlainCardButtonStyle())
-        .accessibilityHint(remaining ? "Afficher le temps écoulé et la durée totale." : "Afficher le temps restant.")
-        .accessibilityValue(remaining ? "Temps restant" : "Temps écoulé et durée totale")
-        .accessibilityIdentifier("ntv.player.runtime")
-    }
-}
-
+/// Time remaining at the trailing end of the transport. Only this leaf
+/// observes the playback clock; ticking time does not rebuild the rail.
 private struct NTVPlayerRuntimeLabel: View {
-    @Environment(\.isFocused) private var focused
     @ObservedObject var clock: PlaybackClock
     let remaining: Bool
     var body: some View {
         Text(NTVNuvioRuntime.text(position: clock.scrubTarget ?? clock.position,
                                  duration: clock.duration, remaining: remaining))
             .font(.system(size: 20, weight: .medium).monospacedDigit())
-            .foregroundStyle(.white.opacity(0.9))
-            .padding(.horizontal, 14)
-            .frame(minWidth: 220).frame(height: 42)
-            .background(Capsule().fill(.white.opacity(focused ? 0.18 : 0)))
+            .foregroundStyle(.white.opacity(0.75))
+            .frame(height: 42)
     }
 }
 
@@ -366,7 +337,10 @@ private struct NTVPlayerTimeline: View {
         GeometryReader { geometry in
             let width = geometry.size.width
             let x = width * CGFloat(target / duration)
-            let thickness: CGFloat = highlighted ? 10 : 6
+            // Build 59: one thickness in every state (it jumped from 6 to 10
+            // on focus); focus shows a small knob, scrubbing a larger one.
+            let thickness: CGFloat = 8
+            let knob: CGFloat = scrubbing ? 22 : 14
             ZStack(alignment: .leading) {
                 Capsule().fill(.white.opacity(0.3)).frame(height: thickness)
                 ForEach(clock.cachedSpans, id: \.lowerBound) { span in
@@ -375,10 +349,11 @@ private struct NTVPlayerTimeline: View {
                         .frame(width: max(width * CGFloat(span.upperBound) - start, 0), height: thickness)
                         .offset(x: start)
                 }
-                Capsule().fill(.white).frame(width: max(x, thickness), height: thickness)
-                if scrubbing {
-                    Circle().fill(.white).frame(width: 14, height: 14)
-                        .offset(x: min(max(x - 7, 0), max(width - 14, 0)))
+                Capsule().fill(.white.opacity(highlighted ? 1 : 0.85)).frame(width: max(x, thickness), height: thickness)
+                if highlighted {
+                    Circle().fill(.white).frame(width: knob, height: knob)
+                        .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                        .offset(x: min(max(x - knob / 2, 0), max(width - knob, 0)))
                 }
             }
             .frame(height: 28)

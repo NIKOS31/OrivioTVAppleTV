@@ -8079,9 +8079,21 @@ final class PlayerViewModel: ObservableObject {
     /// through to their normal action (open the controls, seek, ...).
     @discardableResult
     func focusSkipIntro() -> Bool {
-        guard skipIntroActive, overlay == .none, !isScrubbing, !skipIntroFocused else { return false }
+        // Build 59: also reachable while the transport is up (Up from the
+        // timeline). Before, the pill was a static hint there and nothing
+        // could skip the intro: ⏯ only means play/pause.
+        guard skipIntroActive, overlay == .none || overlay == .controls,
+              !isScrubbing, !skipIntroFocused else { return false }
         skipIntroFocused = true
         return true
+    }
+
+    /// The Skip Intro pill above the transport hands focus back to the
+    /// transport, which starts over on its play control.
+    func releaseSkipIntroToTransport() {
+        skipIntroFocused = false
+        controlsSession &+= 1
+        restartHideTimer()
     }
 
     // MARK: Skip-segment cache

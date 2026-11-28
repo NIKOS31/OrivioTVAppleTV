@@ -622,17 +622,23 @@ struct PlayerScreen: View {
                 Spacer()
                 HStack {
                     Spacer()
-                    if viewModel.overlay == .none {
-                        Button { viewModel.skipIntro() } label: {
-                            SkipIntroPillLabel()
+                    // Always a real button (build 59): over bare video, and
+                    // above the transport, where Up from the timeline reaches it.
+                    Button { viewModel.skipIntro() } label: {
+                        SkipIntroPillLabel()
+                    }
+                    .buttonStyle(PlainCardButtonStyle())
+                    .focused($skipIntroFocused)
+                    .accessibilityIdentifier("ntv.player.skipIntro")
+                    .onMoveCommand { direction in
+                        viewModel.noteInput("move \(direction) (skip)")
+                        if viewModel.moveSuppressed { return }
+                        viewModel.noteSelectPressed()   // see the catcher's note
+                        if controlsVisible {
+                            if direction == .down { viewModel.releaseSkipIntroToTransport() }
+                            return
                         }
-                        .buttonStyle(PlainCardButtonStyle())
-                        .focused($skipIntroFocused)
-                        .onMoveCommand { direction in
-                            viewModel.noteInput("move \(direction) (skip)")
-                            if viewModel.moveSuppressed { return }
-                            viewModel.noteSelectPressed()   // see the catcher's note
-                            switch direction {
+                        switch direction {
                             // Keep going past the pill → the transport controls.
                             case .up, .down:
                                 viewModel.skipIntroFocused = false
@@ -645,9 +651,6 @@ struct PlayerScreen: View {
                                 viewModel.nudgeSeek(Double(viewModel.settings.skipSeconds))
                             @unknown default: break
                             }
-                        }
-                    } else {
-                        SkipIntroPillLabel()
                     }
                 }
                 .padding(.trailing, OrivioSpacing.huge)
@@ -1212,9 +1215,9 @@ private struct SkipIntroPillLabel: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: isFocused ? "forward.end.fill" : "playpause.fill")
+            Image(systemName: "forward.end.fill")
                 .font(.system(size: 18, weight: .bold))
-            Text("Skip Intro")
+            Text("Passer l’intro")
                 .font(.system(size: 23, weight: .semibold))
         }
         .foregroundStyle(isFocused ? .black : .white)
